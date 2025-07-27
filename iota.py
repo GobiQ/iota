@@ -603,153 +603,18 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
         'metric_iotas': metric_iotas
     }
 
-def analyze_sophisticated_decay_risk(rolling_results: Dict[str, Any]) -> Dict[str, Any]:
-    """Advanced decay risk analysis with time spent above/below zero and area integration."""
-    if not rolling_results.get('sufficient_data', False):
-        return {"error": "Insufficient data for analysis"}
-    
-    metric_iotas = rolling_results.get('metric_iotas', {})
-    analysis = {}
-    
-    for metric_name, metric_data in metric_iotas.items():
-        if len(metric_data) == 0:
-            continue
-            
-        iotas = np.array(metric_data)
-        
-        # Time-based analysis
-        time_above_zero = np.mean(iotas > 0)
-        time_below_zero = np.mean(iotas < 0)
-        time_at_zero = np.mean(iotas == 0)
-        
-        # Magnitude analysis
-        positive_iotas = iotas[iotas > 0]
-        negative_iotas = iotas[iotas < 0]
-        
-        avg_positive_magnitude = np.mean(positive_iotas) if len(positive_iotas) > 0 else 0
-        avg_negative_magnitude = np.mean(negative_iotas) if len(negative_iotas) > 0 else 0
-        max_positive = np.max(positive_iotas) if len(positive_iotas) > 0 else 0
-        max_negative = np.min(negative_iotas) if len(negative_iotas) > 0 else 0
-        
-        # Area integration (simplified as sum of values)
-        positive_area = np.sum(positive_iotas) if len(positive_iotas) > 0 else 0
-        negative_area = np.sum(negative_iotas) if len(negative_iotas) > 0 else 0
-        net_area = positive_area + negative_area
-        
-        # Risk scoring with exponential weighting
-        risk_score = 0
-        
-        # Time-based penalties and rewards (moderate)
-        if time_below_zero > 0.8:
-            risk_score += 3
-        elif time_below_zero > 0.6:
-            risk_score += 2
-        elif time_below_zero > 0.4:
-            risk_score += 1
-        
-        # Time above zero rewards (can cancel out penalties)
-        if time_above_zero > 0.8:
-            risk_score -= 3
-        elif time_above_zero > 0.6:
-            risk_score -= 2
-        elif time_above_zero > 0.4:
-            risk_score -= 1
-        
-        # Exponential magnitude penalty for negative performance below -0.4 (moderate)
-        if avg_negative_magnitude < -0.4:
-            # Exponential penalty: exp(abs(avg_negative_magnitude) - 0.4) - 1
-            # This gives 0 penalty at -0.4, and exponentially increasing penalty below that
-            penalty = np.exp(abs(avg_negative_magnitude) - 0.4) - 1
-            risk_score += min(3, penalty)  # Cap at 3 points
-        
-        # Exponential magnitude reward for positive performance above 0.4 (moderate)
-        if avg_positive_magnitude > 0.4:
-            # Exponential reward: exp(avg_positive_magnitude - 0.4) - 1
-            # This gives 0 reward at 0.4, and exponentially increasing reward above that
-            reward = np.exp(avg_positive_magnitude - 0.4) - 1
-            risk_score -= min(3, reward)  # Cap at 3 points
-        
-        # Area imbalance penalty (moderate)
-        area_ratio = abs(negative_area / positive_area) if positive_area != 0 else float('inf')
-        if area_ratio > 4.0:
-            risk_score += 2
-        elif area_ratio > 2.5:
-            risk_score += 1
-        
-        # Consistency penalty (high variance in negative performance) - moderate
-        if len(negative_iotas) > 1:
-            negative_std = np.std(negative_iotas)
-            if negative_std > 1.2:
-                risk_score += 1
-        
-        analysis[metric_name] = {
-            'time_above_zero': time_above_zero,
-            'time_below_zero': time_below_zero,
-            'time_at_zero': time_at_zero,
-            'avg_positive_magnitude': avg_positive_magnitude,
-            'avg_negative_magnitude': avg_negative_magnitude,
-            'max_positive': max_positive,
-            'max_negative': max_negative,
-            'positive_area': positive_area,
-            'negative_area': negative_area,
-            'net_area': net_area,
-            'area_ratio': area_ratio if positive_area != 0 else float('inf'),
-            'risk_score': risk_score
-        }
-    
-    # Overall risk assessment (moderate thresholds)
-    total_risk_score = sum(metric['risk_score'] for metric in analysis.values())
-    
-    if total_risk_score >= 18:
-        overall_risk = "CRITICAL"
-    elif total_risk_score >= 12:
-        overall_risk = "HIGH"
-    elif total_risk_score >= 8:
-        overall_risk = "MODERATE"
-    elif total_risk_score >= 4:
-        overall_risk = "LOW"
-    else:
-        overall_risk = "MINIMAL"
-    
-    return {
-        'metric_analysis': analysis,
-        'total_risk_score': total_risk_score,
-        'overall_risk': overall_risk
-    }
+
 
 def interpret_overfitting_risk(rolling_results: Dict[str, Any]) -> str:
     """Generate sophisticated interpretation of rolling analysis results."""
     if not rolling_results.get('sufficient_data', False):
         return "Insufficient data for rolling analysis (need longer OOS period)"
     
-    # Get sophisticated analysis
-    decay_analysis = analyze_sophisticated_decay_risk(rolling_results)
-    
-    if 'error' in decay_analysis:
-        return decay_analysis['error']
-    
     n_windows = rolling_results['n_windows']
-    overall_risk = decay_analysis['overall_risk']
-    total_risk_score = decay_analysis['total_risk_score']
     
-    interpretation = f"**Advanced Decay Risk Analysis** ({n_windows} windows)\n\n"
-    interpretation += f"**Overall Risk Level**: {overall_risk} (Score: {total_risk_score})\n\n"
-    
-    # Add metric-specific insights
-    for metric_name, analysis in decay_analysis['metric_analysis'].items():
-        metric_display = {
-            'sh': 'Sharpe Ratio',
-            'cr': 'Cumulative Return', 
-            'so': 'Sortino Ratio'
-        }.get(metric_name, metric_name)
-        
-        interpretation += f"**{metric_display}**:\n"
-        interpretation += f"  • Time above zero: {analysis['time_above_zero']:.1%}\n"
-        interpretation += f"  • Time below zero: {analysis['time_below_zero']:.1%}\n"
-        interpretation += f"  • Avg positive magnitude: {analysis['avg_positive_magnitude']:+.2f}\n"
-        interpretation += f"  • Avg negative magnitude: {analysis['avg_negative_magnitude']:+.2f}\n"
-        interpretation += f"  • Area ratio (neg/pos): {analysis['area_ratio']:.2f}\n"
-        interpretation += f"  • Risk score: {analysis['risk_score']}\n\n"
+    interpretation = f"**Rolling Analysis Summary** ({n_windows} windows)\n\n"
+    interpretation += "Rolling analysis shows how strategy performance varies over time.\n"
+    interpretation += "Check the charts above for visual patterns and trends.\n\n"
     
     return interpretation
 
@@ -994,11 +859,6 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
         rolling_iotas = []
         rolling_dates = []
         
-        # Debug: Check IS values
-        if metric_key == 'sh':
-            st.write(f"Debug - {metric_info['name']} IS values length:", len(metric_info['is_values']))
-            st.write(f"Debug - {metric_info['name']} IS values range:", np.min(metric_info['is_values']), "to", np.max(metric_info['is_values']))
-        
         # Use window_size to calculate rolling iota
         for i in range(window_size, len(all_dates)):
             # Get the window of returns
@@ -1016,28 +876,11 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             if np.isfinite(window_metric):
                 # For rolling iota, each window is treated as an "OOS" period
                 # So n_oos should be the window size (252 days)
-                
-                # Debug: Check the values being passed to compute_iota
-                if i == window_size + 1:  # Only debug the first calculation
-                    st.write(f"Debug - {metric_info['name']} window_metric:", window_metric)
-                    st.write(f"Debug - {metric_info['name']} IS values mean:", np.mean(metric_info['is_values']))
-                    st.write(f"Debug - {metric_info['name']} IS values std:", np.std(metric_info['is_values']))
-                    st.write(f"Debug - {metric_info['name']} window_size:", window_size)
-                
                 iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
-                
-                # Debug: Check the iota result
-                if i == window_size + 1:  # Only debug the first calculation
-                    st.write(f"Debug - {metric_info['name']} iota_val:", iota_val)
                 
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
                     rolling_dates.append(all_dates[i-1])  # Use end date of window
-        
-        # Debug: Check results for this metric
-        st.write(f"Debug - {metric_info['name']} rolling iotas calculated:", len(rolling_iotas))
-        if len(rolling_iotas) > 0:
-            st.write(f"Debug - {metric_info['name']} iota range:", np.min(rolling_iotas), "to", np.max(rolling_iotas))
         
         # Add smoothed line for this metric
         if len(rolling_iotas) >= 3:
@@ -1082,9 +925,17 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
                   annotation_text="Overperformance (+0.5σ)", annotation_position="top right")
     fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral", 
                   annotation_text="Underperformance (-0.5σ)", annotation_position="bottom right")
+    fig.add_hline(y=1.0, line_dash="dot", line_color="green", 
+                  annotation_text="Strong Overperformance (+1.0σ)", annotation_position="top right")
+    fig.add_hline(y=-1.0, line_dash="dot", line_color="red", 
+                  annotation_text="Strong Underperformance (-1.0σ)", annotation_position="bottom right")
+    fig.add_hline(y=2.0, line_dash="dot", line_color="darkgreen", 
+                  annotation_text="Exceptional Overperformance (+2.0σ)", annotation_position="top right")
+    fig.add_hline(y=-2.0, line_dash="dot", line_color="darkred", 
+                  annotation_text="Exceptional Underperformance (-2.0σ)", annotation_position="bottom right")
     
     # Update layout
-    title_text = f'{symphony_name} - Full Backtest Rolling Iota Analysis'
+    title_text = f'{symphony_name} - Full Backtest Rolling Iota Proxy Analysis'
     subtitle_text = f'{window_size}d rolling windows | Smoothed trends'
     
     fig.update_layout(
@@ -1661,19 +1512,13 @@ def main():
                 
                 # Display results
                 st.markdown("### 📊 Analysis Summary")
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Windows", rolling_results['n_windows'])
                 with col2:
                     st.metric("Window Size", f"{rolling_results['window_size_days']}d")
-                with col3:
-                    st.metric("Decay Risk", rolling_results['overfitting_risk'], 
-                             help="Advanced risk assessment considering time spent above/below zero, magnitude of performance, area integration, and consistency. MINIMAL/LOW = good, MODERATE = concerning, HIGH/CRITICAL = likely overfit. [Updated]")
                 
                 st.markdown("")  # Add spacing
-                
-                # Display sophisticated decay risk analysis
-                # (Removed detailed text display)
                 
                 st.markdown("")  # Add spacing
                 
@@ -1704,11 +1549,7 @@ def main():
                                 index=pd.to_datetime(daily_ret_data['dates'])
                             )
                             
-                            # Debug: Check the reconstructed data
-                            st.write("Debug - daily_ret length:", len(daily_ret))
-                            st.write("Debug - daily_ret date range:", daily_ret.index[0], "to", daily_ret.index[-1])
-                            st.write("Debug - window_size:", 252)  # Default window size
-                            st.write("Debug - Available data points for rolling:", len(daily_ret) - 252)
+
                             
                             full_fig = create_full_backtest_rolling_plot(
                                 daily_ret,
