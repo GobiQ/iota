@@ -1163,7 +1163,8 @@ def main():
                 with col2:
                     st.metric("Window Size", f"{rolling_results['window_size_days']}d")
                 with col3:
-                    st.metric("Decay Risk", rolling_results['overfitting_risk'])
+                    st.metric("Decay Risk", rolling_results['overfitting_risk'], 
+                             help="Risk assessment based on proportion of time spent underperforming (-0.5 iota threshold). MINIMAL/LOW = good, MODERATE = concerning, HIGH/CRITICAL = likely overfit.")
                 
                 st.markdown("")  # Add spacing
                 
@@ -1217,9 +1218,11 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     avg_rating = iota_to_persistence_rating(avg_iota)
     
     with col1:
-        st.metric("Composite Iota", f"{avg_iota:+.3f}")
+        st.metric("Composite Iota", f"{avg_iota:+.3f}", 
+                 help="Average of all metric iota values. Measures how many standard deviations your overall OOS performance differs from backtest expectations. Positive = outperforming, negative = underperforming.")
     with col2:
-        st.metric("Composite Persistence Rating", f"{avg_rating}")
+        st.metric("Composite Persistence Rating", f"{avg_rating}", 
+                 help="0-500 scale rating of strategy persistence. 100 = neutral (matches expectations), >100 = outperforming, <100 = underperforming. Higher values indicate better edge persistence.")
     
     st.markdown("")  # Add spacing after metrics
     
