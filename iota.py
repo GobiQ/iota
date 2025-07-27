@@ -1028,9 +1028,6 @@ def main():
             st.markdown("### 🔗 Share Your Analysis")
             st.info(f"**Shareable URL**: Copy this link to share your analysis settings with others:")
             
-            # Display the URL in a code block for easy copying
-            st.code(st.session_state.shareable_url, language=None)
-            
             # Create a text area for easy copying
             st.text_area(
                 "Shareable URL (select all and copy):",
