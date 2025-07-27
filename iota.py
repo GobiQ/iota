@@ -872,7 +872,7 @@ def main():
     st.markdown('<h2 style="text-align: center; font-size: 1.5rem; color: #666; margin-bottom: 2rem;">Is your strategy\'s performance matching the backtest?</h2>', unsafe_allow_html=True)
     
     # Create tabs for better organization
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔧 Configuration", "📊 Results", "📊 Distributions", "📈 Rolling Analysis", "📚 Help"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔧 Configuration", "🔢 Core Results", "📊 Core Results Visualization", "📈 Rolling Analysis", "📚 Help"])
     
     # Configuration Tab
     with tab1:
@@ -1286,7 +1286,7 @@ def main():
 
     # Distributions Tab
     with tab3:
-        st.header("📊 In-Sample Distributions")
+        st.header("📊 Results in the Context of In-Sample Distributions")
         st.markdown("")  # Add spacing after header
         
         if hasattr(st.session_state, 'core_results') and st.session_state.core_results:
