@@ -639,43 +639,47 @@ def analyze_sophisticated_decay_risk(rolling_results: Dict[str, Any]) -> Dict[st
         # Risk scoring with exponential weighting
         risk_score = 0
         
-        # Time-based penalties and rewards (very conservative)
-        if time_below_zero > 0.95:
+        # Time-based penalties and rewards (moderate)
+        if time_below_zero > 0.8:
+            risk_score += 3
+        elif time_below_zero > 0.6:
             risk_score += 2
-        elif time_below_zero > 0.9:
+        elif time_below_zero > 0.4:
             risk_score += 1
         
         # Time above zero rewards (can cancel out penalties)
-        if time_above_zero > 0.95:
+        if time_above_zero > 0.8:
+            risk_score -= 3
+        elif time_above_zero > 0.6:
             risk_score -= 2
-        elif time_above_zero > 0.9:
+        elif time_above_zero > 0.4:
             risk_score -= 1
         
-        # Exponential magnitude penalty for negative performance below -0.75 (very conservative)
-        if avg_negative_magnitude < -0.75:
-            # Exponential penalty: exp(abs(avg_negative_magnitude) - 0.75) - 1
-            # This gives 0 penalty at -0.75, and exponentially increasing penalty below that
-            penalty = np.exp(abs(avg_negative_magnitude) - 0.75) - 1
-            risk_score += min(2, penalty)  # Cap at 2 points (reduced from 4)
+        # Exponential magnitude penalty for negative performance below -0.4 (moderate)
+        if avg_negative_magnitude < -0.4:
+            # Exponential penalty: exp(abs(avg_negative_magnitude) - 0.4) - 1
+            # This gives 0 penalty at -0.4, and exponentially increasing penalty below that
+            penalty = np.exp(abs(avg_negative_magnitude) - 0.4) - 1
+            risk_score += min(3, penalty)  # Cap at 3 points
         
-        # Exponential magnitude reward for positive performance above 0.75 (very conservative)
-        if avg_positive_magnitude > 0.75:
-            # Exponential reward: exp(avg_positive_magnitude - 0.75) - 1
-            # This gives 0 reward at 0.75, and exponentially increasing reward above that
-            reward = np.exp(avg_positive_magnitude - 0.75) - 1
-            risk_score -= min(2, reward)  # Cap at 2 points (reduced from 4)
+        # Exponential magnitude reward for positive performance above 0.4 (moderate)
+        if avg_positive_magnitude > 0.4:
+            # Exponential reward: exp(avg_positive_magnitude - 0.4) - 1
+            # This gives 0 reward at 0.4, and exponentially increasing reward above that
+            reward = np.exp(avg_positive_magnitude - 0.4) - 1
+            risk_score -= min(3, reward)  # Cap at 3 points
         
-        # Area imbalance penalty (very conservative)
+        # Area imbalance penalty (moderate)
         area_ratio = abs(negative_area / positive_area) if positive_area != 0 else float('inf')
-        if area_ratio > 8.0:
+        if area_ratio > 4.0:
             risk_score += 2
-        elif area_ratio > 5.0:
+        elif area_ratio > 2.5:
             risk_score += 1
         
-        # Consistency penalty (high variance in negative performance) - very conservative
+        # Consistency penalty (high variance in negative performance) - moderate
         if len(negative_iotas) > 1:
             negative_std = np.std(negative_iotas)
-            if negative_std > 2.0:
+            if negative_std > 1.2:
                 risk_score += 1
         
         analysis[metric_name] = {
@@ -693,16 +697,16 @@ def analyze_sophisticated_decay_risk(rolling_results: Dict[str, Any]) -> Dict[st
             'risk_score': risk_score
         }
     
-    # Overall risk assessment (very conservative thresholds)
+    # Overall risk assessment (moderate thresholds)
     total_risk_score = sum(metric['risk_score'] for metric in analysis.values())
     
-    if total_risk_score >= 25:
+    if total_risk_score >= 18:
         overall_risk = "CRITICAL"
-    elif total_risk_score >= 20:
+    elif total_risk_score >= 12:
         overall_risk = "HIGH"
-    elif total_risk_score >= 15:
+    elif total_risk_score >= 8:
         overall_risk = "MODERATE"
-    elif total_risk_score >= 10:
+    elif total_risk_score >= 4:
         overall_risk = "LOW"
     else:
         overall_risk = "MINIMAL"
