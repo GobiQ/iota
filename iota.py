@@ -1031,26 +1031,21 @@ def main():
             # Display the URL in a code block for easy copying
             st.code(st.session_state.shareable_url, language=None)
             
-            # Create a simple copy button using Streamlit
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("📋 Copy URL", type="primary", key="copy_url_button"):
-                    st.success("✅ URL copied to clipboard!")
-                    # Store the URL in session state for potential future use
-                    st.session_state.copied_url = st.session_state.shareable_url
+            # Display the URL in a code block for easy copying
+            st.code(st.session_state.shareable_url, language=None)
             
-            with col2:
-                st.markdown("**Instructions**: Click the button above, then manually copy the URL from the code block above.")
-            
-            # Alternative: Create a text area that's easier to copy from
-            st.markdown("**Alternative**: Copy from the text area below:")
+            # Create a text area that's easier to copy from
+            st.markdown("**📋 Copy the URL above or from the text area below:**")
             st.text_area(
-                "Shareable URL:",
+                "Shareable URL (select all and copy):",
                 value=st.session_state.shareable_url,
                 height=100,
                 help="Select all text (Ctrl+A) then copy (Ctrl+C)",
                 key="shareable_url_textarea"
             )
+            
+            # Add helpful copy instructions
+            st.info("💡 **Copy Instructions**: Select the URL text above or in the text area below, then press Ctrl+C (or Cmd+C on Mac) to copy to your clipboard.")
 
 
 
