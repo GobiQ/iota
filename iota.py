@@ -673,9 +673,9 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
     fig.add_hline(y=0, line_dash="solid", line_color="gray", 
                   annotation_text="Neutral Performance", annotation_position="bottom right")
     fig.add_hline(y=0.5, line_dash="dot", line_color="lightgreen", 
-                  annotation_text="Good Performance (+0.5σ)", annotation_position="top right")
+                  annotation_text="Overperformance (+0.5σ)", annotation_position="top right")
     fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral", 
-                  annotation_text="Poor Performance (-0.5σ)", annotation_position="bottom right")
+                  annotation_text="Underperformance (-0.5σ)", annotation_position="bottom right")
     
     # Update layout
     n_windows = rolling_results.get('n_windows', 0)
