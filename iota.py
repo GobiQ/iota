@@ -1615,6 +1615,31 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     
     st.markdown("---")  # Add divider before detailed metrics
     
+    # Check for high standard deviations
+    high_std_metrics = []
+    std_threshold = 0.75  # 75% threshold
+    
+    if ar_stats['std_is'] > std_threshold:
+        high_std_metrics.append(f"Annualized Return ({ar_stats['std_is']:.1%})")
+    if sh_stats['std_is'] > std_threshold:
+        high_std_metrics.append(f"Sharpe Ratio ({sh_stats['std_is']:.3f})")
+    if cr_stats['std_is'] > std_threshold:
+        high_std_metrics.append(f"Cumulative Return ({cr_stats['std_is']:.1%})")
+    if so_stats['std_is'] > std_threshold:
+        high_std_metrics.append(f"Sortino Ratio ({so_stats['std_is']:.3f})")
+    
+    if high_std_metrics:
+        st.warning(f"""
+        ⚠️ **High Standard Deviation Warning**
+        
+        The following metrics have high standard deviations (>75%) in your in-sample data:
+        - {', '.join(high_std_metrics)}
+        
+        **Impact**: High standard deviations can inflate the iota metric, making performance differences appear smaller than they actually are. This may mask significant overfitting or underperformance issues.
+        
+        **Recommendation**: Interpret results with caution and consider the absolute performance differences alongside the iota values.
+        """)
+    
     # Detailed metrics section
     st.subheader("📈 Detailed Metric Analysis")
     st.markdown("")  # Add spacing
