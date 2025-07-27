@@ -552,29 +552,18 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
         elif severely_negative > 0.1:
             degradation_score += 1
 
+    # Calculate proportion of time spent under -0.5 iota for each metric
     for metric in ['sh', 'cr', 'so']:
-        slope = metric_slopes.get(f'{metric}_slope', np.nan)
-        if np.isfinite(slope):
-            if slope < -0.15:
+        if len(metric_iotas[metric]) > 0:
+            under_threshold_proportion = np.mean(np.array(metric_iotas[metric]) < -0.5)
+            if under_threshold_proportion > 0.8:
+                degradation_score += 4
+            elif under_threshold_proportion > 0.6:
                 degradation_score += 3
-            elif slope < -0.08:
+            elif under_threshold_proportion > 0.4:
                 degradation_score += 2
-            elif slope < -0.03:
+            elif under_threshold_proportion > 0.2:
                 degradation_score += 1
-
-    for metric in ['sh', 'cr', 'so']:
-        if len(metric_iotas[metric]) > 2:
-            iota_volatility = np.std(metric_iotas[metric])
-            if iota_volatility > 0.8:
-                degradation_score += 1
-
-    for metric in ['sh', 'cr', 'so']:
-        if len(metric_iotas[metric]) >= 4:
-            first_half = metric_iotas[metric][:len(metric_iotas[metric])//2]
-            second_half = metric_iotas[metric][len(metric_iotas[metric])//2:]
-            if len(first_half) > 0 and len(second_half) > 0:
-                if np.mean(second_half) < np.mean(first_half) - 0.2:
-                    degradation_score += 1
     
     # Assess overfitting risk
     if degradation_score >= 12:
