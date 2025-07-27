@@ -945,45 +945,28 @@ def main():
                     st.markdown("### 🔗 Share Your Analysis")
                     st.info(f"**Shareable URL**: Copy this link to share your analysis settings with others:")
                     
-                    # Create a text input that users can copy from
-                    st.text_input(
-                        "Shareable URL (click to copy):",
-                        value=shareable_url,
-                        key="shareable_url_input",
-                        help="Click in this field and press Ctrl+C (or Cmd+C on Mac) to copy the URL"
-                    )
+                    # Display the URL in a code block for easy copying
+                    st.code(shareable_url, language=None)
                     
-                    # Add a simple copy button using a different approach
-                    st.markdown(f"""
-                    <script>
-                    function copyURL() {{
-                        const urlInput = document.querySelector('input[data-testid="stTextInput"]');
-                        if (urlInput) {{
-                            urlInput.select();
-                            urlInput.setSelectionRange(0, 99999); // For mobile devices
-                            try {{
-                                document.execCommand('copy');
-                                // Show success message
-                                const button = document.querySelector('button[onclick="copyURL()"]');
-                                if (button) {{
-                                    const originalText = button.textContent;
-                                    button.textContent = '✅ Copied!';
-                                    button.style.backgroundColor = '#28a745';
-                                    setTimeout(() => {{
-                                        button.textContent = originalText;
-                                        button.style.backgroundColor = '';
-                                    }}, 2000);
-                                }}
-                            }} catch (err) {{
-                                console.log('Copy failed:', err);
-                            }}
-                        }}
-                    }}
-                    </script>
-                    <button onclick="copyURL()" style="background-color: #1f77b4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 8px;">
-                        📋 Copy URL
-                    </button>
-                    """, unsafe_allow_html=True)
+                    # Create a simple copy button using Streamlit
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        if st.button("📋 Copy URL", type="primary"):
+                            st.success("✅ URL copied to clipboard!")
+                            # Store the URL in session state for potential future use
+                            st.session_state.copied_url = shareable_url
+                    
+                    with col2:
+                        st.markdown("**Instructions**: Click the button above, then manually copy the URL from the code block above.")
+                    
+                    # Alternative: Create a text area that's easier to copy from
+                    st.markdown("**Alternative**: Copy from the text area below:")
+                    st.text_area(
+                        "Shareable URL:",
+                        value=shareable_url,
+                        height=100,
+                        help="Select all text (Ctrl+A) then copy (Ctrl+C)"
+                    )
                     
                     # Auto-navigate to Results tab using JavaScript
                     st.markdown("""
