@@ -168,9 +168,128 @@ def build_slices(is_ret: pd.Series, slice_len: int, n_slices: int, overlap: bool
 
     return [is_ret.iloc[s : s + slice_len] for s in starts]
 
+def detect_distribution_characteristics(is_values: np.ndarray) -> Dict[str, Any]:
+    """Detect distribution shape and characteristics for robust iota calculation."""
+    if len(is_values) < 10:
+        return {
+            'is_normal': False,
+            'is_skewed': False,
+            'has_fat_tails': False,
+            'skewness': 0.0,
+            'kurtosis': 0.0,
+            'recommended_method': 'standard',
+            'confidence': 'low'
+        }
+    
+    try:
+        from scipy import stats
+        
+        # Test for normality using D'Agostino K^2 test
+        _, p_value = stats.normaltest(is_values)
+        is_normal = p_value > 0.05
+        
+        # Calculate skewness and kurtosis
+        skewness = stats.skew(is_values)
+        kurtosis = stats.kurtosis(is_values)
+        
+        # Determine if distribution is problematic
+        is_skewed = abs(skewness) > 1.0
+        has_fat_tails = kurtosis > 3.0
+        
+        # Determine recommended calculation method
+        if is_normal and not is_skewed and not has_fat_tails:
+            recommended_method = 'standard'
+            confidence = 'high'
+        elif is_skewed or has_fat_tails:
+            recommended_method = 'robust'
+            confidence = 'medium'
+        else:
+            recommended_method = 'percentile'
+            confidence = 'medium'
+        
+        return {
+            'is_normal': is_normal,
+            'is_skewed': is_skewed,
+            'has_fat_tails': has_fat_tails,
+            'skewness': skewness,
+            'kurtosis': kurtosis,
+            'normality_p_value': p_value,
+            'recommended_method': recommended_method,
+            'confidence': confidence
+        }
+    except ImportError:
+        # Fallback if scipy is not available
+        return {
+            'is_normal': True,
+            'is_skewed': False,
+            'has_fat_tails': False,
+            'skewness': 0.0,
+            'kurtosis': 0.0,
+            'recommended_method': 'standard',
+            'confidence': 'low'
+        }
+
+def compute_robust_iota(is_values: np.ndarray, oos_value: float, n_oos: int, lower_is_better: bool = False) -> float:
+    """Compute iota using robust statistics (median and IQR)."""
+    if len(is_values) < 10:
+        return 0.0
+    
+    finite_is = is_values[np.isfinite(is_values)]
+    if len(finite_is) < 2:
+        return 0.0
+    
+    median_is = np.median(finite_is)
+    q25, q75 = np.percentile(finite_is, [25, 75])
+    iqr = q75 - q25
+    
+    # Use IQR-based "standard deviation" (IQR/1.35 for normal distributions)
+    # This is more robust to outliers than standard deviation
+    robust_std = iqr / 1.35
+    
+    if robust_std < 1e-6:
+        return 0.0
+    
+    standardized_diff = (oos_value - median_is) / robust_std
+    
+    if lower_is_better:
+        standardized_diff = -standardized_diff
+    
+    w = min(1.0, np.sqrt(n_oos / 252))
+    return w * standardized_diff
+
+def compute_percentile_iota(is_values: np.ndarray, oos_value: float, n_oos: int, lower_is_better: bool = False) -> float:
+    """Compute iota using percentile-based approach."""
+    if len(is_values) < 10:
+        return 0.0
+    
+    finite_is = is_values[np.isfinite(is_values)]
+    if len(finite_is) < 2:
+        return 0.0
+    
+    # Find what percentile the OOS value falls in
+    percentile = np.percentileofscore(finite_is, oos_value)
+    
+    # Convert to z-score equivalent
+    # 50th percentile = 0, 84th percentile = 1, 16th percentile = -1
+    # Using normal distribution approximation
+    if percentile == 50:
+        z_score = 0.0
+    elif percentile > 50:
+        # Above median - use upper tail
+        z_score = (percentile - 50) / 34  # 34% is roughly 1 std dev in normal dist
+    else:
+        # Below median - use lower tail
+        z_score = (percentile - 50) / 34
+    
+    if lower_is_better:
+        z_score = -z_score
+    
+    w = min(1.0, np.sqrt(n_oos / 252))
+    return w * z_score
+
 def compute_iota(is_metric: float, oos_metric: float, n_oos: int, n_ref: int = 252, eps: float = 1e-6, 
                  lower_is_better: bool = False, is_values: np.ndarray = None) -> float:
-    """INTUITIVE standardized iota calculation."""
+    """Distribution-aware iota calculation that adapts to the shape of the data."""
     if np.isinf(oos_metric):
         return 2.0 if not lower_is_better else -2.0
     
@@ -181,20 +300,30 @@ def compute_iota(is_metric: float, oos_metric: float, n_oos: int, n_ref: int = 2
     if len(finite_is) < 2:
         return 0.0
     
-    is_median = np.median(finite_is)
-    is_std = np.std(finite_is, ddof=1)
+    # Detect distribution characteristics
+    dist_info = detect_distribution_characteristics(finite_is)
     
-    if is_std < eps:
-        return 0.0
-    
-    standardized_diff = (oos_metric - is_median) / is_std
-    
-    if lower_is_better:
-        standardized_diff = -standardized_diff
-    
-    w = min(1.0, np.sqrt(n_oos / n_ref))
-    
-    return w * standardized_diff
+    # Choose calculation method based on distribution
+    if dist_info['recommended_method'] == 'robust':
+        return compute_robust_iota(finite_is, oos_metric, n_oos, lower_is_better)
+    elif dist_info['recommended_method'] == 'percentile':
+        return compute_percentile_iota(finite_is, oos_metric, n_oos, lower_is_better)
+    else:
+        # Standard method for normal distributions
+        is_median = np.median(finite_is)
+        is_std = np.std(finite_is, ddof=1)
+        
+        if is_std < eps:
+            return 0.0
+        
+        standardized_diff = (oos_metric - is_median) / is_std
+        
+        if lower_is_better:
+            standardized_diff = -standardized_diff
+        
+        w = min(1.0, np.sqrt(n_oos / n_ref))
+        
+        return w * standardized_diff
 
 def iota_to_persistence_rating(iota_val: float, max_rating: int = 500) -> int:
     """Convert iota to persistence rating."""
@@ -345,6 +474,9 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
     p_value, significant = wilcoxon_iota_test(is_values, oos_value, n_oos, 
                                             lower_is_better=lower_is_better, overlap=overlap)
     
+    # Get distribution characteristics
+    dist_info = detect_distribution_characteristics(is_values)
+    
     return {
         'iota': iota,
         'persistence_rating': persistence_rating,
@@ -352,7 +484,13 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
         'p_value': p_value,
         'significant': significant,
         'median_is': median_is,
-        'iqr_is': (q25_is, q75_is)
+        'iqr_is': (q25_is, q75_is),
+        'distribution_method': dist_info['recommended_method'],
+        'distribution_confidence': dist_info['confidence'],
+        'is_skewed': dist_info['is_skewed'],
+        'has_fat_tails': dist_info['has_fat_tails'],
+        'skewness': dist_info['skewness'],
+        'kurtosis': dist_info['kurtosis']
     }
 
 def format_sortino_output(sortino_val: float) -> str:
@@ -1615,47 +1753,59 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     
     st.markdown("---")  # Add divider before detailed metrics
     
-    # Check for high standard deviations
-    high_std_metrics = []
-    std_threshold = 0.75  # 75% threshold
+    # Check for distribution issues and show distribution-aware analysis
+    distribution_issues = []
+    distribution_info = []
     
-    # Get IS values from session state to calculate standard deviations
-    if hasattr(st.session_state, 'core_results') and st.session_state.core_results:
-        ar_is_values = st.session_state.core_results.get('ar_is_values', [])
-        sh_is_values = st.session_state.core_results.get('sh_is_values', [])
-        cr_is_values = st.session_state.core_results.get('cr_is_values', [])
-        so_is_values = st.session_state.core_results.get('so_is_values', [])
-        
-        if len(ar_is_values) > 0:
-            ar_std = np.std(ar_is_values)
-            if ar_std > std_threshold:
-                high_std_metrics.append(f"Annualized Return ({ar_std:.1%})")
-        
-        if len(sh_is_values) > 0:
-            sh_std = np.std(sh_is_values)
-            if sh_std > std_threshold:
-                high_std_metrics.append(f"Sharpe Ratio ({sh_std:.3f})")
-        
-        if len(cr_is_values) > 0:
-            cr_std = np.std(cr_is_values)
-            if cr_std > std_threshold:
-                high_std_metrics.append(f"Cumulative Return ({cr_std:.1%})")
-        
-        if len(so_is_values) > 0:
-            so_std = np.std(so_is_values)
-            if so_std > std_threshold:
-                high_std_metrics.append(f"Sortino Ratio ({so_std:.3f})")
+    metrics_with_stats = [
+        ("Annualized Return", ar_stats),
+        ("Sharpe Ratio", sh_stats),
+        ("Cumulative Return", cr_stats),
+        ("Sortino Ratio", so_stats)
+    ]
     
-    if high_std_metrics:
+    for metric_name, stats in metrics_with_stats:
+        if 'distribution_method' in stats:
+            method = stats['distribution_method']
+            confidence = stats['distribution_confidence']
+            is_skewed = stats.get('is_skewed', False)
+            has_fat_tails = stats.get('has_fat_tails', False)
+            
+            distribution_info.append(f"**{metric_name}**: {method.title()} method ({confidence} confidence)")
+            
+            if is_skewed or has_fat_tails:
+                issues = []
+                if is_skewed:
+                    issues.append("skewed")
+                if has_fat_tails:
+                    issues.append("fat-tailed")
+                distribution_issues.append(f"{metric_name} ({', '.join(issues)})")
+    
+    # Show distribution information
+    if distribution_info:
+        st.info(f"""
+        📊 **Distribution-Aware Analysis**
+        
+        The iota calculation automatically adapts to your data's distribution shape:
+        
+        {chr(10).join(distribution_info)}
+        
+        **Standard**: Used for normal distributions
+        **Robust**: Used for skewed or fat-tailed distributions (IQR-based)
+        **Percentile**: Used for complex distributions (percentile-based)
+        """)
+    
+    # Show warning for problematic distributions
+    if distribution_issues:
         st.warning(f"""
-        ⚠️ **High Standard Deviation Warning**
+        ⚠️ **Distribution Characteristics Detected**
         
-        The following metrics have high standard deviations (>75%) in your in-sample data:
-        - {', '.join(high_std_metrics)}
+        The following metrics have non-normal distributions:
+        - {', '.join(distribution_issues)}
         
-        **Impact**: High standard deviations can inflate the iota metric, making performance differences appear smaller than they actually are. This may mask significant overfitting or underperformance issues.
+        **Impact**: The iota calculation has been automatically adjusted to use robust methods that are less sensitive to outliers and distribution shape.
         
-        **Recommendation**: Interpret results with caution and consider the absolute performance differences alongside the iota values.
+        **Recommendation**: The adjusted iota values should be more reliable than standard calculations for these metrics.
         """)
     
     # Detailed metrics section
@@ -1723,8 +1873,28 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         st.write(f"**IS Range (25th-75th):** {formatter(q25)} - {formatter(q75)}")
     
     with col2:
-        # Empty column for layout balance
-        st.write("")
+        # Distribution information
+        if 'distribution_method' in stats_dict:
+            method = stats_dict['distribution_method']
+            confidence = stats_dict['distribution_confidence']
+            st.write(f"**Distribution Method:** {method.title()}")
+            st.write(f"**Confidence:** {confidence.title()}")
+            
+            if stats_dict.get('is_skewed', False):
+                skewness = stats_dict.get('skewness', 0)
+                st.write(f"**Skewness:** {skewness:.3f} (skewed)")
+            
+            if stats_dict.get('has_fat_tails', False):
+                kurtosis = stats_dict.get('kurtosis', 0)
+                st.write(f"**Kurtosis:** {kurtosis:.3f} (fat-tailed)")
+    
+    # Distribution explanation
+    if 'distribution_method' in stats_dict and stats_dict['distribution_method'] != 'standard':
+        method = stats_dict['distribution_method']
+        if method == 'robust':
+            st.info("**Robust Method**: Using IQR-based calculation to handle skewed or fat-tailed distributions.")
+        elif method == 'percentile':
+            st.info("**Percentile Method**: Using percentile-based calculation for complex distributions.")
 
 def show_comprehensive_help():
     """Show help and documentation for the Iota Calculator."""
@@ -2011,13 +2181,14 @@ def show_comprehensive_help():
         
         ## ⚠️ Limitations and Assumptions
         
-        ### Distribution Assumptions
-        The iota calculation assumes that your strategy's performance metrics follow approximately normal distributions. This may not hold true for:
+        ### Distribution-Aware Analysis
+        The iota calculation automatically adapts to your data's distribution shape:
         
-        - **Highly skewed strategies**: Strategies with asymmetric return distributions (e.g., trend-following with infrequent large wins)
-        - **Fat-tailed distributions**: Strategies prone to extreme outliers or "black swan" events
-        - **Regime-dependent performance**: Strategies that perform differently in bull vs. bear markets
-        - **Small sample sizes**: With fewer than 50-100 historical periods, distribution estimates become unreliable
+        - **Standard Method**: Used for normal distributions (traditional mean/std approach)
+        - **Robust Method**: Used for skewed or fat-tailed distributions (IQR-based, less sensitive to outliers)
+        - **Percentile Method**: Used for complex distributions (percentile-based ranking)
+        
+        The system automatically detects distribution characteristics and chooses the most appropriate calculation method.
         
         ### Other Limitations
         
