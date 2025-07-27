@@ -2603,7 +2603,6 @@ def show_comprehensive_help():
         - **Minimum**: 3 months (90 days)
         - **Recommended**: 6-12 months for meaningful analysis
         - **Ideal**: 1-2 years for high confidence
-        - **Longer isn't always better**: Very long periods may include regime changes
         
         ## Common Issues
         
