@@ -772,7 +772,7 @@ def main():
                 early_date = st.date_input(
                     "Data Start Date:",
                     value=date.fromisoformat(default_early_date),
-                    help="How far back to fetch historical data"
+                    help="How far back to fetch data. Will default to oldest possible date if left untouched."
                 )
             
             with col2:
@@ -780,7 +780,7 @@ def main():
                 today_date = st.date_input(
                     "Data End Date:",
                     value=date.fromisoformat(default_today_date),
-                    help="End date for data fetching"
+                    help="End date for data fetching. Will default to most recent possible date if left untouched."
                 )
             
             # OOS start date - this is crucial
@@ -788,7 +788,7 @@ def main():
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
                 value=date.fromisoformat(default_oos_start),
-                help="⚠️ CRITICAL: Date when your 'live trading' or out-of-sample period begins. Everything before this is historical backtest data, everything after is 'real world' performance."
+                help="⚠️ CRITICAL: Date when your 'live trading' or out-of-sample period begins. Everything before this is historical backtest data, everything after is 'real world' performance. This will NOT default to the OOS date indicated by Composer."
             )
             
             st.markdown("---")
@@ -1261,15 +1261,16 @@ def main():
                 if hasattr(st.session_state, 'core_results'):
                     sym_name = st.session_state.core_results['sym_name']
                     
-                    st.markdown("### 📈 Rolling Performance Chart")
+                    # Center the chart section header
+                    st.markdown('<h3 style="text-align: center;">📈 Rolling Performance Chart</h3>', unsafe_allow_html=True)
                     fig = create_rolling_analysis_plot(rolling_results, sym_name)
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Show last window info
+                    # Show last window info (centered)
                     if rolling_results.get('windows'):
                         last_window = rolling_results['windows'][-1]
                         st.markdown("")  # Add spacing
-                        st.markdown(f"**📅 Last Window**: {last_window['start_date']} to {last_window['end_date']}")
+                        st.markdown(f'<p style="text-align: center;"><strong>📅 Last Window</strong>: {last_window["start_date"]} to {last_window["end_date"]}</p>', unsafe_allow_html=True)
             else:
                 st.warning("⚠️ Insufficient data for rolling analysis")
                 st.write("**Recommendation**: Extend OOS period to at least 6 months for meaningful rolling analysis")
@@ -1476,7 +1477,7 @@ def show_comprehensive_help():
         
         - **MINIMAL/LOW**: Strategy working as expected ✅
         - **MODERATE**: Some concerns, monitor closely ⚠️
-        - **HIGH/CRITICAL**: Likely overfit, consider re-optimization 🚨
+        - **HIGH/CRITICAL**: Likely overfit and market conditions have substantially changed, running something else 🚨
         """)
     
     with help_tab2:
