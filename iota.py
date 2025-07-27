@@ -1445,15 +1445,15 @@ def main():
             st.success("✅ Distribution analysis ready!")
             st.markdown("")  # Add spacing
             
-            # Display period information
-            st.markdown("### 📅 Comparison Periods")
+            # Display time slice information
+            st.markdown("### 📅 Time Slice Size")
             if hasattr(core_results, 'config') and core_results['config']:
                 config = core_results['config']
                 oos_start = config.get('oos_start')
                 today_date = config.get('today_date')
                 if oos_start and today_date:
                     oos_days = (today_date - oos_start).days
-                    st.info(f"**In-Sample Period**: Historical backtest data (multiple overlapping periods)  \n**Out-of-Sample Period**: {oos_start.strftime('%Y-%m-%d')} to {today_date.strftime('%Y-%m-%d')} ({oos_days} days)")
+                    st.info(f"**Time Slice Size**: {oos_days} days (matching OOS period length)")
             
             # Display distribution histograms
             st.markdown("### 📈 Metric Distributions")
