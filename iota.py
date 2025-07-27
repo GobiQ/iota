@@ -596,7 +596,7 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
 
 
 def interpret_overfitting_risk(rolling_results: Dict[str, Any]) -> str:
-    """Generate sophisticated interpretation of rolling analysis results."""
+    """Generate interpretation of rolling analysis results."""
     if not rolling_results.get('sufficient_data', False):
         return "Insufficient data for rolling analysis (need longer OOS period)"
     
@@ -1684,9 +1684,9 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         st.write("")
 
 def show_comprehensive_help():
-    """Show comprehensive help and documentation from the original Iota.py."""
+    """Show help and documentation for the Iota Calculator."""
     
-    st.header("📚 Comprehensive Iota Calculator Guide")
+    st.header("📚 Iota Calculator Guide")
     
     # Create help sub-tabs
     help_tab1, help_tab2, help_tab3, help_tab4, help_tab5, help_tab6 = st.tabs([
@@ -1813,7 +1813,7 @@ def show_comprehensive_help():
         4. **Note**: Rolling analysis uses Annualized Return instead of Cumulative Return for better scale consistency
         
         **Rationale:**
-        - **Comprehensive coverage**: These metrics capture different aspects of strategy performance
+        - **Multiple metrics**: These metrics capture different aspects of strategy performance
         - **Risk-adjustment**: Sharpe and Sortino ratios account for volatility and downside risk
         - **Comparability**: Same metrics across all time periods enable direct comparison
         
@@ -1826,7 +1826,7 @@ def show_comprehensive_help():
         **Rationale:**
         - **Standardization**: Converts absolute differences to standard deviation units for universal interpretation
         - **Sample size weighting**: Longer OOS periods get more weight (up to 1 year = full weight)
-        - **Robust statistics**: Median and standard deviation are less sensitive to outliers than mean
+        - **Statistical robustness**: Median and standard deviation are less sensitive to outliers than mean
         - **Intuitive scale**: ι = +1.0 means OOS performed 1 standard deviation better than typical
         
         ### Step 4: Statistical Testing with Autocorrelation Adjustment
@@ -1900,17 +1900,17 @@ def show_comprehensive_help():
         st.markdown("""
         ## Understanding Iota Values
         
-        | Iota Range | Rating Range | Interpretation | Action |
-        |------------|--------------|----------------|---------|
-        | **ι ≥ +2.0** | ~270+ | 🔥 **EXCEPTIONAL**: >2σ above median | Continue strategy, consider scaling |
-        | **ι ≥ +1.0** | ~165+ | ✅ **EXCELLENT**: >1σ above median | Strong performance, monitor |
-        | **ι ≥ +0.5** | ~128+ | 👍 **GOOD**: >0.5σ above median | Solid outperformance |
-        | **ι ≥ +0.25** | ~113+ | 📈 **SLIGHT_IMPROVEMENT** | Mild improvement |
-        | **-0.25 ≤ ι ≤ +0.25** | 88-113 | ➡️ **OOS closely matches backtest** | Performing as expected |
-        | **ι ≤ -0.25** | ~88- | ⚠️ **CAUTION**: Below median | Monitor closely |
-        | **ι ≤ -0.5** | ~78- | 🚨 **WARNING**: >0.5σ below | Consider adjustments |
-        | **ι ≤ -1.0** | ~60- | 🔴 **ALERT**: >1σ below | Significant concern |
-        | **ι ≤ -2.0** | ~36- | 💀 **CRITICAL**: >2σ below | Strategy likely failing |
+        | Iota Range | Rating Range | Interpretation |
+        |------------|--------------|----------------|
+        | **ι ≥ +2.0** | ~270+ | 🔥 **EXCEPTIONAL**: >2σ above median |
+        | **ι ≥ +1.0** | ~165+ | ✅ **STRONG**: >1σ above median |
+        | **ι ≥ +0.5** | ~128+ | 👍 **GOOD**: >0.5σ above median |
+        | **ι ≥ +0.25** | ~113+ | 📈 **SLIGHT_IMPROVEMENT** |
+        | **-0.25 ≤ ι ≤ +0.25** | 88-113 | ➡️ **OOS closely matches backtest** |
+        | **ι ≤ -0.25** | ~88- | ⚠️ **CAUTION**: Below median |
+        | **ι ≤ -0.5** | ~78- | 🚨 **WARNING**: >0.5σ below |
+        | **ι ≤ -1.0** | ~60- | 🔴 **ALERT**: >1σ below |
+        | **ι ≤ -2.0** | ~36- | 💀 **CRITICAL**: >2σ below |
         
         ## Persistence Ratings Explained
         
@@ -1930,40 +1930,13 @@ def show_comprehensive_help():
         - **Cross-strategy comparisons** easier (Rating 170 vs. Rating 90)
         - **Intuitive interpretation** without understanding standard deviations
         
-        ## Statistical Significance and P-Values
-        
-        ### **What the P-Value Means**
-        The p-value answers: *"If my strategy actually performed no differently than random historical periods, what's the probability I would see a difference this large or larger by pure chance?"*
-        
-        **Example interpretations:**
-        - **p = 0.001**: Only 0.1% chance this difference is due to random luck
-        - **p = 0.050**: 5% chance this difference is due to random luck  
-        - **p = 0.200**: 20% chance this difference is due to random luck
-        
-        ### **Significance Markers**
-        - ***** (3 asterisks) = p < 0.05 after autocorrelation adjustment = "statistically significant"
-        - **No asterisks**: p ≥ 0.05 = difference could plausibly be due to random variation
-        
-        ### **Autocorrelation Adjustment Impact**
-        When you see autocorrelation adjustment factors:
-        - **1.000**: No overlap, no adjustment needed
-        - **0.700**: Moderate overlap, typical for financial data
-        - **0.300**: Heavy overlap, very conservative adjustment
-        - **0.126**: Extreme overlap, maximally conservative testing
-        
-        **Lower adjustment factors** = **stronger correlation** = **more conservative testing**
-        
-        ### **Confidence Intervals**
-        - **95% range** of plausible iota values accounting for uncertainty
-        - **Narrow intervals**: High precision, confident in the estimate
-        - **Wide intervals**: High uncertainty, need more data or longer periods
-        - **Intervals crossing zero**: Performance difference might not be meaningful
+
         
         ## Sample Reliability Assessment
         
         | Min Sample Size | Reliability | Interpretation |
         |-----------------|-------------|----------------|
-        | **≥378 days** | HIGH_CONFIDENCE | ~1.5 years - excellent statistical power |
+        | **≥378 days** | HIGH_CONFIDENCE | ~1.5 years - strong statistical power |
         | **≥189 days** | MODERATE_CONFIDENCE | ~9 months - reasonable statistical power |
         | **≥90 days** | LOW_CONFIDENCE | ~4.5 months - limited but usable |
         | **<90 days** | INSUFFICIENT_DATA | <90 days - insufficient for reliable statistics |
@@ -2092,13 +2065,7 @@ def show_comprehensive_help():
         st.markdown("""
         ## What is Rolling Window Analysis?
         
-        Rolling window analysis divides your out-of-sample period into multiple overlapping time windows to detect **overfitting patterns** and **performance degradation** over time using sophisticated metrics.
-        
-        ### 🎯 Purpose
-        - **Advanced Overfitting Detection**: Comprehensive analysis of performance patterns over time
-        - **Sophisticated Trend Analysis**: Time spent above/below zero, magnitude analysis, area integration
-        - **Early Warning**: Catch degradation before it becomes severe
-        - **Strategy Validation**: Confirm consistent performance vs. lucky periods
+        Rolling window analysis divides your out-of-sample period into multiple overlapping time windows to detect overfitting patterns and performance persistence/degradation over time.
         
         ## How It Works
         
@@ -2117,10 +2084,10 @@ def show_comprehensive_help():
         - Tracks how performance compares to backtest expectations over time
         - Multiple metrics analyzed independently
         
-        ### Step 4: Advanced Risk Assessment
-        - **Sophisticated Scoring**: Time spent above/below zero, magnitude analysis, area integration, consistency
+        ### Step 4: Risk Assessment
+        - **Performance Scoring**: Time spent above/below zero, magnitude analysis, area integration, consistency
         - **Risk Classification**: MINIMAL → LOW → MODERATE → HIGH → CRITICAL
-        - **Comprehensive Analysis**: Multiple factors including area imbalance and performance variance
+        - **Multi-factor Analysis**: Multiple factors including area imbalance and performance variance
         
         ## Interpreting Rolling Analysis Results
         
@@ -2213,7 +2180,7 @@ def show_comprehensive_help():
         ## General Questions
         
         ### Q: What makes this different from just looking at returns?
-        **A:** This tool provides **statistical context**. Getting 30% returns is great, but if your strategy had a backtest suggesting 300%, that's not good. However, if the backtest consistently got 20-40%, then 30% means your strategy doesn't look overfit. That's excellent (and honestly, pretty rare)!
+        **A:** This tool provides **statistical context**. Getting 30% returns is great, but if your strategy had a backtest suggesting 300%, that's not good. However, if the backtest consistently got 20-40%, then 30% means your strategy doesn't look overfit. That's good performance.
         
         ### Q: Can this predict future performance?
         **A:** **No.** This is a **retrospective analysis tool**. It tells you how unusual your recent performance has been relative to history, but cannot predict what will happen next.
@@ -2229,7 +2196,7 @@ def show_comprehensive_help():
         
         ### Q: What's a "good" iota score?
         **A:** 
-        - **ι > +0.5**: Outstanding outperformance
+        - **ι > +0.5**: Strong outperformance
         - **ι ≈ 0**: Performing as expected (this is actually good!)
         - **ι < -0.5**: Concerning underperformance
         - **Remember**: ι = 0 means your strategy is working exactly as the backtest suggested
