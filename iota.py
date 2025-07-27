@@ -1981,9 +1981,7 @@ def show_comprehensive_help():
         **Market Regime Changes**: The analysis assumes market conditions during your backtest are representative of future conditions. Significant regime changes (e.g., from low to high volatility) can invalidate historical comparisons.
         
         **Strategy Evolution**: If you've modified your strategy between backtest and live trading, the comparison becomes less meaningful.
-        
-        **Data Quality**: The analysis is only as good as your input data. Ensure your returns are properly calculated and include all relevant costs (slippage, commissions, etc.).
-        
+                
         **Time Period Sensitivity**: Results can vary significantly based on your chosen in-sample and out-of-sample periods. Consider testing multiple time splits.
         
         ### When to Be Cautious
@@ -1995,7 +1993,7 @@ def show_comprehensive_help():
         
         ### Best Practices
         
-        1. **Validate assumptions**: Check if your strategy's returns are reasonably normally distributed
+        1. **Validate assumptions**: Check if your strategy's returns follow normal-ish distribution
         2. **Use multiple time periods**: Test different in-sample/out-of-sample splits
         3. **Consider market context**: Account for changing market conditions
         4. **Combine with other tools**: Don't rely solely on iota analysis for strategy evaluation
