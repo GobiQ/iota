@@ -832,7 +832,7 @@ def main():
                     auto_window = st.checkbox(
                         "Auto Window Size",
                         value=default_auto_window,
-                        help="Automatically determine optimal window size based on OOS period length"
+                        help="Automatically determine optimal window size based on OOS period length. If unchecked, you'll need to hit 'Run Iota Analysis' and then fill out your preferred window parameters"
                     )
                 else:
                     auto_window = True
