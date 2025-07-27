@@ -1619,14 +1619,32 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     high_std_metrics = []
     std_threshold = 0.75  # 75% threshold
     
-    if ar_stats['std_is'] > std_threshold:
-        high_std_metrics.append(f"Annualized Return ({ar_stats['std_is']:.1%})")
-    if sh_stats['std_is'] > std_threshold:
-        high_std_metrics.append(f"Sharpe Ratio ({sh_stats['std_is']:.3f})")
-    if cr_stats['std_is'] > std_threshold:
-        high_std_metrics.append(f"Cumulative Return ({cr_stats['std_is']:.1%})")
-    if so_stats['std_is'] > std_threshold:
-        high_std_metrics.append(f"Sortino Ratio ({so_stats['std_is']:.3f})")
+    # Get IS values from session state to calculate standard deviations
+    if hasattr(st.session_state, 'core_results') and st.session_state.core_results:
+        ar_is_values = st.session_state.core_results.get('ar_is_values', [])
+        sh_is_values = st.session_state.core_results.get('sh_is_values', [])
+        cr_is_values = st.session_state.core_results.get('cr_is_values', [])
+        so_is_values = st.session_state.core_results.get('so_is_values', [])
+        
+        if len(ar_is_values) > 0:
+            ar_std = np.std(ar_is_values)
+            if ar_std > std_threshold:
+                high_std_metrics.append(f"Annualized Return ({ar_std:.1%})")
+        
+        if len(sh_is_values) > 0:
+            sh_std = np.std(sh_is_values)
+            if sh_std > std_threshold:
+                high_std_metrics.append(f"Sharpe Ratio ({sh_std:.3f})")
+        
+        if len(cr_is_values) > 0:
+            cr_std = np.std(cr_is_values)
+            if cr_std > std_threshold:
+                high_std_metrics.append(f"Cumulative Return ({cr_std:.1%})")
+        
+        if len(so_is_values) > 0:
+            so_std = np.std(so_is_values)
+            if so_std > std_threshold:
+                high_std_metrics.append(f"Sortino Ratio ({so_std:.3f})")
     
     if high_std_metrics:
         st.warning(f"""
