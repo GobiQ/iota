@@ -1810,6 +1810,7 @@ def show_comprehensive_help():
         1. Four core metrics calculated for OOS period: Annualized Return, Sharpe Ratio, Cumulative Return, Sortino Ratio
         2. Same metrics calculated for each IS slice
         3. Statistical distribution properties computed for IS metrics (median, standard deviation, quartiles)
+        4. **Note**: Rolling analysis uses Annualized Return instead of Cumulative Return for better scale consistency
         
         **Rationale:**
         - **Comprehensive coverage**: These metrics capture different aspects of strategy performance
@@ -1861,18 +1862,20 @@ def show_comprehensive_help():
         2. **Historical comparison**: Each window compared against IS slice distribution
         3. **Time-specific analysis**: Performance patterns and trends over time
         4. **Full Backtest Rolling Analysis**: 252-day rolling windows across entire backtest period
+        5. **Metric consistency**: Uses Annualized Return instead of Cumulative Return for scale consistency
         
         **Rationale:**
         - **Performance tracking**: Shows how strategy performance evolves over time
         - **Temporal granularity**: Rolling windows reveal when and how performance changes
         - **Pattern identification**: Helps identify consistent vs. volatile performance
         - **Proxy iota analysis**: Full backtest analysis provides context for pre-OOS performance patterns
+        - **Scale consistency**: Annualized returns provide better comparison across different time periods
         
         ## CORE METRICS ANALYZED
         
-        1. **ANNUALIZED RETURN**: Yearly return percentage (CAGR)
+        1. **ANNUALIZED RETURN**: Yearly return percentage (CAGR) - **Used in rolling analysis for scale consistency**
         2. **SHARPE RATIO**: Risk-adjusted return measure (return per unit of total volatility)
-        3. **CUMULATIVE RETURN**: Total return over the entire period
+        3. **CUMULATIVE RETURN**: Total return over the entire period - **Used in core analysis and distributions**
         4. **SORTINO RATIO**: Downside risk-adjusted return (return per unit of downside volatility)
         
         ## AUTOCORRELATION ADJUSTMENT
@@ -2127,7 +2130,7 @@ def show_comprehensive_help():
         - **Gray line at ι = 0**: Neutral performance (matches historical median)
         - **Green dotted line at ι = +0.5**: Good performance threshold
         - **Red dotted line at ι = -0.5**: Poor performance threshold
-        - **Colored lines**: Individual metrics (Sharpe, Cumulative Return, Sortino)
+        - **Colored lines**: Individual metrics (Sharpe, Annualized Return, Sortino)
         - **Smoothing**: 3-period moving average reduces noise
         
         **Performance Patterns:**
@@ -2140,7 +2143,7 @@ def show_comprehensive_help():
         
         **Individual metric patterns indicate:**
         - **Sharpe Ratio**: Risk-adjusted performance trends over time
-        - **Cumulative Return**: Total returns evolution
+        - **Annualized Return**: Yearly return performance trends over time
         - **Sortino Ratio**: Downside risk management consistency
         
         ## Rolling Analysis Insights
@@ -2234,7 +2237,7 @@ def show_comprehensive_help():
         ### Q: Why are some metrics significant and others not?
         **A:** Different metrics measure different aspects of performance:
         - **Sharpe Ratio**: Risk-adjusted returns
-        - **Cumulative Return**: Total returns
+        - **Annualized Return**: Yearly return performance (rolling analysis) / **Cumulative Return**: Total returns (core analysis)
         - **Sortino Ratio**: Downside risk management
         - Your strategy might excel in one area but not others
         
@@ -2243,6 +2246,9 @@ def show_comprehensive_help():
         
         ### Q: What is "proxy iota" in the full backtest rolling analysis?
         **A:** Since iota technically only applies to true out-of-sample data, we use "proxy iota" for pre-OOS periods. Each 252-day rolling window is treated as a temporary "OOS" period and compared against the full in-sample distribution. This shows how your strategy performed relative to expectations throughout the backtest, providing context for your actual OOS performance.
+        
+        ### Q: Why does rolling analysis use Annualized Return instead of Cumulative Return?
+        **A:** Rolling analysis uses Annualized Return for scale consistency. Cumulative returns can vary dramatically based on the time period length, making comparisons difficult. Annualized returns normalize performance to a yearly basis, providing more consistent and interpretable comparisons across different rolling windows and time periods.
         
         ## Technical Questions
         
