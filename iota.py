@@ -1201,8 +1201,7 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
         st.markdown(f'<div class="success-card"><strong>Overall Assessment:</strong> {interpretation}</div>', 
                    unsafe_allow_html=True)
     elif avg_iota >= 0.1:
-        st.markdown(f'<div class="metric-card"><strong>Overall Assessment:</strong> {interpretation}</div>', 
-                   unsafe_allow_html=True)
+        st.info(f"📈 Overall Assessment: {interpretation}")
     elif avg_iota >= -0.1:
         st.info(f"⚠️ Overall Assessment: {interpretation}")
     elif avg_iota >= -0.5:
