@@ -192,21 +192,20 @@ def detect_distribution_characteristics(is_values: np.ndarray) -> Dict[str, Any]
         skewness = stats.skew(is_values)
         kurtosis = stats.kurtosis(is_values)
         
-        # Determine if distribution is problematic (more conservative thresholds)
-        is_skewed = abs(skewness) > 2.0  # More conservative threshold
-        has_fat_tails = kurtosis > 5.0   # More conservative threshold
+        # Determine if distribution is problematic (accurate thresholds)
+        is_skewed = abs(skewness) > 1.0  # Standard threshold for significant skewness
+        has_fat_tails = kurtosis > 3.0   # Standard threshold for excess kurtosis
         
-        # Determine recommended calculation method (very conservative approach)
-        # Only use non-standard methods for clearly problematic distributions
+        # Determine recommended calculation method (accuracy-focused approach)
         if is_normal and not is_skewed and not has_fat_tails:
             recommended_method = 'standard'
             confidence = 'high'
-        elif abs(skewness) > 3.0 or kurtosis > 7.0:  # Only for extreme cases
+        elif is_skewed or has_fat_tails:
             recommended_method = 'robust'
             confidence = 'medium'
         else:
-            # Default to standard method for most cases
-            recommended_method = 'standard'
+            # For unclear cases, use robust method as it's more general
+            recommended_method = 'robust'
             confidence = 'medium'
         
         return {
@@ -2154,9 +2153,9 @@ def show_comprehensive_help():
         
         **Distribution Detection:**
         - **Normality test**: D'Agostino K² test for normal distribution
-        - **Skewness analysis**: Detects asymmetric distributions (|skewness| > 2.0)
-        - **Kurtosis analysis**: Detects fat-tailed distributions (kurtosis > 5.0)
-        - **Method selection**: Uses standard method for most cases, robust method only for extreme distributions (|skewness| > 3.0 or kurtosis > 7.0)
+        - **Skewness analysis**: Detects asymmetric distributions (|skewness| > 1.0)
+        - **Kurtosis analysis**: Detects fat-tailed distributions (kurtosis > 3.0)
+        - **Method selection**: Uses standard method for normal distributions, robust method for skewed or fat-tailed distributions
         
         **Rationale:**
         - **Adaptive approach**: Different distribution shapes require different statistical methods
