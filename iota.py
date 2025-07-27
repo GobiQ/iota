@@ -940,13 +940,11 @@ def main():
                     base_url = "https://iotametrics.streamlit.app/"
                     shareable_url = f"{base_url}?{query_string}"
                     
-                    st.success("✅ Configuration saved! Redirecting to Results...")
-                    
                     # Store the shareable URL in session state for display outside the form
                     st.session_state.shareable_url = shareable_url
                     
                     # Success message with clear navigation instructions
-                    st.success("✅ Configuration saved! Please click the '📊 Results' tab above to view your analysis.")
+                    st.success("✅ Configuration saved! Click the '📊 Results' tab above to view your analysis.")
 
         # Display shareable URL outside the form (if available)
         if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
