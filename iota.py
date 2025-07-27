@@ -192,19 +192,21 @@ def detect_distribution_characteristics(is_values: np.ndarray) -> Dict[str, Any]
         skewness = stats.skew(is_values)
         kurtosis = stats.kurtosis(is_values)
         
-        # Determine if distribution is problematic
-        is_skewed = abs(skewness) > 1.0
-        has_fat_tails = kurtosis > 3.0
+        # Determine if distribution is problematic (more conservative thresholds)
+        is_skewed = abs(skewness) > 2.0  # More conservative threshold
+        has_fat_tails = kurtosis > 5.0   # More conservative threshold
         
-        # Determine recommended calculation method
+        # Determine recommended calculation method (very conservative approach)
+        # Only use non-standard methods for clearly problematic distributions
         if is_normal and not is_skewed and not has_fat_tails:
             recommended_method = 'standard'
             confidence = 'high'
-        elif is_skewed or has_fat_tails:
+        elif abs(skewness) > 3.0 or kurtosis > 7.0:  # Only for extreme cases
             recommended_method = 'robust'
             confidence = 'medium'
         else:
-            recommended_method = 'percentile'
+            # Default to standard method for most cases
+            recommended_method = 'standard'
             confidence = 'medium'
         
         return {
@@ -305,8 +307,8 @@ def compute_percentile_iota(is_values: np.ndarray, oos_value: float, n_oos: int,
     return w * z_score
 
 def compute_iota(is_metric: float, oos_metric: float, n_oos: int, n_ref: int = 252, eps: float = 1e-6, 
-                 lower_is_better: bool = False, is_values: np.ndarray = None) -> float:
-    """Distribution-aware iota calculation that adapts to the shape of the data."""
+                 lower_is_better: bool = False, is_values: np.ndarray = None, use_distribution_aware: bool = False) -> float:
+    """Iota calculation with optional distribution-aware methods."""
     if np.isinf(oos_metric):
         return 2.0 if not lower_is_better else -2.0
     
@@ -317,30 +319,32 @@ def compute_iota(is_metric: float, oos_metric: float, n_oos: int, n_ref: int = 2
     if len(finite_is) < 2:
         return 0.0
     
-    # Detect distribution characteristics
-    dist_info = detect_distribution_characteristics(finite_is)
+    # Use distribution-aware methods only if explicitly requested
+    if use_distribution_aware:
+        # Detect distribution characteristics
+        dist_info = detect_distribution_characteristics(finite_is)
+        
+        # Choose calculation method based on distribution
+        if dist_info['recommended_method'] == 'robust':
+            return compute_robust_iota(finite_is, oos_metric, n_oos, lower_is_better)
+        elif dist_info['recommended_method'] == 'percentile':
+            return compute_percentile_iota(finite_is, oos_metric, n_oos, lower_is_better)
     
-    # Choose calculation method based on distribution
-    if dist_info['recommended_method'] == 'robust':
-        return compute_robust_iota(finite_is, oos_metric, n_oos, lower_is_better)
-    elif dist_info['recommended_method'] == 'percentile':
-        return compute_percentile_iota(finite_is, oos_metric, n_oos, lower_is_better)
-    else:
-        # Standard method for normal distributions
-        is_median = np.median(finite_is)
-        is_std = np.std(finite_is, ddof=1)
-        
-        if is_std < eps:
-            return 0.0
-        
-        standardized_diff = (oos_metric - is_median) / is_std
-        
-        if lower_is_better:
-            standardized_diff = -standardized_diff
-        
-        w = min(1.0, np.sqrt(n_oos / n_ref))
-        
-        return w * standardized_diff
+    # Default to standard method (original behavior)
+    is_median = np.median(finite_is)
+    is_std = np.std(finite_is, ddof=1)
+    
+    if is_std < eps:
+        return 0.0
+    
+    standardized_diff = (oos_metric - is_median) / is_std
+    
+    if lower_is_better:
+        standardized_diff = -standardized_diff
+    
+    w = min(1.0, np.sqrt(n_oos / n_ref))
+    
+    return w * standardized_diff
 
 def iota_to_persistence_rating(iota_val: float, max_rating: int = 500) -> int:
     """Convert iota to persistence rating."""
@@ -411,7 +415,7 @@ def standard_bootstrap_confidence(is_values: np.ndarray, oos_value: float, n_oos
                 boot_sample = np.random.choice(is_values, size=len(is_values), replace=True)
                 boot_median = np.median(boot_sample)
                 boot_iota = compute_iota(boot_median, oos_value, n_oos, lower_is_better=lower_is_better, 
-                                       is_values=boot_sample)
+                                       is_values=boot_sample, use_distribution_aware=False)
                 if np.isfinite(boot_iota):
                     bootstrap_iotas.append(boot_iota)
             except Exception:
@@ -444,7 +448,7 @@ def wilcoxon_iota_test(is_values: np.ndarray, oos_value: float, n_oos: int,
     slice_iotas = []
     for is_val in is_values:
         iota_val = compute_iota(is_val, oos_value, n_oos, lower_is_better=lower_is_better, 
-                               is_values=is_values)
+                               is_values=is_values, use_distribution_aware=False)
         if np.isfinite(iota_val):
             slice_iotas.append(iota_val)
     
@@ -482,7 +486,7 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
     median_is = np.median(is_values)
     q25_is, q75_is = np.percentile(is_values, [25, 75])
     
-    iota = compute_iota(median_is, oos_value, n_oos, lower_is_better=lower_is_better, is_values=is_values)
+    iota = compute_iota(median_is, oos_value, n_oos, lower_is_better=lower_is_better, is_values=is_values, use_distribution_aware=True)
     persistence_rating = iota_to_persistence_rating(iota)
     
     ci_lower, ci_upper = bootstrap_iota_confidence(is_values, oos_value, n_oos, 
@@ -620,7 +624,7 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
                 
                 if len(is_values) > 0 and np.isfinite(oos_value):
                     iota = compute_iota(np.median(is_values), oos_value, window_size, 
-                                      lower_is_better=lower_is_better, is_values=is_values)
+                                      lower_is_better=lower_is_better, is_values=is_values, use_distribution_aware=False)
                     window_iotas[metric] = iota
                 else:
                     window_iotas[metric] = np.nan
@@ -1020,11 +1024,12 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             elif metric_key == 'so':
                 window_metric = sortino_ratio(window_returns)
             
-                        # Calculate iota using the IS distribution and this window's value
-            if np.isfinite(window_metric):
-                # For rolling iota, each window is treated as an "OOS" period
-                # So n_oos should be the window size (252 days)
-                iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
+                                        # Calculate iota using the IS distribution and this window's value
+                if np.isfinite(window_metric):
+                    # For rolling iota, each window is treated as an "OOS" period
+                    # So n_oos should be the window size (252 days)
+                    # Use standard method for rolling analysis (not distribution-aware)
+                    iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'], use_distribution_aware=False)
                 
 
                 
@@ -1813,7 +1818,27 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     else:
         st.markdown(f'<div class="critical-card" style="font-size: 1.2rem;"><strong>⚠️ {interpretation}</strong></div>', unsafe_allow_html=True)
     
-    st.markdown("---")  # Add divider before detailed metrics
+    # Detailed metrics section
+    st.subheader("📈 Detailed Metric Analysis")
+    st.markdown("")  # Add spacing
+    
+    metrics_data = [
+        ("Annualized Return", ar_stats, ar_oos, lambda x: f"{x*100:.2f}%"),
+        ("Sharpe Ratio", sh_stats, sh_oos, lambda x: f"{x:.3f}"),
+        ("Cumulative Return", cr_stats, cr_oos, lambda x: f"{x*100:.2f}%"),
+        ("Sortino Ratio", so_stats, so_oos, format_sortino_output)
+    ]
+    
+    for i, (metric_name, stats_dict, oos_val, formatter) in enumerate(metrics_data):
+        with st.expander(f"📊 {metric_name}", expanded=True):
+            display_metric_detail(metric_name, stats_dict, oos_val, formatter)
+        
+        # Add spacing between expanders (except for the last one)
+        if i < len(metrics_data) - 1:
+            st.markdown("")  # Add spacing between metric sections
+    
+    # Add distribution-aware analysis section at the bottom
+    st.markdown("---")  # Add divider before distribution analysis
     
     # Check for distribution issues and show distribution-aware analysis
     distribution_issues = []
@@ -1869,25 +1894,6 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
         
         **Recommendation**: The adjusted iota values should be more reliable than standard calculations for these metrics.
         """)
-    
-    # Detailed metrics section
-    st.subheader("📈 Detailed Metric Analysis")
-    st.markdown("")  # Add spacing
-    
-    metrics_data = [
-        ("Annualized Return", ar_stats, ar_oos, lambda x: f"{x*100:.2f}%"),
-        ("Sharpe Ratio", sh_stats, sh_oos, lambda x: f"{x:.3f}"),
-        ("Cumulative Return", cr_stats, cr_oos, lambda x: f"{x*100:.2f}%"),
-        ("Sortino Ratio", so_stats, so_oos, format_sortino_output)
-    ]
-    
-    for i, (metric_name, stats_dict, oos_val, formatter) in enumerate(metrics_data):
-        with st.expander(f"📊 {metric_name}", expanded=True):
-            display_metric_detail(metric_name, stats_dict, oos_val, formatter)
-        
-        # Add spacing between expanders (except for the last one)
-        if i < len(metrics_data) - 1:
-            st.markdown("")  # Add spacing between metric sections
 
 def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
     """Display detailed analysis for a single metric."""
@@ -2051,9 +2057,9 @@ def show_comprehensive_help():
         st.markdown("""
         ## WHAT IS IOTA (ι)?
         
-        Iota is a metric that measures how far your out-of-sample performance differs from the in-sample median, adjusted for sample size.
+        Iota is a standardized metric that measures how many standard deviations your out-of-sample performance differs from the in-sample median, adjusted for sample size.
         
-        **Standard Formula:** `ι = weight × (OOS_metric - IS_median) / IS_std_dev`
+        **Formula:** `ι = weight × (OOS_metric - IS_median) / IS_std_dev`
         
         Where:
         - `weight = min(1.0, √(OOS_days / 252))` accounts for sample size reliability
