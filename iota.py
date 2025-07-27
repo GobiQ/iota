@@ -360,23 +360,23 @@ def interpret_iota_directly(iota_val: float) -> str:
         return "UNDEFINED"
     
     if iota_val >= 2.0:
-        return "🔥 EXCEPTIONAL: OOS >2σ above IS median"
+        return "🔥 EXCEPTIONAL: OOS significantly above expectations"
     elif iota_val >= 1.0:
-        return "✅ EXCELLENT: OOS >1σ above IS median"
+        return "✅ EXCELLENT: OOS well above expectations"
     elif iota_val >= 0.5:
-        return "👍 GOOD: OOS >0.5σ above IS median"
+        return "👍 GOOD: OOS above expectations"
     elif iota_val >= 0.25:
-        return "📈 SLIGHT_IMPROVEMENT: OOS mildly above IS median"
+        return "📈 SLIGHT_IMPROVEMENT: OOS mildly above expectations"
     elif iota_val >= -0.25:
         return "🎯 OOS closely matches backtest"
     elif iota_val >= -0.5:
-        return "📉 OOS slightly below IS median"
+        return "📉 OOS slightly below expectations"
     elif iota_val >= -1.0:
-        return "🚨 WARNING: OOS >0.5σ below IS median"
+        return "🚨 WARNING: OOS below expectations"
     elif iota_val >= -2.0:
-        return "🔴 ALERT: OOS >1σ below IS median"
+        return "🔴 ALERT: OOS significantly below expectations"
     else:
-        return "💀 CRITICAL: OOS >2σ below IS median"
+        return "💀 CRITICAL: OOS severely below expectations"
 
 def calculate_autocorrelation_adjustment(values: np.ndarray, overlap: bool) -> float:
     """Calculate autocorrelation adjustment factor for overlapping slice p-values."""
@@ -950,9 +950,9 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
     fig.add_hline(y=0, line_dash="solid", line_color="gray", 
                   annotation_text="Neutral Performance", annotation_position="bottom right")
     fig.add_hline(y=0.5, line_dash="dot", line_color="lightgreen", 
-                  annotation_text="Overperformance (+0.5σ)", annotation_position="top right")
+                  annotation_text="Overperformance (+0.5)", annotation_position="top right")
     fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral", 
-                  annotation_text="Underperformance (-0.5σ)", annotation_position="bottom right")
+                  annotation_text="Underperformance (-0.5)", annotation_position="bottom right")
     
     # Update layout
     n_windows = rolling_results.get('n_windows', 0)
@@ -2237,15 +2237,15 @@ def show_comprehensive_help():
         
         | Iota Range | Rating Range | Interpretation |
         |------------|--------------|----------------|
-        | **ι ≥ +2.0** | ~270+ | 🔥 **EXCEPTIONAL**: >2σ above median |
-        | **ι ≥ +1.0** | ~165+ | ✅ **STRONG**: >1σ above median |
-        | **ι ≥ +0.5** | ~128+ | 👍 **GOOD**: >0.5σ above median |
+        | **ι ≥ +2.0** | ~270+ | 🔥 **EXCEPTIONAL**: Significantly above expectations |
+        | **ι ≥ +1.0** | ~165+ | ✅ **STRONG**: Well above expectations |
+        | **ι ≥ +0.5** | ~128+ | 👍 **GOOD**: Above expectations |
         | **ι ≥ +0.25** | ~113+ | 📈 **SLIGHT_IMPROVEMENT** |
         | **-0.25 ≤ ι ≤ +0.25** | 88-113 | ➡️ **OOS closely matches backtest** |
-        | **ι ≤ -0.25** | ~88- | ⚠️ **CAUTION**: Below median |
-        | **ι ≤ -0.5** | ~78- | 🚨 **WARNING**: >0.5σ below |
-        | **ι ≤ -1.0** | ~60- | 🔴 **ALERT**: >1σ below |
-        | **ι ≤ -2.0** | ~36- | 💀 **CRITICAL**: >2σ below |
+        | **ι ≤ -0.25** | ~88- | ⚠️ **CAUTION**: Below expectations |
+        | **ι ≤ -0.5** | ~78- | 🚨 **WARNING**: Below expectations |
+        | **ι ≤ -1.0** | ~60- | 🔴 **ALERT**: Significantly below expectations |
+        | **ι ≤ -2.0** | ~36- | 💀 **CRITICAL**: Severely below expectations |
         
         ## Persistence Ratings Explained
         
