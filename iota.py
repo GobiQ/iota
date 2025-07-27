@@ -1523,7 +1523,56 @@ def main():
                     st.caption(f"{oos_ret.index[0]} to {oos_ret.index[-1]}")
                 with col3:
                     reliability = assess_sample_reliability(n_is, n_oos)
-                    st.metric("Reliability", reliability.replace("_", " "))
+                    
+                    # Create tooltip text based on reliability level
+                    if reliability == "HIGH_CONFIDENCE":
+                        tooltip_text = "≥378 days (~1.5 years) - Strong statistical power for reliable analysis"
+                    elif reliability == "MODERATE_CONFIDENCE":
+                        tooltip_text = "189-377 days (~9 months) - Reasonable statistical power"
+                    elif reliability == "LOW_CONFIDENCE":
+                        tooltip_text = "90-188 days (~4.5 months) - Limited but usable statistical power"
+                    else:  # INSUFFICIENT_DATA
+                        tooltip_text = "<90 days - Insufficient data for reliable statistical analysis"
+                    
+                    # Create custom metric with tooltip
+                    st.markdown(f"""
+                    <div style="position: relative; display: inline-block;">
+                        <div class="metric-container" style="
+                            background-color: #f0f2f6;
+                            padding: 1rem;
+                            border-radius: 0.5rem;
+                            border-left: 4px solid #1f77b4;
+                            margin: 0.5rem 0;
+                            cursor: help;
+                        ">
+                            <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.25rem;">Reliability</div>
+                            <div style="font-size: 1.5rem; font-weight: bold; color: #333;">{reliability.replace('_', ' ')}</div>
+                        </div>
+                        <div class="tooltip" style="
+                            visibility: hidden;
+                            width: 300px;
+                            background-color: #333;
+                            color: white;
+                            text-align: center;
+                            border-radius: 6px;
+                            padding: 8px;
+                            position: absolute;
+                            z-index: 1;
+                            bottom: 125%;
+                            left: 50%;
+                            margin-left: -150px;
+                            font-size: 0.875rem;
+                            opacity: 0;
+                            transition: opacity 0.3s;
+                        ">{tooltip_text}</div>
+                    </div>
+                    <style>
+                    .metric-container:hover .tooltip {{
+                        visibility: visible;
+                        opacity: 1;
+                    }}
+                    </style>
+                    """, unsafe_allow_html=True)
                 
                 st.markdown("---")  # Add divider before analysis
                 st.markdown("### 🧮 Core Analysis")
