@@ -1633,6 +1633,14 @@ def main():
                         config = core_results.get('config', {})
                         oos_start_dt = config.get('oos_start')
                         
+                        # Debug: Check what's available
+                        st.write("Debug - Available keys:", list(core_results.keys()))
+                        st.write("Debug - oos_start_dt:", oos_start_dt)
+                        st.write("Debug - daily_ret in core_results:", 'daily_ret' in core_results)
+                        if 'daily_ret' in core_results:
+                            st.write("Debug - daily_ret type:", type(core_results['daily_ret']))
+                            st.write("Debug - daily_ret length:", len(core_results['daily_ret']))
+                        
                         if oos_start_dt and 'daily_ret' in core_results:
                             full_fig = create_full_backtest_rolling_plot(
                                 core_results['daily_ret'],
@@ -1650,6 +1658,10 @@ def main():
                             st.plotly_chart(full_fig, use_container_width=True)
                         else:
                             st.warning("⚠️ Missing data for full backtest chart")
+                            if not oos_start_dt:
+                                st.write("Missing: oos_start_dt")
+                            if 'daily_ret' not in core_results:
+                                st.write("Missing: daily_ret")
                     else:
                         st.warning("⚠️ Core results not available for full backtest chart")
                     
