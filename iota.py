@@ -1024,29 +1024,49 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             elif metric_key == 'so':
                 window_metric = sortino_ratio(window_returns)
             
-                                        # Calculate iota using the IS distribution and this window's value
-                if np.isfinite(window_metric):
-                    # For rolling iota, each window is treated as an "OOS" period
-                    # So n_oos should be the window size (252 days)
-                    # Use standard method for rolling analysis (not distribution-aware)
-                    iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'], use_distribution_aware=False)
-                
-
+            # Calculate iota using the IS distribution and this window's value
+            if np.isfinite(window_metric):
+                # For rolling iota, each window is treated as an "OOS" period
+                # So n_oos should be the window size (252 days)
+                # Use standard method for rolling analysis (not distribution-aware)
+                iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'], use_distribution_aware=False)
                 
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
                     rolling_dates.append(all_dates[i-1])  # Use end date of window
         
-        # Add smoothed line for this metric
+        # Add line for this metric
         if len(rolling_iotas) >= 3:
             rolling_iotas_smooth = smooth_iotas(rolling_iotas, window=3)
             fig.add_trace(go.Scatter(
                 x=rolling_dates,
                 y=rolling_iotas_smooth,
                 mode='lines+markers',
-                name=f'{metric_info["name"]} Iota (smoothed)',
+                name=f'{metric_info["name"]} Iota',
                 line=dict(color=metric_info['color'], width=2),
-                marker=dict(size=3)
+                marker=dict(size=3),
+                showlegend=True
+            ))
+        elif len(rolling_iotas) > 0:
+            # Add unsmoothed line if we have some data but not enough for smoothing
+            fig.add_trace(go.Scatter(
+                x=rolling_dates,
+                y=rolling_iotas,
+                mode='lines+markers',
+                name=f'{metric_info["name"]} Iota',
+                line=dict(color=metric_info['color'], width=2),
+                marker=dict(size=3),
+                showlegend=True
+            ))
+        else:
+            # Add empty trace to ensure legend shows all metrics
+            fig.add_trace(go.Scatter(
+                x=[],
+                y=[],
+                mode='lines',
+                name=f'{metric_info["name"]} Iota (no data)',
+                line=dict(color=metric_info['color'], width=2),
+                showlegend=True
             ))
     
     # Add OOS start date vertical line using add_shape instead of add_vline
