@@ -454,7 +454,7 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
             window_num = len(windows) + 1
             
             window_sh = sharpe_ratio(window_data)
-            window_cr = cumulative_return(window_data)
+            window_cr = window_cagr(window_data)  # Use annualized return for consistency
             window_so = sortino_ratio(window_data)
             
             window_iotas = {}
@@ -766,7 +766,7 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
     
     # Add metric lines
     colors = {'sh': '#9467bd', 'cr': '#1f77b4', 'so': '#ff7f0e'}
-    names = {'sh': 'Sharpe Ratio', 'cr': 'Cumulative Return', 'so': 'Sortino Ratio'}
+    names = {'sh': 'Sharpe Ratio', 'cr': 'Annualized Return', 'so': 'Sortino Ratio'}
     
     for metric in ['sh', 'cr', 'so']:
         metric_data = []
@@ -871,11 +871,7 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
                 # So n_oos should be the window size (252 days)
                 iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
                 
-                # Debug: Print first few annualized return values to understand the scale
-                if len(rolling_iotas) < 5 and metric_key == 'cr':
-                    is_mean = np.mean(metric_info['is_values'])
-                    is_std = np.std(metric_info['is_values'])
-                    print(f"AR Debug - Window {len(rolling_iotas)+1}: window_metric={window_metric:.6f}, IS_mean={is_mean:.6f}, IS_std={is_std:.6f}, iota={iota_val:.4f}")
+
                 
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
