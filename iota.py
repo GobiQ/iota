@@ -269,17 +269,34 @@ def compute_percentile_iota(is_values: np.ndarray, oos_value: float, n_oos: int,
     # Find what percentile the OOS value falls in
     percentile = stats.percentileofscore(finite_is, oos_value)
     
-    # Convert to z-score equivalent
-    # 50th percentile = 0, 84th percentile = 1, 16th percentile = -1
-    # Using normal distribution approximation
-    if percentile == 50:
-        z_score = 0.0
-    elif percentile > 50:
-        # Above median - use upper tail
-        z_score = (percentile - 50) / 34  # 34% is roughly 1 std dev in normal dist
-    else:
-        # Below median - use lower tail
-        z_score = (percentile - 50) / 34
+    # Convert percentile to z-score using inverse normal CDF
+    # This provides a proper conversion from percentile to standard normal z-score
+    try:
+        from scipy.stats import norm
+        # Convert percentile to decimal (0-1)
+        percentile_decimal = percentile / 100.0
+        
+        # Handle edge cases
+        if percentile_decimal <= 0:
+            z_score = -3.0  # Very low percentile
+        elif percentile_decimal >= 1:
+            z_score = 3.0   # Very high percentile
+        else:
+            # Use inverse normal CDF to get z-score
+            z_score = norm.ppf(percentile_decimal)
+            
+            # Cap extreme values to reasonable range
+            z_score = np.clip(z_score, -3.0, 3.0)
+    except ImportError:
+        # Fallback method if scipy.norm is not available
+        if percentile == 50:
+            z_score = 0.0
+        elif percentile > 50:
+            # Above median - use upper tail
+            z_score = (percentile - 50) / 34  # 34% is roughly 1 std dev in normal dist
+        else:
+            # Below median - use lower tail
+            z_score = (percentile - 50) / 34
     
     if lower_is_better:
         z_score = -z_score
@@ -1058,6 +1075,47 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
     title_text = f'{symphony_name} - Full Backtest Rolling Iota Proxy Analysis'
     subtitle_text = f'{window_size}d rolling windows | Smoothed trends'
     
+    # Calculate y-axis range based on all iota values
+    all_iotas = []
+    for metric_key, metric_info in metrics_data.items():
+        rolling_iotas = []
+        for i in range(window_size, len(all_dates)):
+            window_returns = daily_ret.iloc[i-window_size:i]
+            
+            if metric_key == 'sh':
+                window_metric = sharpe_ratio(window_returns)
+            elif metric_key == 'cr':
+                window_metric = window_cagr(window_returns)
+            elif metric_key == 'so':
+                window_metric = sortino_ratio(window_returns)
+            
+            if np.isfinite(window_metric):
+                iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
+                if np.isfinite(iota_val):
+                    all_iotas.append(iota_val)
+    
+    # Set reasonable y-axis range
+    if all_iotas:
+        y_min = min(all_iotas)
+        y_max = max(all_iotas)
+        y_range = y_max - y_min
+        
+        # Ensure minimum range and reasonable bounds
+        if y_range < 0.1:  # If range is too small, expand it
+            y_center = (y_max + y_min) / 2
+            y_min = y_center - 0.5
+            y_max = y_center + 0.5
+        else:
+            # Add some padding
+            y_min = y_min - 0.1 * y_range
+            y_max = y_max + 0.1 * y_range
+        
+        # Ensure reasonable bounds for iota values
+        y_min = max(y_min, -3.0)
+        y_max = min(y_max, 3.0)
+    else:
+        y_min, y_max = -1.0, 1.0
+    
     fig.update_layout(
         title=dict(
             text=f"{title_text}<br><sub>{subtitle_text}</sub>",
@@ -1067,6 +1125,11 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
         ),
         xaxis_title="Date",
         yaxis_title="Iota (ι)",
+        yaxis=dict(
+            range=[y_min, y_max],
+            tickmode='auto',
+            nticks=10
+        ),
         hovermode='x unified',
         legend=dict(
             yanchor="top",
