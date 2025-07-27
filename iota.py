@@ -215,10 +215,10 @@ def interpret_iota_directly(iota_val: float) -> str:
         return "✅ EXCELLENT: OOS >1σ above IS median"
     elif iota_val >= 0.5:
         return "👍 GOOD: OOS >0.5σ above IS median"
-    elif iota_val >= 0.1:
+    elif iota_val >= 0.25:
         return "📈 SLIGHT_IMPROVEMENT: OOS mildly above IS median"
-    elif iota_val >= -0.1:
-        return "➡️ NEUTRAL: OOS ≈ IS median"
+    elif iota_val >= -0.25:
+        return "🎯 OOS closely matches backtest"
     elif iota_val >= -0.5:
         return "📉 OOS slightly below IS median"
     elif iota_val >= -1.0:
