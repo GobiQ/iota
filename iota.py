@@ -1943,18 +1943,18 @@ def show_comprehensive_help():
         
         ## Example Interpretation
         
-        **Scenario**: Your strategy historically got 15% annual returns. In the last year, you got 25%.
+        **Scenario**: Your strategy backtest showed 25% annual returns with Sharpe ratio of 1.8. After 6 months of live trading, you're getting -5% returns with Sharpe ratio of -0.3.
         
         **What Iota Analysis Shows**:
-        1. Looks at 100 historical 1-year periods
-        2. Finds you typically got 5% to 25% returns
-        3. Calculates that 25% is normal (Iota ≈ +0.3)
-        4. **Conclusion**: "Your strategy is working as expected, you had a good year"
+        1. Looks at 100 historical 6-month periods from your backtest
+        2. Finds your strategy typically got 8% to 18% returns with Sharpe ratios of 0.8 to 2.2
+        3. Calculates that -5% returns and -0.3 Sharpe are far below historical expectations (Iota ≈ -2.1)
+        4. **Conclusion**: "Your strategy is severely underperforming relative to backtest expectations - likely overfit"
         
-        **VS. if you got 50% returns**:
+        **VS. if you got 12% returns with Sharpe 1.5**:
         1. Same historical analysis
-        2. 50% is much higher than your historical range (Iota ≈ +3.0)
-        3. **Conclusion**: "Either unusual market conditions or strategy behavior has changed"
+        2. 12% returns and 1.5 Sharpe fall within your historical range (Iota ≈ +0.2)
+        3. **Conclusion**: "Your strategy is performing as expected based on backtest"
         """)
     
     with help_tab4:
