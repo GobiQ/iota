@@ -1245,7 +1245,7 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     elif avg_iota >= -0.1:
         st.info(f"⚠️ Overall Assessment: {interpretation}")
     elif avg_iota >= -0.5:
-        st.warning(f"⚠️ Overall Assessment: {interpretation}")
+        st.info(f"📉 Overall Assessment: {interpretation}")
     else:
         st.error(f"⚠️ Overall Assessment: {interpretation}")
     
