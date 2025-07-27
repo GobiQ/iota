@@ -697,6 +697,9 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
 
 def main():
     
+    # Initialize query parameters for sharing
+    query_params = st.experimental_get_query_params()
+    
     # Custom CSS
     st.markdown("""
     <style>
@@ -753,8 +756,10 @@ def main():
             st.subheader("📝 Required Information")
             
             # Symphony URL
+            default_url = query_params.get("url", [""])[0] if "url" in query_params else ""
             url = st.text_input(
                 "Composer Symphony URL *",
+                value=default_url,
                 help="Enter the full URL of your Composer symphony",
                 placeholder="https://app.composer.trade/symphony/..."
             )
@@ -762,23 +767,26 @@ def main():
             # Date configuration
             col1, col2 = st.columns(2)
             with col1:
+                default_early_date = query_params.get("early_date", ["2000-01-01"])[0] if "early_date" in query_params else "2000-01-01"
                 early_date = st.date_input(
                     "Data Start Date:",
-                    value=date(2000, 1, 1),
+                    value=date.fromisoformat(default_early_date),
                     help="How far back to fetch historical data"
                 )
             
             with col2:
+                default_today_date = query_params.get("today_date", [date.today().isoformat()])[0] if "today_date" in query_params else date.today().isoformat()
                 today_date = st.date_input(
                     "Data End Date:",
-                    value=date.today(),
+                    value=date.fromisoformat(default_today_date),
                     help="End date for data fetching"
                 )
             
             # OOS start date - this is crucial
+            default_oos_start = query_params.get("oos_start", [(date.today() - timedelta(days=730)).isoformat()])[0] if "oos_start" in query_params else (date.today() - timedelta(days=730)).isoformat()
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
-                value=date.today() - timedelta(days=730),  # Default 2 years ago
+                value=date.fromisoformat(default_oos_start),
                 help="⚠️ CRITICAL: Date when your 'live trading' or out-of-sample period begins. Everything before this is historical backtest data, everything after is 'real world' performance."
             )
             
@@ -788,18 +796,20 @@ def main():
             # Analysis parameters in columns
             col1, col2 = st.columns(2)
             with col1:
+                default_n_slices = int(query_params.get("n_slices", ["100"])[0]) if "n_slices" in query_params else 100
                 n_slices = st.number_input(
                     "Number of IS Slices:",
                     min_value=10,
                     max_value=500,
-                    value=100,
+                    value=default_n_slices,
                     help="How many historical periods to compare against (more = better statistics, slower analysis)"
                 )
             
             with col2:
+                default_overlap = query_params.get("overlap", ["true"])[0].lower() == "true" if "overlap" in query_params else True
                 overlap = st.checkbox(
                     "Allow Overlapping Slices",
-                    value=True,
+                    value=default_overlap,
                     help="Whether historical comparison periods can overlap (recommended: True for more data)"
                 )
             
@@ -807,17 +817,19 @@ def main():
             st.subheader("🔄 Rolling Analysis Parameters")
             col1, col2 = st.columns(2)
             with col1:
+                default_enable_rolling = query_params.get("enable_rolling", ["true"])[0].lower() == "true" if "enable_rolling" in query_params else True
                 enable_rolling = st.checkbox(
                     "Enable Rolling Window Analysis",
-                    value=True,
+                    value=default_enable_rolling,
                     help="Perform overfitting detection using rolling windows"
                 )
             
             with col2:
                 if enable_rolling:
+                    default_auto_window = query_params.get("auto_window", ["true"])[0].lower() == "true" if "auto_window" in query_params else True
                     auto_window = st.checkbox(
                         "Auto Window Size",
-                        value=True,
+                        value=default_auto_window,
                         help="Automatically determine optimal window size based on OOS period length"
                     )
                 else:
@@ -827,19 +839,21 @@ def main():
             if enable_rolling and not auto_window:
                 col1, col2 = st.columns(2)
                 with col1:
+                    default_window_size = int(query_params.get("window_size", ["126"])[0]) if "window_size" in query_params else 126
                     window_size = st.number_input(
                         "Window Size (days):",
                         min_value=21,
                         max_value=252,
-                        value=126,
+                        value=default_window_size,
                         help="Size of each rolling window in days"
                     )
                 with col2:
+                    default_step_size = int(query_params.get("step_size", ["21"])[0]) if "step_size" in query_params else 21
                     step_size = st.number_input(
                         "Step Size (days):",
                         min_value=1,
                         max_value=63,
-                        value=21,
+                        value=default_step_size,
                         help="Days between window starts"
                     )
             else:
@@ -886,7 +900,59 @@ def main():
                     }
                     st.session_state.run_analysis = True
                     st.session_state.auto_switch_to_results = True
+                    
+                    # Update URL with current parameters for sharing
+                    params = {
+                        "url": url,
+                        "early_date": early_date.isoformat(),
+                        "today_date": today_date.isoformat(),
+                        "oos_start": oos_start.isoformat(),
+                        "n_slices": str(n_slices),
+                        "overlap": str(overlap).lower(),
+                        "exclusions_str": exclusions_str,
+                        "enable_rolling": str(enable_rolling).lower(),
+                        "auto_window": str(auto_window).lower(),
+                    }
+                    if window_size is not None:
+                        params["window_size"] = str(window_size)
+                    if step_size is not None:
+                        params["step_size"] = str(step_size)
+                    
+                    # Create shareable URL
+                    query_string = "&".join([f"{k}={v}" for k, v in params.items() if v])
+                    current_url = st.experimental_get_query_params()
+                    shareable_url = f"?{query_string}"
+                    
                     st.success("✅ Configuration saved! Redirecting to Results...")
+                    
+                    # Display shareable URL with copy button
+                    st.markdown("### 🔗 Share Your Analysis")
+                    st.info(f"**Shareable URL**: Copy this link to share your analysis settings with others:")
+                    st.code(shareable_url, language=None)
+                    
+                    # Add copy button using JavaScript
+                    st.markdown(f"""
+                    <script>
+                    function copyToClipboard() {{
+                        navigator.clipboard.writeText('{shareable_url}').then(function() {{
+                            // Show success message
+                            const button = document.querySelector('button[onclick="copyToClipboard()"]');
+                            if (button) {{
+                                const originalText = button.textContent;
+                                button.textContent = '✅ Copied!';
+                                button.style.backgroundColor = '#28a745';
+                                setTimeout(() => {{
+                                    button.textContent = originalText;
+                                    button.style.backgroundColor = '';
+                                }}, 2000);
+                            }}
+                        }});
+                    }}
+                    </script>
+                    <button onclick="copyToClipboard()" style="background-color: #1f77b4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 8px;">
+                        📋 Copy URL
+                    </button>
+                    """, unsafe_allow_html=True)
                     
                     # Auto-navigate to Results tab using JavaScript
                     st.markdown("""
@@ -1360,10 +1426,16 @@ def show_comprehensive_help():
         - **Exclusion Windows**: Optional - exclude market crashes or unusual periods
         
         ### 4. 🚀 Run the Analysis
-        - Click "Run Enhanced Iota Analysis"
+        - Click "Run Iota Analysis"
         - Wait for the analysis to complete (may take 2-3 minutes)
         - View core results in the "Results" tab
         - Check rolling analysis in the "Rolling Analysis" tab
+        
+        ### 5. 🔗 Share Your Analysis
+        - After running the analysis, a shareable URL will be generated
+        - Copy the URL to share your exact configuration and results with others
+        - Anyone with the link can view the same analysis settings and results
+        - Perfect for team collaboration, peer review, or documentation
         
         ## Understanding Your Results
         
