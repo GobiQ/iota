@@ -1016,7 +1016,20 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             if np.isfinite(window_metric):
                 # For rolling iota, each window is treated as an "OOS" period
                 # So n_oos should be the window size (252 days)
+                
+                # Debug: Check the values being passed to compute_iota
+                if i == window_size + 1:  # Only debug the first calculation
+                    st.write(f"Debug - {metric_info['name']} window_metric:", window_metric)
+                    st.write(f"Debug - {metric_info['name']} IS values mean:", np.mean(metric_info['is_values']))
+                    st.write(f"Debug - {metric_info['name']} IS values std:", np.std(metric_info['is_values']))
+                    st.write(f"Debug - {metric_info['name']} window_size:", window_size)
+                
                 iota_val = compute_iota(metric_info['is_values'], window_metric, window_size)
+                
+                # Debug: Check the iota result
+                if i == window_size + 1:  # Only debug the first calculation
+                    st.write(f"Debug - {metric_info['name']} iota_val:", iota_val)
+                
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
                     rolling_dates.append(all_dates[i-1])  # Use end date of window
