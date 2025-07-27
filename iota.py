@@ -2051,9 +2051,9 @@ def show_comprehensive_help():
         st.markdown("""
         ## WHAT IS IOTA (ι)?
         
-        Iota is a standardized metric that measures how many standard deviations your out-of-sample performance differs from the in-sample median, adjusted for sample size.
+        Iota is a metric that measures how far your out-of-sample performance differs from the in-sample median, adjusted for sample size.
         
-        **Formula:** `ι = weight × (OOS_metric - IS_median) / IS_std_dev`
+        **Standard Formula:** `ι = weight × (OOS_metric - IS_median) / IS_std_dev`
         
         Where:
         - `weight = min(1.0, √(OOS_days / 252))` accounts for sample size reliability
