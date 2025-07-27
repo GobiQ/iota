@@ -969,6 +969,106 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
     
     return fig
 
+def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date, 
+                                     ar_is_values: np.ndarray, sh_is_values: np.ndarray, 
+                                     cr_is_values: np.ndarray, so_is_values: np.ndarray,
+                                     ar_oos: float, sh_oos: float, cr_oos: float, so_oos: float,
+                                     symphony_name: str, window_size: int = 252) -> go.Figure:
+    """Create interactive Plotly plot for rolling iota analysis across entire backtest period."""
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Get all dates from daily returns
+    all_dates = daily_ret.index.tolist()
+    
+    # Calculate rolling iota for each metric across the entire period
+    metrics_data = {
+        'sh': {'is_values': sh_is_values, 'oos_value': sh_oos, 'name': 'Sharpe Ratio', 'color': '#9467bd'},
+        'cr': {'is_values': cr_is_values, 'oos_value': cr_oos, 'name': 'Cumulative Return', 'color': '#1f77b4'},
+        'so': {'is_values': so_is_values, 'oos_value': so_oos, 'name': 'Sortino Ratio', 'color': '#ff7f0e'}
+    }
+    
+    # Calculate rolling iota for each metric
+    for metric_key, metric_info in metrics_data.items():
+        rolling_iotas = []
+        rolling_dates = []
+        
+        # Use window_size to calculate rolling iota
+        for i in range(window_size, len(all_dates)):
+            # Get the window of returns
+            window_returns = daily_ret.iloc[i-window_size:i]
+            
+            # Calculate metric for this window
+            if metric_key == 'sh':
+                window_metric = sharpe_ratio(window_returns)
+            elif metric_key == 'cr':
+                window_metric = cumulative_return(window_returns)
+            elif metric_key == 'so':
+                window_metric = sortino_ratio(window_returns)
+            
+            # Calculate iota using the IS distribution and this window's value
+            if np.isfinite(window_metric):
+                iota_val = compute_iota(metric_info['is_values'], window_metric, window_size)
+                if np.isfinite(iota_val):
+                    rolling_iotas.append(iota_val)
+                    rolling_dates.append(all_dates[i-1])  # Use end date of window
+        
+        # Add smoothed line for this metric
+        if len(rolling_iotas) >= 3:
+            rolling_iotas_smooth = smooth_iotas(rolling_iotas, window=3)
+            fig.add_trace(go.Scatter(
+                x=rolling_dates,
+                y=rolling_iotas_smooth,
+                mode='lines+markers',
+                name=f'{metric_info["name"]} Iota (smoothed)',
+                line=dict(color=metric_info['color'], width=2),
+                marker=dict(size=3)
+            ))
+    
+    # Add OOS start date vertical line
+    fig.add_vline(
+        x=oos_start_dt,
+        line_dash="dash",
+        line_color="red",
+        line_width=2,
+        annotation_text="OOS Start",
+        annotation_position="top right"
+    )
+    
+    # Add reference lines
+    fig.add_hline(y=0, line_dash="solid", line_color="gray", 
+                  annotation_text="Neutral Performance", annotation_position="bottom right")
+    fig.add_hline(y=0.5, line_dash="dot", line_color="lightgreen", 
+                  annotation_text="Overperformance (+0.5σ)", annotation_position="top right")
+    fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral", 
+                  annotation_text="Underperformance (-0.5σ)", annotation_position="bottom right")
+    
+    # Update layout
+    title_text = f'{symphony_name} - Full Backtest Rolling Iota Analysis'
+    subtitle_text = f'{window_size}d rolling windows | Smoothed trends'
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{title_text}<br><sub>{subtitle_text}</sub>",
+            x=0.5,
+            xanchor='center',
+            font=dict(size=16)
+        ),
+        xaxis_title="Date",
+        yaxis_title="Iota (ι)",
+        hovermode='x unified',
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        ),
+        height=500
+    )
+    
+    return fig
+
 # ===== STREAMLIT APP =====
 
 def main():
@@ -1388,6 +1488,7 @@ def main():
                 # Store core results in session state for other tabs
                 st.session_state.core_results = {
                     'sym_name': sym_name,
+                    'daily_ret': daily_ret,
                     'ar_stats': ar_stats,
                     'sh_stats': sh_stats,
                     'cr_stats': cr_stats,
@@ -1533,9 +1634,39 @@ def main():
                     sym_name = st.session_state.core_results['sym_name']
                     
                     # Center the chart section header
-                    st.markdown('<h3 style="text-align: center;">📈 Rolling Performance Chart</h3>', unsafe_allow_html=True)
+                    st.markdown('<h3 style="text-align: center;">📈 OOS Rolling Performance Chart</h3>', unsafe_allow_html=True)
                     fig = create_rolling_analysis_plot(rolling_results, sym_name)
                     st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Add full backtest rolling chart
+                    st.markdown("")  # Add spacing
+                    st.markdown('<h3 style="text-align: center;">📊 Full Backtest Rolling Iota Chart</h3>', unsafe_allow_html=True)
+                    
+                    # Get required data from core_results
+                    if hasattr(st.session_state, 'core_results') and st.session_state.core_results:
+                        core_results = st.session_state.core_results
+                        config = core_results.get('config', {})
+                        oos_start_dt = config.get('oos_start')
+                        
+                        if oos_start_dt and 'daily_ret' in core_results:
+                            full_fig = create_full_backtest_rolling_plot(
+                                core_results['daily_ret'],
+                                oos_start_dt,
+                                core_results['ar_is_values'],
+                                core_results['sh_is_values'],
+                                core_results['cr_is_values'],
+                                core_results['so_is_values'],
+                                core_results['ar_oos'],
+                                core_results['sh_oos'],
+                                core_results['cr_oos'],
+                                core_results['so_oos'],
+                                sym_name
+                            )
+                            st.plotly_chart(full_fig, use_container_width=True)
+                        else:
+                            st.warning("⚠️ Missing data for full backtest chart")
+                    else:
+                        st.warning("⚠️ Core results not available for full backtest chart")
                     
                     # Show last window info (centered)
                     if rolling_results.get('windows'):
