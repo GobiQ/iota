@@ -1026,16 +1026,28 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
                 marker=dict(size=3)
             ))
     
-    # Add OOS start date vertical line
+    # Add OOS start date vertical line using add_shape instead of add_vline
     # Convert date to datetime for Plotly compatibility
     oos_start_datetime = pd.Timestamp(oos_start_dt)
-    fig.add_vline(
+    fig.add_shape(
+        type="line",
+        x0=oos_start_datetime,
+        x1=oos_start_datetime,
+        y0=0,
+        y1=1,
+        yref="paper",
+        line=dict(color="red", width=2, dash="dash")
+    )
+    
+    # Add annotation for the OOS start line
+    fig.add_annotation(
         x=oos_start_datetime,
-        line_dash="dash",
-        line_color="red",
-        line_width=2,
-        annotation_text="OOS Start",
-        annotation_position="top right"
+        y=1.02,
+        yref="paper",
+        text="OOS Start",
+        showarrow=False,
+        font=dict(color="red", size=12),
+        xanchor="left"
     )
     
     # Add reference lines
