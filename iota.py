@@ -604,15 +604,15 @@ def interpret_overfitting_risk(rolling_results: Dict[str, Any]) -> str:
     
     return interpretation
 
-def create_distribution_histograms(ar_stats, sh_stats, cr_stats, so_stats, ar_oos, sh_oos, cr_oos, so_oos, symphony_name: str):
+def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_is_values, ar_oos, sh_oos, cr_oos, so_oos, symphony_name: str):
     """Create histogram plots showing in-sample distributions with OOS values marked."""
     
     # Define metrics and their data
     metrics_data = [
-        ("Annualized Return", ar_stats['is_values'], ar_oos, lambda x: f"{x*100:.2f}%", "Annualized Return (%)"),
-        ("Sharpe Ratio", sh_stats['is_values'], sh_oos, lambda x: f"{x:.3f}", "Sharpe Ratio"),
-        ("Cumulative Return", cr_stats['is_values'], cr_oos, lambda x: f"{x*100:.2f}%", "Cumulative Return (%)"),
-        ("Sortino Ratio", so_stats['is_values'], so_oos, format_sortino_output, "Sortino Ratio")
+        ("Annualized Return", ar_is_values, ar_oos, lambda x: f"{x*100:.2f}%", "Annualized Return (%)"),
+        ("Sharpe Ratio", sh_is_values, sh_oos, lambda x: f"{x:.3f}", "Sharpe Ratio"),
+        ("Cumulative Return", cr_is_values, cr_oos, lambda x: f"{x*100:.2f}%", "Cumulative Return (%)"),
+        ("Sortino Ratio", so_is_values, so_oos, format_sortino_output, "Sortino Ratio")
     ]
     
     # Create subplots
@@ -1192,7 +1192,11 @@ def main():
                     'cr_oos': cr_oos,
                     'so_oos': so_oos,
                     'reliability': reliability,
-                    'config': config
+                    'config': config,
+                    'ar_is_values': df["ar_is"].values,
+                    'sh_is_values': df["sh_is"].values,
+                    'cr_is_values': df["cr_is"].values,
+                    'so_is_values': df["so_is"].values
                 }
                 
                 # Display core results
@@ -1242,10 +1246,10 @@ def main():
             
             # Create and display histogram
             fig = create_distribution_histograms(
-                core_results['ar_stats'], 
-                core_results['sh_stats'], 
-                core_results['cr_stats'], 
-                core_results['so_stats'],
+                core_results['ar_is_values'], 
+                core_results['sh_is_values'], 
+                core_results['cr_is_values'], 
+                core_results['so_is_values'],
                 core_results['ar_oos'], 
                 core_results['sh_oos'], 
                 core_results['cr_oos'], 
