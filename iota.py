@@ -634,25 +634,57 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
         row = (i // 2) + 1
         col = (i % 2) + 1
         
+        # Scale values for percentage metrics (Annualized Return and Cumulative Return)
+        if metric_name in ["Annualized Return", "Cumulative Return"]:
+            scaled_is_values = is_values * 100
+            scaled_oos_val = oos_val * 100
+        else:
+            scaled_is_values = is_values
+            scaled_oos_val = oos_val
+        
         # Create histogram for in-sample values
         fig.add_trace(
             go.Histogram(
-                x=is_values,
+                x=scaled_is_values,
                 name=metric_name,
                 nbinsx=40,
                 opacity=0.7,
                 marker_color=colors[i],
                 showlegend=False,
                 hovertemplate=f"<b>{metric_name}</b><br>" +
-                             "IS Value: %{x}<br>" +
+                             f"IS Value: %{{x}}{'%' if metric_name in ['Annualized Return', 'Cumulative Return'] else ''}<br>" +
                              "Count: %{y}<extra></extra>"
             ),
             row=row, col=col
         )
         
-        # Add vertical line for OOS value
+        # Calculate median for in-sample values
+        median_val = np.median(is_values)
+        if metric_name in ["Annualized Return", "Cumulative Return"]:
+            scaled_median_val = median_val * 100
+        else:
+            scaled_median_val = median_val
+        
+        # Add vertical line for median value (blue dashed line)
         fig.add_vline(
-            x=oos_val,
+            x=scaled_median_val,
+            line_dash="dash",
+            line_color="blue",
+            line_width=2,
+            annotation_text=f"Median: {formatter(median_val)}",
+            annotation_position="top left",
+            annotation=dict(
+                font=dict(size=10, color="blue"),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="blue",
+                borderwidth=1
+            ),
+            row=row, col=col
+        )
+        
+        # Add vertical line for OOS value (red dashed line)
+        fig.add_vline(
+            x=scaled_oos_val,
             line_dash="dash",
             line_color="red",
             line_width=3,
