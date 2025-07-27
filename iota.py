@@ -220,7 +220,7 @@ def interpret_iota_directly(iota_val: float) -> str:
     elif iota_val >= -0.1:
         return "➡️ NEUTRAL: OOS ≈ IS median"
     elif iota_val >= -0.5:
-        return "⚠️ CAUTION: OOS below IS median"
+        return "📉 OOS slightly below IS median"
     elif iota_val >= -1.0:
         return "🚨 WARNING: OOS >0.5σ below IS median"
     elif iota_val >= -2.0:
@@ -914,6 +914,12 @@ def main():
                         if (tabButtons.length === 0) {
                             tabButtons = document.querySelectorAll('div[role="tablist"] button');
                         }
+                        if (tabButtons.length === 0) {
+                            tabButtons = document.querySelectorAll('button[data-baseweb="tab"]');
+                        }
+                        if (tabButtons.length === 0) {
+                            tabButtons = document.querySelectorAll('[role="tab"]');
+                        }
                         
                         // Click the second tab (Results tab)
                         if (tabButtons.length >= 2) {
@@ -926,10 +932,43 @@ def main():
                         }
                     }
                     
-                    // Try multiple times with increasing delays
-                    setTimeout(clickResultsTab, 1000);
-                    setTimeout(clickResultsTab, 2000);
-                    setTimeout(clickResultsTab, 3000);
+                    // Function to try clicking by text content
+                    function clickByText() {
+                        const buttons = document.querySelectorAll('button');
+                        for (let button of buttons) {
+                            if (button.textContent.includes('Results') || button.textContent.includes('📊')) {
+                                button.click();
+                                console.log('Clicked Results tab by text content');
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                    
+                    // Try multiple methods with increasing delays
+                    setTimeout(() => {
+                        if (!clickResultsTab()) {
+                            clickByText();
+                        }
+                    }, 500);
+                    
+                    setTimeout(() => {
+                        if (!clickResultsTab()) {
+                            clickByText();
+                        }
+                    }, 1500);
+                    
+                    setTimeout(() => {
+                        if (!clickResultsTab()) {
+                            clickByText();
+                        }
+                    }, 2500);
+                    
+                    setTimeout(() => {
+                        if (!clickResultsTab()) {
+                            clickByText();
+                        }
+                    }, 3500);
                     </script>
                     """, unsafe_allow_html=True)
                     
@@ -1190,7 +1229,7 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     with col1:
         st.metric("Composite Iota", f"{avg_iota:+.3f}")
     with col2:
-        st.metric("Average Rating", f"{avg_rating}")
+        st.metric("Composite Persistence Rating", f"{avg_rating}")
     
     st.markdown("")  # Add spacing after metrics
     
