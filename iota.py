@@ -678,6 +678,7 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
         title=dict(
             text=f"{title_text}<br><sub>{subtitle_text}</sub>",
             x=0.5,
+            xanchor='center',
             font=dict(size=16)
         ),
         xaxis_title="Time Period (OOS)",
@@ -1251,11 +1252,6 @@ def main():
                              help="Risk assessment based on proportion of time spent underperforming (-0.5 iota threshold). MINIMAL/LOW = good, MODERATE = concerning, HIGH/CRITICAL = likely overfit.")
                 
                 st.markdown("")  # Add spacing
-                
-                # Show interpretation
-                st.markdown("### 🎯 Interpretation")
-                interpretation = interpret_overfitting_risk(rolling_results)
-                st.info(interpretation)
                 
                 # Create and display plot
                 if hasattr(st.session_state, 'core_results'):
