@@ -1454,6 +1454,10 @@ def main():
                 if oos_start and today_date:
                     oos_days = (today_date - oos_start).days
                     st.info(f"**Time Slice Size**: {oos_days} days (matching OOS period length)")
+                else:
+                    st.info("**Time Slice Size**: Unable to determine (missing date information)")
+            else:
+                st.info("**Time Slice Size**: Unable to determine (missing configuration)")
             
             # Display distribution histograms
             st.markdown("### 📈 Metric Distributions")
