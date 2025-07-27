@@ -278,15 +278,15 @@ def compute_percentile_iota(is_values: np.ndarray, oos_value: float, n_oos: int,
         
         # Handle edge cases
         if percentile_decimal <= 0:
-            z_score = -3.0  # Very low percentile
+            z_score = -10.0  # Very low percentile
         elif percentile_decimal >= 1:
-            z_score = 3.0   # Very high percentile
+            z_score = 10.0   # Very high percentile
         else:
             # Use inverse normal CDF to get z-score
             z_score = norm.ppf(percentile_decimal)
             
-            # Cap extreme values to reasonable range
-            z_score = np.clip(z_score, -3.0, 3.0)
+            # Don't cap the values - let them be as extreme as the data suggests
+            # This allows for proper representation of truly extreme performance
     except ImportError:
         # Fallback method if scipy.norm is not available
         if percentile == 50:
@@ -1110,9 +1110,8 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             y_min = y_min - 0.1 * y_range
             y_max = y_max + 0.1 * y_range
         
-        # Ensure reasonable bounds for iota values
-        y_min = max(y_min, -3.0)
-        y_max = min(y_max, 3.0)
+        # Don't cap the bounds - let the data determine the range
+        # This allows for extreme iota values to be visible
     else:
         y_min, y_max = -1.0, 1.0
     
@@ -1980,6 +1979,7 @@ def show_comprehensive_help():
         
         ### Key Features:
         - 📊 **Core Iota Analysis**: Compare OOS performance to historical expectations
+        - 🧠 **Distribution-Aware Analysis**: Automatically adapts to your data's distribution shape
         - 📊 **Distribution Analysis**: Visualize in-sample distributions with OOS values
         - 🔄 **Rolling Window Analysis**: Time-specific performance analysis with rolling windows
         - 📈 **Interactive Visualizations**: Track performance trends with Plotly charts
@@ -2093,17 +2093,37 @@ def show_comprehensive_help():
         - **Risk-adjustment**: Sharpe and Sortino ratios account for volatility and downside risk
         - **Comparability**: Same metrics across all time periods enable direct comparison
         
-        ### Step 3: Enhanced Iota Calculation
+        ### Step 3: Distribution-Aware Iota Calculation
         **What happens:**
+        The system automatically detects the distribution characteristics of your data and chooses the most appropriate calculation method:
+        
+        **Standard Method** (for normal distributions):
         ```
         ι = weight × (OOS_metric - IS_median) / IS_std_dev
         ```
         
+        **Robust Method** (for skewed or fat-tailed distributions):
+        ```
+        ι = weight × (OOS_metric - IS_median) / (IS_IQR / 1.35)
+        ```
+        
+        **Percentile Method** (for complex distributions):
+        ```
+        ι = weight × z_score_from_percentile(OOS_percentile_rank)
+        ```
+        
+        **Distribution Detection:**
+        - **Normality test**: D'Agostino K² test for normal distribution
+        - **Skewness analysis**: Detects asymmetric distributions (|skewness| > 1.0)
+        - **Kurtosis analysis**: Detects fat-tailed distributions (kurtosis > 3.0)
+        - **Method selection**: Automatically chooses the most appropriate calculation
+        
         **Rationale:**
-        - **Standardization**: Converts absolute differences to standard deviation units for universal interpretation
-        - **Sample size weighting**: Longer OOS periods get more weight (up to 1 year = full weight)
-        - **Statistical robustness**: Median and standard deviation are less sensitive to outliers than mean
-        - **Intuitive scale**: ι = +1.0 means OOS performed 1 standard deviation better than typical
+        - **Adaptive approach**: Different distribution shapes require different statistical methods
+        - **Robust statistics**: IQR-based methods are less sensitive to outliers than standard deviation
+        - **Percentile ranking**: Direct ranking approach for complex, non-normal distributions
+        - **Automatic detection**: No manual intervention required - system adapts to your data
+        - **Intuitive scale**: All methods produce comparable iota values for interpretation
         
         ### Step 4: Statistical Testing with Autocorrelation Adjustment
         **What happens:**
@@ -2513,6 +2533,15 @@ def show_comprehensive_help():
         
         ### Q: Why does rolling analysis use Annualized Return instead of Cumulative Return?
         **A:** Rolling analysis uses Annualized Return for scale consistency. Cumulative returns can vary dramatically based on the time period length, making comparisons difficult. Annualized returns normalize performance to a yearly basis, providing more consistent and interpretable comparisons across different rolling windows and time periods.
+        
+        ### Q: What is "Distribution-Aware Analysis" and how does it work?
+        **A:** The system automatically detects the shape of your strategy's performance distribution and chooses the most appropriate statistical method:
+        
+        - **Standard Method**: Used for normal distributions (traditional mean/std approach)
+        - **Robust Method**: Used for skewed or fat-tailed distributions (IQR-based, less sensitive to outliers)
+        - **Percentile Method**: Used for complex distributions (percentile-based ranking)
+        
+        The system runs normality tests, analyzes skewness and kurtosis, and automatically selects the best calculation method for your data. This ensures more accurate iota values regardless of your strategy's distribution characteristics.
         
         ## Technical Questions
         
