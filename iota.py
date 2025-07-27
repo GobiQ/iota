@@ -607,6 +607,9 @@ def interpret_overfitting_risk(rolling_results: Dict[str, Any]) -> str:
 def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_is_values, ar_oos, sh_oos, cr_oos, so_oos, symphony_name: str):
     """Create histogram plots showing in-sample distributions with OOS values marked."""
     
+    # Import make_subplots
+    from plotly.subplots import make_subplots
+    
     # Define metrics and their data
     metrics_data = [
         ("Annualized Return", ar_is_values, ar_oos, lambda x: f"{x*100:.2f}%", "Annualized Return (%)"),
@@ -615,25 +618,37 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
         ("Sortino Ratio", so_is_values, so_oos, format_sortino_output, "Sortino Ratio")
     ]
     
-    # Create subplots
-    fig = go.Figure()
-    
     # Colors for different metrics
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
     
+    # Create subplots - 2x2 grid
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=[metric[0] for metric in metrics_data],
+        vertical_spacing=0.1,
+        horizontal_spacing=0.1
+    )
+    
+    # Add histograms for each metric
     for i, (metric_name, is_values, oos_val, formatter, axis_title) in enumerate(metrics_data):
+        row = (i // 2) + 1
+        col = (i % 2) + 1
+        
         # Create histogram for in-sample values
-        fig.add_trace(go.Histogram(
-            x=is_values,
-            name=f"{metric_name} (IS)",
-            nbinsx=20,
-            opacity=0.7,
-            marker_color=colors[i],
-            showlegend=True,
-            hovertemplate=f"<b>{metric_name}</b><br>" +
-                         "IS Value: %{x}<br>" +
-                         "Count: %{y}<extra></extra>"
-        ))
+        fig.add_trace(
+            go.Histogram(
+                x=is_values,
+                name=metric_name,
+                nbinsx=20,
+                opacity=0.7,
+                marker_color=colors[i],
+                showlegend=False,
+                hovertemplate=f"<b>{metric_name}</b><br>" +
+                             "IS Value: %{x}<br>" +
+                             "Count: %{y}<extra></extra>"
+            ),
+            row=row, col=col
+        )
         
         # Add vertical line for OOS value
         fig.add_vline(
@@ -644,11 +659,12 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
             annotation_text=f"OOS: {formatter(oos_val)}",
             annotation_position="top right",
             annotation=dict(
-                font=dict(size=12, color="red"),
+                font=dict(size=10, color="red"),
                 bgcolor="rgba(255,255,255,0.8)",
                 bordercolor="red",
                 borderwidth=1
-            )
+            ),
+            row=row, col=col
         )
     
     # Update layout
@@ -659,18 +675,20 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
             xanchor='center',
             font=dict(size=16)
         ),
-        xaxis_title="Metric Values",
-        yaxis_title="Frequency",
-        barmode='overlay',
-        height=600,
-        showlegend=True,
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01
-        )
+        height=800,
+        showlegend=False
     )
+    
+    # Update axes labels
+    fig.update_xaxes(title_text="Value", row=1, col=1)
+    fig.update_xaxes(title_text="Value", row=1, col=2)
+    fig.update_xaxes(title_text="Value", row=2, col=1)
+    fig.update_xaxes(title_text="Value", row=2, col=2)
+    
+    fig.update_yaxes(title_text="Frequency", row=1, col=1)
+    fig.update_yaxes(title_text="Frequency", row=1, col=2)
+    fig.update_yaxes(title_text="Frequency", row=2, col=1)
+    fig.update_yaxes(title_text="Frequency", row=2, col=2)
     
     return fig
 
