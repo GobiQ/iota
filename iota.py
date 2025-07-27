@@ -720,6 +720,7 @@ def main():
         }
         .metric-card {
             background-color: #f0f2f6;
+            color: #333;
             padding: 1rem;
             border-radius: 0.5rem;
             border-left: 4px solid #1f77b4;
@@ -1178,7 +1179,7 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     st.markdown("")  # Add spacing
     
     # Metrics in columns
-    col1, col2, col3, col4 = st.columns(4)t.columns(4)t.columns(4)
+    col1, col2 = st.columns(2)
     
     # Calculate average iota
     iotas = [ar_stats['iota'], sh_stats['iota'], cr_stats['iota'], so_stats['iota']]
@@ -1187,27 +1188,9 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     avg_rating = iota_to_persistence_rating(avg_iota)
     
     with col1:
-        st.metric("Average Iota", f"{avg_iota:+.3f}")
+        st.metric("Composite Iota", f"{avg_iota:+.3f}")
     with col2:
         st.metric("Average Rating", f"{avg_rating}")
-    with col3:
-        st.metric("Reliability", reliability.replace("_", " "))
-    with col4:
-        sig_count = sum([ar_stats['significant'], sh_stats['significant'], 
-                        cr_stats['significant'], so_stats['significant']])
-        st.metric("Significant Metrics", f"{sig_count}/4")
-    with col3:
-        st.metric("Reliability", reliability.replace("_", " "))
-    with col4:
-        sig_count = sum([ar_stats['significant'], sh_stats['significant'], 
-                        cr_stats['significant'], so_stats['significant']])
-        st.metric("Significant Metrics", f"{sig_count}/4")
-    with col3:
-        st.metric("Reliability", reliability.replace("_", " "))
-    with col4:
-        sig_count = sum([ar_stats['significant'], sh_stats['significant'], 
-                        cr_stats['significant'], so_stats['significant']])
-        st.metric("Significant Metrics", f"{sig_count}/4")
     
     st.markdown("")  # Add spacing after metrics
     
@@ -1220,6 +1203,7 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     elif avg_iota >= 0.1:
         st.markdown(f'<div class="metric-card"><strong>Overall Assessment:</strong> {interpretation}</div>', 
                    unsafe_allow_html=True)
+    elif avg_iota >= -0.1:
         st.info(f"⚠️ Overall Assessment: {interpretation}")
     elif avg_iota >= -0.5:
         st.warning(f"⚠️ Overall Assessment: {interpretation}")
