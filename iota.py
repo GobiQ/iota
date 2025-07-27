@@ -1031,11 +1031,7 @@ def main():
             # Display the URL in a code block for easy copying
             st.code(st.session_state.shareable_url, language=None)
             
-            # Display the URL in a code block for easy copying
-            st.code(st.session_state.shareable_url, language=None)
-            
-            # Create a text area that's easier to copy from
-            st.markdown("**📋 Copy the URL above or from the text area below:**")
+            # Create a text area for easy copying
             st.text_area(
                 "Shareable URL (select all and copy):",
                 value=st.session_state.shareable_url,
