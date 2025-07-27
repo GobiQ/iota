@@ -838,12 +838,11 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
     all_dates = daily_ret.index.tolist()
     
     # Calculate rolling iota for each metric across the entire period
-    # Note: For cumulative return, the IS values are calculated from 252-day slices within the IS period,
-    # while rolling windows calculate cumulative returns from 252-day windows across the entire backtest.
-    # This could create scale differences if the IS period has different characteristics than the full backtest.
+    # For rolling analysis, we'll use annualized returns instead of cumulative returns
+    # to ensure scale consistency across different time periods
     metrics_data = {
         'sh': {'is_values': sh_is_values, 'oos_value': sh_oos, 'name': 'Sharpe Ratio', 'color': '#9467bd'},
-        'cr': {'is_values': cr_is_values, 'oos_value': cr_oos, 'name': 'Cumulative Return', 'color': '#1f77b4'},
+        'cr': {'is_values': ar_is_values, 'oos_value': ar_oos, 'name': 'Annualized Return', 'color': '#1f77b4'},  # Use annualized return instead
         'so': {'is_values': so_is_values, 'oos_value': so_oos, 'name': 'Sortino Ratio', 'color': '#ff7f0e'}
     }
     
@@ -861,18 +860,22 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             if metric_key == 'sh':
                 window_metric = sharpe_ratio(window_returns)
             elif metric_key == 'cr':
-                # Use cumulative return to match the IS slice calculation method
-                window_metric = cumulative_return(window_returns)
+                # Use annualized return for consistency with the IS annualized return values
+                window_metric = window_cagr(window_returns)
             elif metric_key == 'so':
                 window_metric = sortino_ratio(window_returns)
             
-            # Calculate iota using the IS distribution and this window's value
+                        # Calculate iota using the IS distribution and this window's value
             if np.isfinite(window_metric):
                 # For rolling iota, each window is treated as an "OOS" period
                 # So n_oos should be the window size (252 days)
                 iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
                 
-
+                # Debug: Print first few annualized return values to understand the scale
+                if len(rolling_iotas) < 5 and metric_key == 'cr':
+                    is_mean = np.mean(metric_info['is_values'])
+                    is_std = np.std(metric_info['is_values'])
+                    print(f"AR Debug - Window {len(rolling_iotas)+1}: window_metric={window_metric:.6f}, IS_mean={is_mean:.6f}, IS_std={is_std:.6f}, iota={iota_val:.4f}")
                 
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
