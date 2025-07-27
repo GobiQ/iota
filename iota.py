@@ -1472,8 +1472,8 @@ def show_comprehensive_help():
         - **>100**: Outperforming expectations
         - **<100**: Underperforming expectations
 
-        ### 🔄 Overfitting Risk
-        **Rolling analysis shows if your strategy is degrading over time:**
+        ### 🔄 Decay Risk
+        **Rolling analysis shows if your strategy has degraded out of sample:**
         
         - **MINIMAL/LOW**: Strategy working as expected ✅
         - **MODERATE**: Some concerns, monitor closely ⚠️
@@ -1716,14 +1716,14 @@ def show_comprehensive_help():
         
         ## Interpreting Rolling Analysis Results
         
-        ### 🎯 Overfitting Risk Levels
+        ### 🎯 Decay Risk Levels
         
         | Risk Level | Degradation Score | Interpretation | Action Required |
         |------------|-------------------|----------------|-----------------|
         | **MINIMAL** | 0-1 | ✅ Consistent performance | Continue monitoring |
         | **LOW** | 2-4 | ℹ️ Minor inconsistencies | Periodic review |
         | **MODERATE** | 5-7 | ⚠️ Some degradation detected | Monitor closely |
-        | **HIGH** | 8-11 | 🚨 Significant degradation | Consider re-optimization |
+        | **HIGH** | 8-11 | 🚨 Significant degradation | Consider re-assessment |
         | **CRITICAL** | 12+ | 💀 Severe degradation | Likely overfit, urgent review |
         
         ### 📈 Understanding the Rolling Plot
@@ -1836,7 +1836,7 @@ def show_comprehensive_help():
         **A:** 
         - **Core analysis**: Overall assessment of your entire OOS period
         - **Rolling analysis**: Detects **when** and **how** performance changes over time
-        - **Together**: Complete picture of strategy health and overfitting risk
+        - **Together**: Complete picture of strategy health, decay and overfitting risk
         
         ## Interpretation Questions
         
@@ -1896,13 +1896,13 @@ def show_comprehensive_help():
         ### Q: All my iotas are near zero - is this bad?
         **A:** **No!** Iotas near zero mean your strategy is performing **exactly as expected** based on historical patterns. This is actually **good** - it means your backtest was realistic and your strategy is working as designed.
         
-        ### Q: Rolling analysis shows high overfitting risk - what now?
+        ### Q: Rolling analysis shows high decay risk - what now?
         **A:**
         1. **Don't panic** - check if it's due to recent market conditions
         2. **Review strategy parameters** - may need adjustment for current market
         3. **Extend backtesting period** - include more market regimes
         4. **Consider position size reduction** - while investigating
-        5. **Monitor daily** - track if degradation continues or stabilizes
+        5. **Monitor** - track if degradation continues or stabilizes
         
         ## Best Practices
         
