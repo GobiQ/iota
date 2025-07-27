@@ -936,7 +936,8 @@ def main():
                             encoded_params.append(f"{encoded_key}={encoded_value}")
                     
                     query_string = "&".join(encoded_params)
-                    shareable_url = f"?{query_string}"
+                    base_url = "https://iotametrics.streamlit.app/"
+                    shareable_url = f"{base_url}?{query_string}"
                     
                     st.success("✅ Configuration saved! Redirecting to Results...")
                     
