@@ -1610,15 +1610,15 @@ def show_comprehensive_help():
         - Iota calculated for each window vs. historical expectations
         - Tracks how each metric performs over time
         
-        ### Step 3: Trend Detection
-        - Linear regression on iota values over time
-        - Slope indicates whether performance is improving, stable, or declining
+        ### Step 3: Performance Tracking
+        - Iota values calculated for each time window
+        - Tracks how performance compares to backtest expectations over time
         - Multiple metrics analyzed independently
         
         ### Step 4: Risk Assessment
-        - **Degradation Score**: Composite measure of performance decay
+        - **Degradation Score**: Composite measure based on time spent underperforming
         - **Risk Classification**: MINIMAL → LOW → MODERATE → HIGH → CRITICAL
-        - **Trend Analysis**: Rate of change in performance metrics
+        - **Proportion Analysis**: Percentage of time spent below performance threshold
         
         ## Interpreting Rolling Analysis Results
         
@@ -1642,47 +1642,46 @@ def show_comprehensive_help():
         - **Smoothing**: 3-period moving average reduces noise
         
         **Healthy Patterns (Low Risk):**
-        - ✅ Iotas fluctuate around zero with no strong downward trend
+        - ✅ Iotas fluctuate around zero with minimal time below -0.5
         - ✅ Multiple metrics show similar, stable patterns
-        - ✅ Trend slopes near zero or slightly positive
+        - ✅ Less than 20% of time spent underperforming
         
         **Warning Patterns (Moderate Risk):**
-        - ⚠️ Gradual decline in iotas over time
-        - ⚠️ Some metrics declining while others stable
-        - ⚠️ Trend slopes between -0.05 and -0.15
+        - ⚠️ Some periods of underperformance (20-40% of time below -0.5)
+        - ⚠️ Some metrics underperforming while others stable
+        - ⚠️ Moderate proportion of time below performance threshold
         
         **Critical Patterns (High Risk):**
-        - 🚨 Sharp downward trends in multiple metrics
-        - 🚨 Iotas starting positive but ending negative
-        - 🚨 Trend slopes below -0.15
+        - 🚨 Extended periods of underperformance (40-60% of time below -0.5)
+        - 🚨 Multiple metrics consistently underperforming
+        - 🚨 High proportion of time below -0.5 threshold
         - 🚨 Wide divergence between different metrics
         
-        ### 🔍 Metric-Specific Trends
+        ### 🔍 Metric-Specific Performance
         
-        **Individual metric slopes indicate:**
-        - **Sharpe Ratio declining**: Risk-adjusted performance deteriorating
-        - **Cumulative Return declining**: Total returns falling behind expectations
-        - **Sortino Ratio declining**: Downside risk management failing
+        **Individual metric underperformance indicates:**
+        - **Sharpe Ratio under -0.5**: Risk-adjusted performance below backtest expectations
+        - **Cumulative Return under -0.5**: Total returns falling behind historical performance
+        - **Sortino Ratio under -0.5**: Downside risk management below expected levels
         
         ## Degradation Score Components
         
-        The degradation score combines multiple factors:
+        The degradation score is based on the proportion of time spent underperforming:
         
         ### 📊 Absolute Performance Penalties
         - **Severely poor performance**: Average iota < -1.5 (+4 points)
         - **Consistently poor**: Average iota < -1.0 (+3 points)
         - **Moderately poor**: Average iota < -0.5 (+2 points)
         
-        ### 📉 Trend Analysis
-        - **Rapid decline**: Slope < -0.15 (+3 points per metric)
-        - **Moderate decline**: Slope < -0.08 (+2 points per metric)
-        - **Mild decline**: Slope < -0.03 (+1 point per metric)
+        ### 📉 Underperformance Threshold Analysis
+        - **Severe underperformance**: >80% of time below -0.5 iota (+4 points per metric)
+        - **High underperformance**: >60% of time below -0.5 iota (+3 points per metric)
+        - **Moderate underperformance**: >40% of time below -0.5 iota (+2 points per metric)
+        - **Low underperformance**: >20% of time below -0.5 iota (+1 point per metric)
         
-        ### 📈 Temporal Patterns
+        ### 📈 Overall Performance Patterns
         - **Proportion below expectations**: >90% negative (+3), >75% (+2), >60% (+1)
         - **Severe underperformance**: >50% severely negative (+3)
-        - **Performance deterioration**: Second half worse than first half (+1 per metric)
-        - **High volatility**: Unstable iota patterns (+1 per metric)
         
         ## Actionable Insights
         
