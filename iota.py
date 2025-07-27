@@ -2230,13 +2230,6 @@ def show_comprehensive_help():
         - **ι < -0.5**: Concerning underperformance
         - **Remember**: ι = 0 means your strategy is working exactly as the backtest suggested
         
-        ### Q: Why are some metrics significant and others not?
-        **A:** Different metrics measure different aspects of performance:
-        - **Sharpe Ratio**: Risk-adjusted returns
-        - **Annualized Return**: Yearly return performance (rolling analysis) / **Cumulative Return**: Total returns (core analysis)
-        - **Sortino Ratio**: Downside risk management
-        - Your strategy might excel in one area but not others
-        
         ### Q: What does "autocorrelation adjusted" mean?
         **A:** When using overlapping slices, adjacent periods share most of their data, violating statistical independence assumptions. The adjustment makes p-values more conservative (harder to achieve significance) to account for this correlation.
         
@@ -2287,18 +2280,16 @@ def show_comprehensive_help():
         
         ### Q: Rolling analysis shows concerning patterns - what now?
         **A:**
-        1. **Don't panic** - check if it's due to recent market conditions
-        2. **Review strategy parameters** - may need adjustment for current market
-        3. **Extend backtesting period** - include more market regimes
-        4. **Consider position size reduction** - while investigating
-        5. **Monitor** - track if patterns continue or stabilize
+        - Don't throw money at obscenely overfit strategies.
+        - If you're not sure, get a second opinion.
+        - Maybe consider a different strategy. A strategy with a more realistic but less impressive backtest that actually performs as intended is infinitely more valuable than one which promises 1000% annualized returns but can't even achieve 1/10th of that with any degree of certainty.
         
         ## Best Practices
         
         
         ### Q: What exclusion periods should I use?
         **A:** Consider excluding:
-        - **Market crashes** (2020 COVID crash, 2008 financial crisis)
+        - **Market crashes** (2020 COVID crash, 2008 financial crisis) - strategies are often overfit to these periods.
         - **Extreme volatility periods** that aren't representative
         - **Data quality issues** (corporate actions, splits, etc.)
         - **Be conservative**: Only exclude truly exceptional periods
@@ -2308,12 +2299,8 @@ def show_comprehensive_help():
         - **Both are important** - they tell different stories
         - **Core analysis**: Overall performance vs. expectations
         - **Rolling analysis**: Performance consistency over time
-        - **Action**: Monitor closely, may indicate strategy evolution needed
         
         ## Troubleshooting
-        
-        ### Q: P-values show as 0.000 - is this an error?
-        **A:** No, this typically means p < 0.001 (very statistically significant). The display rounds to 3 decimal places, so very small p-values appear as 0.000.
         
         ### Q: Confidence intervals are very wide - what does this mean?
         **A:** 
@@ -2322,18 +2309,7 @@ def show_comprehensive_help():
         - **Results less reliable** - interpret with caution
         - **Consider extending** analysis period
         
-        ### Q: Sortino ratio shows "∞ (no downside)" - is this normal?
-        **A:** Yes! This means your strategy had **no negative return days** during that period. The Sortino ratio becomes infinite when there's no downside volatility to measure.
-        
-        ## Data Quality
-        
-        ### Q: How do I know if my Composer data is good?
-        **A:**
-        - Check for **missing dates** (gaps in daily returns)
-        - Look for **extreme outliers** (>±50% daily returns)
-        - Verify **corporate actions** are handled correctly
-        - Compare with **external data sources** if possible
-        
+
         ### Q: My symphony stopped working mid-analysis - what happened?
         **A:**
         - **Composer API limits**: Try again in a few minutes
