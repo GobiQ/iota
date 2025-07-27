@@ -944,77 +944,72 @@ def main():
                     # Store the shareable URL in session state for display outside the form
                     st.session_state.shareable_url = shareable_url
                     
+                    # Set flag for auto-navigation
+                    st.session_state.auto_switch_to_results = True
+                    
                     # Auto-navigate to Results tab using JavaScript
                     st.markdown("""
                     <script>
-                    // Function to click the Results tab
+                    // Enhanced function to click the Results tab
                     function clickResultsTab() {
                         // Try multiple selectors to find the tab buttons
-                        let tabButtons = document.querySelectorAll('button[role="tab"]');
-                        if (tabButtons.length === 0) {
-                            tabButtons = document.querySelectorAll('[data-testid="stTabs"] button');
-                        }
-                        if (tabButtons.length === 0) {
-                            tabButtons = document.querySelectorAll('.stTabs button');
-                        }
-                        if (tabButtons.length === 0) {
-                            tabButtons = document.querySelectorAll('div[role="tablist"] button');
-                        }
-                        if (tabButtons.length === 0) {
-                            tabButtons = document.querySelectorAll('button[data-baseweb="tab"]');
-                        }
-                        if (tabButtons.length === 0) {
-                            tabButtons = document.querySelectorAll('[role="tab"]');
-                        }
+                        const selectors = [
+                            'button[role="tab"]',
+                            '[data-testid="stTabs"] button',
+                            '.stTabs button',
+                            'div[role="tablist"] button',
+                            'button[data-baseweb="tab"]',
+                            '[role="tab"]',
+                            'button[data-baseweb="tab"]',
+                            '.stTabs [role="tab"]'
+                        ];
                         
-                        // Click the second tab (Results tab)
-                        if (tabButtons.length >= 2) {
-                            tabButtons[1].click();
-                            console.log('Auto-clicked Results tab');
-                            return true;
-                        } else {
-                            console.log('Could not find tab buttons, found:', tabButtons.length);
-                            return false;
-                        }
-                    }
-                    
-                    // Function to try clicking by text content
-                    function clickByText() {
-                        const buttons = document.querySelectorAll('button');
-                        for (let button of buttons) {
-                            if (button.textContent.includes('Results') || button.textContent.includes('📊')) {
-                                button.click();
-                                console.log('Clicked Results tab by text content');
+                        for (let selector of selectors) {
+                            let tabButtons = document.querySelectorAll(selector);
+                            if (tabButtons.length >= 2) {
+                                // Try to click the second tab (Results tab)
+                                tabButtons[1].click();
+                                console.log('Auto-clicked Results tab using selector:', selector);
                                 return true;
                             }
                         }
                         return false;
                     }
                     
+                    // Function to try clicking by text content
+                    function clickByText() {
+                        const buttons = document.querySelectorAll('button');
+                        for (let button of buttons) {
+                            const text = button.textContent || button.innerText || '';
+                            if (text.includes('Results') || text.includes('📊') || text.includes('Core Iota')) {
+                                button.click();
+                                console.log('Clicked Results tab by text content:', text);
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                    
+                    // Function to try clicking by data attributes
+                    function clickByDataAttr() {
+                        const buttons = document.querySelectorAll('[data-baseweb="tab"]');
+                        if (buttons.length >= 2) {
+                            buttons[1].click();
+                            console.log('Auto-clicked Results tab by data attribute');
+                            return true;
+                        }
+                        return false;
+                    }
+                    
                     // Try multiple methods with increasing delays
-                    setTimeout(() => {
-                        if (!clickResultsTab()) {
-                            clickByText();
-                        }
-                    }, 500);
-                    
-                    setTimeout(() => {
-                        if (!clickResultsTab()) {
-                            clickByText();
-                        }
-                    }, 1500);
-                    
-                    setTimeout(() => {
-                        if (!clickResultsTab()) {
-                            clickByText();
-                        }
-                    }, 2500);
-                    
-                    setTimeout(() => {
-                        if (!clickResultsTab()) {
-                            clickByText();
-                        }
-                    }, 3500);
+                    const delays = [100, 500, 1000, 2000, 3000];
+                    delays.forEach((delay, index) => {
+                        setTimeout(() => {
+                            if (!clickResultsTab() && !clickByDataAttr()) {
+                                clickByText();
+                            }
+                        }, delay);
+                    });
                     </script>
                     """, unsafe_allow_html=True)
                     
@@ -1045,6 +1040,22 @@ def main():
 
     # Results Tab
     with tab2:
+        # Auto-navigation trigger for Results tab
+        if hasattr(st.session_state, 'auto_switch_to_results') and st.session_state.auto_switch_to_results:
+            st.markdown("""
+            <script>
+            // Ensure we're on the Results tab
+            setTimeout(() => {
+                const tabs = document.querySelectorAll('button[role="tab"]');
+                if (tabs.length >= 2) {
+                    tabs[1].click();
+                }
+            }, 100);
+            </script>
+            """, unsafe_allow_html=True)
+            # Clear the flag after use
+            st.session_state.auto_switch_to_results = False
+        
         st.header("📊 Core Iota Analysis Results")
         st.markdown("")  # Add spacing after header
         
