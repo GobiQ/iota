@@ -1238,7 +1238,7 @@ def main():
 
     # Results Tab
     with tab2:
-                                 st.header("🔢 Core Iota Analysis Results")
+        st.header("🔢 Core Iota Analysis Results")
         st.markdown("")  # Add spacing after header
         
         if hasattr(st.session_state, 'run_analysis') and st.session_state.run_analysis:
