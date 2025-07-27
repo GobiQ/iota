@@ -728,6 +728,7 @@ def main():
         }
         .success-card {
             background-color: #d4edda;
+            color: #155724;
             padding: 1rem;
             border-radius: 0.5rem;
             border-left: 4px solid #28a745;
