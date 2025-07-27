@@ -566,27 +566,17 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
             elif under_threshold_proportion > 0.2:
                 degradation_score += 1
     
-    # Get sophisticated risk assessment
-    sophisticated_analysis = analyze_sophisticated_decay_risk({
-        'sufficient_data': True,
-        'metric_iotas': metric_iotas
-    })
-    
-    if 'error' not in sophisticated_analysis:
-        risk_level = sophisticated_analysis['overall_risk']
-        degradation_score = sophisticated_analysis['total_risk_score']
+    # Simple risk assessment based on degradation score
+    if degradation_score >= 12:
+        risk_level = "CRITICAL"
+    elif degradation_score >= 8:
+        risk_level = "HIGH"
+    elif degradation_score >= 5:
+        risk_level = "MODERATE"
+    elif degradation_score >= 2:
+        risk_level = "LOW"
     else:
-        # Fallback to original method
-        if degradation_score >= 12:
-            risk_level = "CRITICAL"
-        elif degradation_score >= 8:
-            risk_level = "HIGH"
-        elif degradation_score >= 5:
-            risk_level = "MODERATE"
-        elif degradation_score >= 2:
-            risk_level = "LOW"
-        else:
-            risk_level = "MINIMAL"
+        risk_level = "MINIMAL"
         
     return {
         'sufficient_data': True,
