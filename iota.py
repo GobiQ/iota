@@ -1317,14 +1317,8 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         st.write(f"**IS Range (25th-75th):** {formatter(q25)} - {formatter(q75)}")
     
     with col2:
-        # P-value and significance
-        if np.isfinite(stats_dict['p_value']):
-            sig_marker = " ***" if stats_dict['significant'] else ""
-            st.write(f"**P-value:** {stats_dict['p_value']:.3f}{sig_marker}")
-            if stats_dict['significant']:
-                st.write("✅ **Statistically significant**")
-            else:
-                st.write("ℹ️ Not statistically significant")
+        # Empty column for layout balance
+        st.write("")
 
 def show_comprehensive_help():
     """Show comprehensive help and documentation from the original Iota.py."""
