@@ -719,8 +719,8 @@ def main():
             margin-bottom: 1rem;
         }
         .metric-card {
-            background-color: #f0f2f6;
-            color: #333;
+            background-color: #1f77b4;
+            color: white;
             padding: 1rem;
             border-radius: 0.5rem;
             border-left: 4px solid #1f77b4;
