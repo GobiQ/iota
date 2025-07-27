@@ -1447,7 +1447,7 @@ def main():
             
             # Display time slice information
             st.markdown("### 📅 Time Slice Size")
-            if hasattr(core_results, 'config') and core_results['config']:
+            if 'config' in core_results and core_results['config']:
                 config = core_results['config']
                 oos_start = config.get('oos_start')
                 today_date = config.get('today_date')
@@ -1465,7 +1465,7 @@ def main():
             
             # Create and display histogram
             oos_days = None
-            if hasattr(core_results, 'config') and core_results['config']:
+            if 'config' in core_results and core_results['config']:
                 config = core_results['config']
                 oos_start = config.get('oos_start')
                 today_date = config.get('today_date')
