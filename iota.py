@@ -1128,6 +1128,16 @@ def main():
     with tab1:
         st.header("Analysis Configuration")
         
+        # Add reset button
+        if st.button("🔄 Reset All Data (Clear Cache)"):
+            # Clear all session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.success("✅ Cache cleared! Please re-run your analysis.")
+            st.rerun()
+        
+        st.markdown("---")  # Add divider
+        
         # Main configuration form
         with st.form("analysis_form"):
             st.subheader("📝 Required Information")
