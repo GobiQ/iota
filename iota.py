@@ -1468,11 +1468,25 @@ def main():
                     so_stats = compute_iota_with_stats(df["so_is"].values, so_oos, n_oos, "Sortino Ratio", overlap=config['overlap'])
                 
                 # Store core results in session state for all tabs
+                # Convert pandas Series to dict for storage compatibility
+                daily_ret_dict = {
+                    'dates': daily_ret.index.tolist(),
+                    'values': daily_ret.values.tolist()
+                }
+                is_ret_dict = {
+                    'dates': is_ret.index.tolist(),
+                    'values': is_ret.values.tolist()
+                }
+                oos_ret_dict = {
+                    'dates': oos_ret.index.tolist(),
+                    'values': oos_ret.values.tolist()
+                }
+                
                 st.session_state.core_results = {
                     'sym_name': sym_name,
-                    'daily_ret': daily_ret,
-                    'is_ret': is_ret,
-                    'oos_ret': oos_ret,
+                    'daily_ret': daily_ret_dict,
+                    'is_ret': is_ret_dict,
+                    'oos_ret': oos_ret_dict,
                     'ar_stats': ar_stats,
                     'sh_stats': sh_stats,
                     'cr_stats': cr_stats,
@@ -1494,7 +1508,7 @@ def main():
                 st.write("Debug - After storage, daily_ret in core_results:", 'daily_ret' in st.session_state.core_results)
                 if 'daily_ret' in st.session_state.core_results:
                     st.write("Debug - daily_ret type after storage:", type(st.session_state.core_results['daily_ret']))
-                    st.write("Debug - daily_ret length after storage:", len(st.session_state.core_results['daily_ret']))
+                    st.write("Debug - daily_ret length after storage:", len(st.session_state.core_results['daily_ret']['values']))
                 
                 # Display core results
                 display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats, 
@@ -1648,8 +1662,15 @@ def main():
                             st.write("Debug - daily_ret length:", len(core_results['daily_ret']))
                         
                         if oos_start_dt and 'daily_ret' in core_results:
+                            # Reconstruct pandas Series from stored dict
+                            daily_ret_data = core_results['daily_ret']
+                            daily_ret = pd.Series(
+                                data=daily_ret_data['values'],
+                                index=pd.to_datetime(daily_ret_data['dates'])
+                            )
+                            
                             full_fig = create_full_backtest_rolling_plot(
-                                core_results['daily_ret'],
+                                daily_ret,
                                 oos_start_dt,
                                 core_results['ar_is_values'],
                                 core_results['sh_is_values'],
