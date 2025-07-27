@@ -1223,17 +1223,17 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     interpretation = interpret_iota_directly(avg_iota)
     st.markdown("### 🎯 Overall Assessment")
     if avg_iota >= 0.5:
-        st.markdown(f'<div class="success-card"><strong>Overall Assessment:</strong> {interpretation}</div>', 
+        st.markdown(f'<div class="success-card" style="font-size: 1.2rem;"><strong>{interpretation}</strong></div>', 
                    unsafe_allow_html=True)
     elif avg_iota >= 0.1:
-        st.markdown(f'<div class="metric-card"><strong>Overall Assessment:</strong> {interpretation}</div>', 
+        st.markdown(f'<div class="metric-card" style="font-size: 1.2rem;"><strong>{interpretation}</strong></div>', 
                    unsafe_allow_html=True)
     elif avg_iota >= -0.1:
-        st.info(f"⚠️ Overall Assessment: {interpretation}")
+        st.markdown(f'<div style="font-size: 1.2rem;">⚠️ {interpretation}</div>', unsafe_allow_html=True)
     elif avg_iota >= -0.5:
-        st.info(f"📉 Overall Assessment: {interpretation}")
+        st.markdown(f'<div style="font-size: 1.2rem;">📉 {interpretation}</div>', unsafe_allow_html=True)
     else:
-        st.error(f"⚠️ Overall Assessment: {interpretation}")
+        st.markdown(f'<div style="font-size: 1.2rem;">⚠️ {interpretation}</div>', unsafe_allow_html=True)
     
     st.markdown("---")  # Add divider before detailed metrics
     
