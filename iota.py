@@ -720,6 +720,7 @@ def main():
         }
         .metric-card {
             background-color: #f0f2f6;
+            color: #333;
             padding: 1rem;
             border-radius: 0.5rem;
             border-left: 4px solid #1f77b4;
