@@ -1471,13 +1471,13 @@ def show_comprehensive_help():
         - **100**: Neutral performance (matches expectations)
         - **>100**: Outperforming expectations
         - **<100**: Underperforming expectations
-        
+
         ### 🔄 Overfitting Risk
         **Rolling analysis shows if your strategy is degrading over time:**
         
         - **MINIMAL/LOW**: Strategy working as expected ✅
         - **MODERATE**: Some concerns, monitor closely ⚠️
-        - **HIGH/CRITICAL**: Likely overfit and market conditions have substantially changed, running something else 🚨
+        - **HIGH/CRITICAL**: Likely overfit and/or market conditions have substantially changed, running something else 🚨
         """)
     
     with help_tab2:
