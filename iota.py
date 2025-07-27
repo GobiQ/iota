@@ -941,31 +941,46 @@ def main():
                     
                     st.success("✅ Configuration saved! Redirecting to Results...")
                     
-                    # Display shareable URL with copy button
+                    # Display shareable URL with copy functionality
                     st.markdown("### 🔗 Share Your Analysis")
                     st.info(f"**Shareable URL**: Copy this link to share your analysis settings with others:")
-                    st.code(shareable_url, language=None)
                     
-                    # Add copy button using JavaScript
+                    # Create a text input that users can copy from
+                    st.text_input(
+                        "Shareable URL (click to copy):",
+                        value=shareable_url,
+                        key="shareable_url_input",
+                        help="Click in this field and press Ctrl+C (or Cmd+C on Mac) to copy the URL"
+                    )
+                    
+                    # Add a simple copy button using a different approach
                     st.markdown(f"""
                     <script>
-                    function copyToClipboard() {{
-                        navigator.clipboard.writeText('{shareable_url}').then(function() {{
-                            // Show success message
-                            const button = document.querySelector('button[onclick="copyToClipboard()"]');
-                            if (button) {{
-                                const originalText = button.textContent;
-                                button.textContent = '✅ Copied!';
-                                button.style.backgroundColor = '#28a745';
-                                setTimeout(() => {{
-                                    button.textContent = originalText;
-                                    button.style.backgroundColor = '';
-                                }}, 2000);
+                    function copyURL() {{
+                        const urlInput = document.querySelector('input[data-testid="stTextInput"]');
+                        if (urlInput) {{
+                            urlInput.select();
+                            urlInput.setSelectionRange(0, 99999); // For mobile devices
+                            try {{
+                                document.execCommand('copy');
+                                // Show success message
+                                const button = document.querySelector('button[onclick="copyURL()"]');
+                                if (button) {{
+                                    const originalText = button.textContent;
+                                    button.textContent = '✅ Copied!';
+                                    button.style.backgroundColor = '#28a745';
+                                    setTimeout(() => {{
+                                        button.textContent = originalText;
+                                        button.style.backgroundColor = '';
+                                    }}, 2000);
+                                }}
+                            }} catch (err) {{
+                                console.log('Copy failed:', err);
                             }}
-                        }});
+                        }}
                     }}
                     </script>
-                    <button onclick="copyToClipboard()" style="background-color: #1f77b4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 8px;">
+                    <button onclick="copyURL()" style="background-color: #1f77b4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 8px;">
                         📋 Copy URL
                     </button>
                     """, unsafe_allow_html=True)
