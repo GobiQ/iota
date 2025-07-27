@@ -1707,7 +1707,7 @@ def show_comprehensive_help():
         - 📊 **Distribution Analysis**: Visualize in-sample distributions with OOS values
         - 🔄 **Rolling Window Analysis**: Time-specific performance analysis with rolling windows
         - 📈 **Interactive Visualizations**: Track performance trends with Plotly charts
-        - 🎯 **Statistical Rigor**: Autocorrelation-adjusted analysis and confidence intervals
+        - 🎯 **Statistical Analysis**: Autocorrelation-adjusted analysis and confidence intervals
         
         ## Step-by-Step Guide
         
@@ -1786,10 +1786,10 @@ def show_comprehensive_help():
         - `IS_std_dev` = standard deviation of in-sample slice performances
         
         **INTERPRETATION:**
-        - `ι = +1.0`: OOS performed 1 standard deviation BETTER than historical median
-        - `ι = -1.0`: OOS performed 1 standard deviation WORSE than historical median
+        - `ι = +1.0`: OOS performed 1 standard deviation better than historical median
+        - `ι = -1.0`: OOS performed 1 standard deviation worse than historical median
         - `ι = 0`: OOS performance matches historical expectations exactly
-        - `|ι| ≥ 1.0`: Major difference (statistically significant)
+        - `|ι| ≥ 1.0`: Major difference
         - `|ι| < 0.1`: Minimal difference (within noise)
         
         ## Step-by-Step Analysis Process
@@ -1851,7 +1851,7 @@ def show_comprehensive_help():
         4. **Visual comparison**: Easy to see OOS performance relative to historical distribution
         
         **Rationale:**
-        - **Visual clarity**: Histograms make distribution shape and OOS position obvious
+        - **Visual clarity**: Histograms make distribution shape and OOS position clear
         - **Intuitive interpretation**: Left of distribution = underperforming, right = outperforming
         - **Median reference**: Shows expected performance level
         - **Multi-metric view**: All four metrics displayed simultaneously
@@ -1918,15 +1918,15 @@ def show_comprehensive_help():
         
         **Formula:** `Rating = 100 × exp(0.5 × ι)`
         
-        ### 🧠 Key Insights:
+        ### Key Insights:
         - **100** = Neutral baseline (matches historical expectations)
         - **>130** = Meaningful outperformance
         - **<80** = Concerning underperformance
         - **>200** = Exceptional performance (rare)
         - **<50** = Critical underperformance
         
-        ### 🎯 Why Use Ratings?
-        - **Non-technical summary** of complex statistical analysis
+        ### Why Use Ratings?
+        - **Non-technical summary** of statistical analysis
         - **Cross-strategy comparisons** easier (Rating 170 vs. Rating 90)
         - **Intuitive interpretation** without understanding standard deviations
         
@@ -1949,12 +1949,12 @@ def show_comprehensive_help():
         1. Looks at 100 historical 1-year periods
         2. Finds you typically got 5% to 25% returns
         3. Calculates that 25% is normal (Iota ≈ +0.3)
-        4. **Conclusion**: "Your strategy is working fine, you just had a good year"
+        4. **Conclusion**: "Your strategy is working as expected, you had a good year"
         
         **VS. if you got 50% returns**:
         1. Same historical analysis
-        2. 50% is way higher than you've EVER done (Iota ≈ +3.0)
-        3. **Conclusion**: "Either incredible luck, or market conditions changed dramatically"
+        2. 50% is much higher than your historical range (Iota ≈ +3.0)
+        3. **Conclusion**: "Either unusual market conditions or strategy behavior has changed"
         """)
     
     with help_tab4:
@@ -1963,10 +1963,10 @@ def show_comprehensive_help():
         st.markdown("""
         ## What is Distribution Analysis?
         
-        Distribution analysis visualizes the historical in-sample performance distributions for each metric, with your out-of-sample values clearly marked for easy comparison.
+        Distribution analysis visualizes the historical in-sample performance distributions for each metric, with your out-of-sample values marked for comparison.
         
-        ### 🎯 Purpose
-        - **Visual Comparison**: See exactly where your OOS performance falls relative to historical patterns
+        ### Purpose
+        - **Visual Comparison**: See where your OOS performance falls relative to historical patterns
         - **Distribution Shape**: Understand the range and variability of historical performance
         - **Intuitive Interpretation**: Left of distribution = underperforming, right = outperforming
         - **Multi-Metric View**: Compare all four metrics simultaneously
@@ -2084,10 +2084,7 @@ def show_comprehensive_help():
         - Tracks how performance compares to backtest expectations over time
         - Multiple metrics analyzed independently
         
-        ### Step 4: Risk Assessment
-        - **Performance Scoring**: Time spent above/below zero, magnitude analysis, area integration, consistency
-        - **Risk Classification**: MINIMAL → LOW → MODERATE → HIGH → CRITICAL
-        - **Multi-factor Analysis**: Multiple factors including area imbalance and performance variance
+
         
         ## Interpreting Rolling Analysis Results
         
