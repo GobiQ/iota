@@ -636,10 +636,10 @@ def analyze_sophisticated_decay_risk(rolling_results: Dict[str, Any]) -> Dict[st
         negative_area = np.sum(negative_iotas) if len(negative_iotas) > 0 else 0
         net_area = positive_area + negative_area
         
-        # Risk scoring
+        # Risk scoring with exponential weighting
         risk_score = 0
         
-        # Time below zero penalty
+        # Time-based penalties and rewards
         if time_below_zero > 0.8:
             risk_score += 4
         elif time_below_zero > 0.6:
@@ -649,15 +649,29 @@ def analyze_sophisticated_decay_risk(rolling_results: Dict[str, Any]) -> Dict[st
         elif time_below_zero > 0.2:
             risk_score += 1
         
-        # Magnitude penalty for negative performance
-        if avg_negative_magnitude < -1.5:
-            risk_score += 4
-        elif avg_negative_magnitude < -1.0:
-            risk_score += 3
-        elif avg_negative_magnitude < -0.5:
-            risk_score += 2
-        elif avg_negative_magnitude < -0.2:
-            risk_score += 1
+        # Time above zero rewards (can cancel out penalties)
+        if time_above_zero > 0.8:
+            risk_score -= 4
+        elif time_above_zero > 0.6:
+            risk_score -= 3
+        elif time_above_zero > 0.4:
+            risk_score -= 2
+        elif time_above_zero > 0.2:
+            risk_score -= 1
+        
+        # Exponential magnitude penalty for negative performance below -0.25
+        if avg_negative_magnitude < -0.25:
+            # Exponential penalty: exp(abs(avg_negative_magnitude) - 0.25) - 1
+            # This gives 0 penalty at -0.25, and exponentially increasing penalty below that
+            penalty = np.exp(abs(avg_negative_magnitude) - 0.25) - 1
+            risk_score += min(4, penalty)  # Cap at 4 points
+        
+        # Exponential magnitude reward for positive performance above 0.25
+        if avg_positive_magnitude > 0.25:
+            # Exponential reward: exp(avg_positive_magnitude - 0.25) - 1
+            # This gives 0 reward at 0.25, and exponentially increasing reward above that
+            reward = np.exp(avg_positive_magnitude - 0.25) - 1
+            risk_score -= min(4, reward)  # Cap at 4 points (negative to reduce risk score)
         
         # Area imbalance penalty
         area_ratio = abs(negative_area / positive_area) if positive_area != 0 else float('inf')
@@ -1514,9 +1528,7 @@ def main():
                 st.markdown("")  # Add spacing
                 
                 # Display sophisticated decay risk analysis
-                st.markdown("### 🧠 Advanced Decay Risk Analysis")
-                interpretation = interpret_overfitting_risk(rolling_results)
-                st.markdown(interpretation)
+                # (Removed detailed text display)
                 
                 st.markdown("")  # Add spacing
                 
