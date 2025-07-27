@@ -918,21 +918,14 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
         xanchor="left"
     )
     
-    # Add reference lines
-    fig.add_hline(y=0, line_dash="solid", line_color="gray", 
-                  annotation_text="Neutral Performance", annotation_position="bottom right")
-    fig.add_hline(y=0.5, line_dash="dot", line_color="lightgreen", 
-                  annotation_text="Overperformance (+0.5σ)", annotation_position="top right")
-    fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral", 
-                  annotation_text="Underperformance (-0.5σ)", annotation_position="bottom right")
-    fig.add_hline(y=1.0, line_dash="dot", line_color="green", 
-                  annotation_text="Strong Overperformance (+1.0σ)", annotation_position="top right")
-    fig.add_hline(y=-1.0, line_dash="dot", line_color="red", 
-                  annotation_text="Strong Underperformance (-1.0σ)", annotation_position="bottom right")
-    fig.add_hline(y=2.0, line_dash="dot", line_color="darkgreen", 
-                  annotation_text="Exceptional Overperformance (+2.0σ)", annotation_position="top right")
-    fig.add_hline(y=-2.0, line_dash="dot", line_color="darkred", 
-                  annotation_text="Exceptional Underperformance (-2.0σ)", annotation_position="bottom right")
+    # Add reference lines (without annotations to avoid text overlay)
+    fig.add_hline(y=0, line_dash="solid", line_color="gray")
+    fig.add_hline(y=0.5, line_dash="dot", line_color="lightgreen")
+    fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral")
+    fig.add_hline(y=1.0, line_dash="dot", line_color="green")
+    fig.add_hline(y=-1.0, line_dash="dot", line_color="red")
+    fig.add_hline(y=2.0, line_dash="dot", line_color="darkgreen")
+    fig.add_hline(y=-2.0, line_dash="dot", line_color="darkred")
     
     # Update layout
     title_text = f'{symphony_name} - Full Backtest Rolling Iota Proxy Analysis'
@@ -1723,7 +1716,7 @@ def show_comprehensive_help():
         ### Key Features:
         - 📊 **Core Iota Analysis**: Compare OOS performance to historical expectations
         - 📊 **Distribution Analysis**: Visualize in-sample distributions with OOS values
-        - 🔄 **Rolling Window Analysis**: Advanced decay risk assessment with sophisticated metrics
+        - 🔄 **Rolling Window Analysis**: Time-specific performance analysis with rolling windows
         - 📈 **Interactive Visualizations**: Track performance trends with Plotly charts
         - 🎯 **Statistical Rigor**: Autocorrelation-adjusted analysis and confidence intervals
         
@@ -1746,7 +1739,7 @@ def show_comprehensive_help():
         ### 3. ⚙️ Configure Analysis Parameters
         - **Number of IS Slices**: How many historical periods to compare (100 is good default)
         - **Overlapping Slices**: Keep this True for better statistics
-        - **Rolling Analysis**: Enable for advanced decay risk assessment
+        - **Rolling Analysis**: Enable for time-specific performance analysis
         - **Exclusion Windows**: Optional - exclude market crashes or unusual periods
         
         ### 4. 🚀 Run the Analysis
@@ -1778,12 +1771,13 @@ def show_comprehensive_help():
         - **>100**: Outperforming expectations
         - **<100**: Underperforming expectations
 
-        ### 🔄 Decay Risk
-        **Advanced rolling analysis shows if your strategy has degraded out of sample:**
+        ### 🔄 Rolling Analysis
+        **Time-specific analysis shows how strategy performance varies over time:**
         
-        - **MINIMAL/LOW**: Strategy working as expected ✅
-        - **MODERATE**: Some concerns, monitor closely ⚠️
-        - **HIGH/CRITICAL**: Likely overfit and/or market conditions have substantially changed, running something else 🚨
+        - **Stable Performance**: Iota values that stay relatively consistent ✅
+        - **Performance Trends**: Patterns that show improving or declining performance over time
+        - **Volatile Performance**: High variance in rolling iota values
+        - **OOS vs Proxy**: Compare actual OOS performance with pre-OOS proxy iota
         """)
     
     with help_tab2:
@@ -1872,18 +1866,18 @@ def show_comprehensive_help():
         - **Median reference**: Shows expected performance level
         - **Multi-metric view**: All four metrics displayed simultaneously
         
-        ### Step 6: Rolling Window Analysis (Advanced Decay Risk Assessment)
+        ### Step 6: Rolling Window Analysis
         **What happens:**
         1. **Window creation**: OOS period divided into overlapping windows (e.g., 6-month windows with 1-month steps)
         2. **Historical comparison**: Each window compared against IS slice distribution
-        3. **Sophisticated analysis**: Time spent above/below zero, magnitude analysis, area integration
-        4. **Advanced scoring**: Multiple factors including consistency and area imbalance
+        3. **Time-specific analysis**: Performance patterns and trends over time
+        4. **Visual analysis**: Rolling iota values plotted to show performance evolution
         
         **Rationale:**
-        - **Overfitting detection**: Strategies that are overfit show declining performance over time
+        - **Performance tracking**: Shows how strategy performance evolves over time
         - **Temporal granularity**: Rolling windows reveal when and how performance changes
-        - **Early warning**: Identifies degradation before it becomes severe
-        - **Comprehensive assessment**: Considers both frequency and severity of underperformance
+        - **Pattern identification**: Helps identify consistent vs. volatile performance
+        - **Pre-OOS proxy**: Full backtest rolling analysis provides proxy iota for pre-OOS periods
         
         ## CORE METRICS ANALYZED
         
@@ -2138,16 +2132,6 @@ def show_comprehensive_help():
         
         ## Interpreting Rolling Analysis Results
         
-        ### 🎯 Decay Risk Levels
-        
-        | Risk Level | Degradation Score | Interpretation | Action Required |
-        |------------|-------------------|----------------|-----------------|
-        | **MINIMAL** | 0-1 | ✅ Consistent performance | Continue monitoring |
-        | **LOW** | 2-4 | ℹ️ Minor inconsistencies | Periodic review |
-        | **MODERATE** | 5-7 | ⚠️ Some degradation detected | Monitor closely |
-        | **HIGH** | 8-11 | 🚨 Significant degradation | Consider re-assessment |
-        | **CRITICAL** | 12+ | 💀 Severe degradation | Likely overfit, urgent review |
-        
         ### 📈 Understanding the Rolling Plot
         
         **Key Elements:**
@@ -2157,76 +2141,43 @@ def show_comprehensive_help():
         - **Colored lines**: Individual metrics (Sharpe, Cumulative Return, Sortino)
         - **Smoothing**: 3-period moving average reduces noise
         
-        **Healthy Patterns (Low Risk):**
-        - ✅ Iotas fluctuate around zero with minimal time below -0.5
-        - ✅ Multiple metrics show similar, stable patterns
-        - ✅ Less than 20% of time spent underperforming
-        
-        **Warning Patterns (Moderate Risk):**
-        - ⚠️ Some periods of underperformance (20-40% of time below -0.5)
-        - ⚠️ Some metrics underperforming while others stable
-        - ⚠️ Moderate proportion of time below performance threshold
-        
-        **Critical Patterns (High Risk):**
-        - 🚨 Extended periods of underperformance (40-60% of time below -0.5)
-        - 🚨 Multiple metrics consistently underperforming
-        - 🚨 High proportion of time below -0.5 threshold
-        - 🚨 Wide divergence between different metrics
+        **Performance Patterns:**
+        - **Stable Performance**: Iotas fluctuate around zero with minimal variance
+        - **Trending Performance**: Consistent upward or downward movement in iota values
+        - **Volatile Performance**: High variance in rolling iota values
+        - **Metric Divergence**: Different metrics showing different patterns
         
         ### 🔍 Metric-Specific Performance
         
-        **Individual metric underperformance indicates:**
-        - **Sharpe Ratio under -0.5**: Risk-adjusted performance below backtest expectations
-        - **Cumulative Return under -0.5**: Total returns falling behind historical performance
-        - **Sortino Ratio under -0.5**: Downside risk management below expected levels
+        **Individual metric patterns indicate:**
+        - **Sharpe Ratio**: Risk-adjusted performance trends over time
+        - **Cumulative Return**: Total returns evolution
+        - **Sortino Ratio**: Downside risk management consistency
         
-        ## Advanced Decay Risk Assessment Components
-        
-        The sophisticated risk assessment considers multiple factors:
+        ## Rolling Analysis Insights
         
         ### 📊 Time-Based Analysis
-        - **Time below zero**: Percentage of periods with negative iota values
-        - **Time above zero**: Percentage of periods with positive iota values
-        - **Scoring**: >80% below zero (+4), >60% (+3), >40% (+2), >20% (+1)
+        - **Performance consistency**: How stable iota values are over time
+        - **Trend identification**: Whether performance is improving or declining
+        - **Volatility assessment**: How much performance varies between periods
         
-        ### 📉 Magnitude Analysis
-        - **Average negative magnitude**: Mean of all negative iota values
-        - **Average positive magnitude**: Mean of all positive iota values
-        - **Scoring**: Avg negative < -1.5 (+4), < -1.0 (+3), < -0.5 (+2), < -0.2 (+1)
-        
-        ### 📈 Area Integration
-        - **Positive area**: Sum of all positive iota values
-        - **Negative area**: Sum of all negative iota values
-        - **Area ratio**: Ratio of negative to positive areas
-        - **Scoring**: Area ratio > 3.0 (+3), > 2.0 (+2), > 1.5 (+1)
-        
-        ### 🔄 Consistency Analysis
-        - **Performance variance**: Standard deviation of negative performance
-        - **Scoring**: High variance in negative performance (+1-2 points)
+        ### 📈 Full Backtest Rolling Analysis
+        - **Pre-OOS proxy**: Rolling iota for periods before your OOS start date
+        - **Performance evolution**: How strategy performance changed throughout the backtest
+        - **OOS comparison**: Compare actual OOS performance with pre-OOS patterns
         
         ## Actionable Insights
         
-        ### ✅ If Rolling Analysis Shows Low Risk:
+        ### ✅ If Rolling Analysis Shows Stable Performance:
         - **Continue current strategy** with confidence
-        - **Consider scaling** position sizes if conservative
         - **Periodic monitoring** (monthly/quarterly reviews)
         - **Document current parameters** for future reference
-        - **Shorter OOS periods should be taken with a grain of salt
         
-        ### ⚠️ If Rolling Analysis Shows Moderate Risk:
-        - **Increase monitoring frequency** (weekly reviews)
+        ### ⚠️ If Rolling Analysis Shows Performance Changes:
+        - **Monitor closely** for continued trends
         - **Review recent market conditions** for regime changes
-        - **Consider minor parameter adjustments** if trend continues
-        - **Prepare contingency plans** for further degradation
-        - **Shorter OOS periods should be taken with a grain of salt
-        
-        ### 🚨 If Rolling Analysis Shows High/Critical Decay Risk:
-        - **Urgent strategy review** required
-        - **Reduce position sizes** immediately
-        - **Extended backtesting** with longer historical periods
-        - **Parameter re-optimization** or strategy replacement
-        - **Daily monitoring** until stabilization
-        - **Shorter OOS periods should be taken with a grain of salt
+        - **Consider parameter adjustments** if trends continue
+        - **Prepare contingency plans** if needed
         
         ## Technical Parameters
         
@@ -2264,7 +2215,7 @@ def show_comprehensive_help():
         - **Core analysis**: Overall assessment of your entire OOS period
         - **Distribution analysis**: Visualize in-sample distributions with OOS values marked
         - **Rolling analysis**: Detects **when** and **how** performance changes over time
-        - **Together**: Complete picture of strategy health, decay and overfitting risk
+        - **Together**: Complete picture of strategy health and performance patterns
         
         ## Interpretation Questions
         
@@ -2324,13 +2275,13 @@ def show_comprehensive_help():
         ### Q: All my iotas are near zero - is this bad?
         **A:** **No!** Iotas near zero mean your strategy is performing **exactly as expected** based on historical patterns. This is actually **good** - it means your backtest was realistic and your strategy is working as designed.
         
-        ### Q: Rolling analysis shows high decay risk - what now?
+        ### Q: Rolling analysis shows concerning patterns - what now?
         **A:**
         1. **Don't panic** - check if it's due to recent market conditions
         2. **Review strategy parameters** - may need adjustment for current market
         3. **Extend backtesting period** - include more market regimes
         4. **Consider position size reduction** - while investigating
-        5. **Monitor** - track if degradation continues or stabilizes
+        5. **Monitor** - track if patterns continue or stabilize
         
         ## Best Practices
         
@@ -2394,7 +2345,7 @@ def show_comprehensive_help():
     st.markdown("""
     <div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 2rem;'>
         <p><strong>Iota Calculator - Core and Rolling Analysis</strong></p>
-        <p>Edge persistence, overfitness, and decay risk assessment tool</p>
+        <p>Edge persistence and performance analysis tool</p>
         <p>Questions? Reach out to @gobi on Discord</p>
     </div>
     """, unsafe_allow_html=True)
