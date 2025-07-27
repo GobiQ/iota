@@ -1965,6 +1965,41 @@ def show_comprehensive_help():
         2. Finds your strategy typically got 200% to 400% annual returns with Sharpe ratios of 3.0 to 5.0
         3. Calculates that 80% returns and 1.5 Sharpe are far below historical expectations (Iota ≈ -1.8)
         4. **Conclusion**: "Your strategy is significantly underperforming relative to backtest - likely overfit to specific market conditions". In this scenario, the difference is so large between backtest and out of sample performance that the strategy may carry a larger degree of inherent risk.
+        
+        ## ⚠️ Limitations and Assumptions
+        
+        ### Distribution Assumptions
+        The iota calculation assumes that your strategy's performance metrics follow approximately normal distributions. This may not hold true for:
+        
+        - **Highly skewed strategies**: Strategies with asymmetric return distributions (e.g., trend-following with infrequent large wins)
+        - **Fat-tailed distributions**: Strategies prone to extreme outliers or "black swan" events
+        - **Regime-dependent performance**: Strategies that perform differently in bull vs. bear markets
+        - **Small sample sizes**: With fewer than 50-100 historical periods, distribution estimates become unreliable
+        
+        ### Other Limitations
+        
+        **Market Regime Changes**: The analysis assumes market conditions during your backtest are representative of future conditions. Significant regime changes (e.g., from low to high volatility) can invalidate historical comparisons.
+        
+        **Strategy Evolution**: If you've modified your strategy between backtest and live trading, the comparison becomes less meaningful.
+        
+        **Data Quality**: The analysis is only as good as your input data. Ensure your returns are properly calculated and include all relevant costs (slippage, commissions, etc.).
+        
+        **Time Period Sensitivity**: Results can vary significantly based on your chosen in-sample and out-of-sample periods. Consider testing multiple time splits.
+        
+        ### When to Be Cautious
+        
+        - **Extreme iota values** (|ι| > 3.0) may indicate data issues or regime changes rather than overfitting
+        - **Inconsistent results** across different metrics suggest the analysis may not be applicable
+        - **Small out-of-sample periods** (< 6 months) provide limited statistical power
+        - **Highly leveraged strategies** may have non-normal risk distributions
+        
+        ### Best Practices
+        
+        1. **Validate assumptions**: Check if your strategy's returns are reasonably normally distributed
+        2. **Use multiple time periods**: Test different in-sample/out-of-sample splits
+        3. **Consider market context**: Account for changing market conditions
+        4. **Combine with other tools**: Don't rely solely on iota analysis for strategy evaluation
+        5. **Monitor over time**: Track iota values as your out-of-sample period grows
         """)
     
     with help_tab4:
