@@ -604,17 +604,17 @@ def interpret_overfitting_risk(rolling_results: Dict[str, Any]) -> str:
     
     return interpretation
 
-def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_is_values, ar_oos, sh_oos, cr_oos, so_oos, symphony_name: str):
+def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_is_values, ar_oos, sh_oos, cr_oos, so_oos, symphony_name: str, n_oos_days: int = None):
     """Create histogram plots showing in-sample distributions with OOS values marked."""
     
     # Import make_subplots
     from plotly.subplots import make_subplots
     
-    # Define metrics and their data
+    # Define metrics and their data with proper scaling
     metrics_data = [
-        ("Annualized Return", ar_is_values, ar_oos, lambda x: f"{x*100:.2f}%", "Annualized Return (%)"),
-        ("Sharpe Ratio", sh_is_values, sh_oos, lambda x: f"{x:.3f}", "Sharpe Ratio"),
-        ("Cumulative Return", cr_is_values, cr_oos, lambda x: f"{x*100:.2f}%", "Cumulative Return (%)"),
+        ("Annualized Return", ar_is_values, ar_oos, lambda x: f"{x*100:+.2f}%", "Annualized Return (%)"),
+        ("Sharpe Ratio", sh_is_values, sh_oos, lambda x: f"{x:+.3f}", "Sharpe Ratio"),
+        ("Cumulative Return", cr_is_values, cr_oos, lambda x: f"{x*100:+.2f}%", "Cumulative Return (%)"),
         ("Sortino Ratio", so_is_values, so_oos, format_sortino_output, "Sortino Ratio")
     ]
     
@@ -625,7 +625,7 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
     fig = make_subplots(
         rows=2, cols=2,
         subplot_titles=[metric[0] for metric in metrics_data],
-        vertical_spacing=0.1,
+        vertical_spacing=0.15,
         horizontal_spacing=0.1
     )
     
@@ -639,7 +639,7 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
             go.Histogram(
                 x=is_values,
                 name=metric_name,
-                nbinsx=20,
+                nbinsx=40,
                 opacity=0.7,
                 marker_color=colors[i],
                 showlegend=False,
@@ -667,15 +667,20 @@ def create_distribution_histograms(ar_is_values, sh_is_values, cr_is_values, so_
             row=row, col=col
         )
     
+    # Create title with period information
+    period_info = ""
+    if n_oos_days:
+        period_info = f" (OOS Period: {n_oos_days} days)"
+    
     # Update layout
     fig.update_layout(
         title=dict(
-            text=f"{symphony_name} - In-Sample Distributions with OOS Values",
+            text=f"{symphony_name} - In-Sample Distributions with OOS Values{period_info}",
             x=0.5,
             xanchor='center',
             font=dict(size=16)
         ),
-        height=800,
+        height=900,
         showlegend=False
     )
     
@@ -1258,11 +1263,29 @@ def main():
             st.success("✅ Distribution analysis ready!")
             st.markdown("")  # Add spacing
             
+            # Display period information
+            st.markdown("### 📅 Comparison Periods")
+            if hasattr(core_results, 'config') and core_results['config']:
+                config = core_results['config']
+                oos_start = config.get('oos_start')
+                today_date = config.get('today_date')
+                if oos_start and today_date:
+                    oos_days = (today_date - oos_start).days
+                    st.info(f"**In-Sample Period**: Historical backtest data (multiple overlapping periods)  \n**Out-of-Sample Period**: {oos_start.strftime('%Y-%m-%d')} to {today_date.strftime('%Y-%m-%d')} ({oos_days} days)")
+            
             # Display distribution histograms
             st.markdown("### 📈 Metric Distributions")
             st.markdown("Histograms show the distribution of in-sample values for each metric, with red dashed lines indicating where your out-of-sample values fall.")
             
             # Create and display histogram
+            oos_days = None
+            if hasattr(core_results, 'config') and core_results['config']:
+                config = core_results['config']
+                oos_start = config.get('oos_start')
+                today_date = config.get('today_date')
+                if oos_start and today_date:
+                    oos_days = (today_date - oos_start).days
+            
             fig = create_distribution_histograms(
                 core_results['ar_is_values'], 
                 core_results['sh_is_values'], 
@@ -1272,7 +1295,8 @@ def main():
                 core_results['sh_oos'], 
                 core_results['cr_oos'], 
                 core_results['so_oos'],
-                core_results['sym_name']
+                core_results['sym_name'],
+                oos_days
             )
             st.plotly_chart(fig, use_container_width=True)
             
