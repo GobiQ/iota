@@ -1490,6 +1490,12 @@ def main():
                     'n_slices': len(slices)
                 }
                 
+                # Debug: Check if data was stored correctly
+                st.write("Debug - After storage, daily_ret in core_results:", 'daily_ret' in st.session_state.core_results)
+                if 'daily_ret' in st.session_state.core_results:
+                    st.write("Debug - daily_ret type after storage:", type(st.session_state.core_results['daily_ret']))
+                    st.write("Debug - daily_ret length after storage:", len(st.session_state.core_results['daily_ret']))
+                
                 # Display core results
                 display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats, 
                                    ar_oos, sh_oos, cr_oos, so_oos, reliability, config)
