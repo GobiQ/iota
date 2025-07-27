@@ -604,6 +604,76 @@ def interpret_overfitting_risk(rolling_results: Dict[str, Any]) -> str:
     
     return interpretation
 
+def create_distribution_histograms(ar_stats, sh_stats, cr_stats, so_stats, ar_oos, sh_oos, cr_oos, so_oos, symphony_name: str):
+    """Create histogram plots showing in-sample distributions with OOS values marked."""
+    
+    # Define metrics and their data
+    metrics_data = [
+        ("Annualized Return", ar_stats['is_values'], ar_oos, lambda x: f"{x*100:.2f}%", "Annualized Return (%)"),
+        ("Sharpe Ratio", sh_stats['is_values'], sh_oos, lambda x: f"{x:.3f}", "Sharpe Ratio"),
+        ("Cumulative Return", cr_stats['is_values'], cr_oos, lambda x: f"{x*100:.2f}%", "Cumulative Return (%)"),
+        ("Sortino Ratio", so_stats['is_values'], so_oos, format_sortino_output, "Sortino Ratio")
+    ]
+    
+    # Create subplots
+    fig = go.Figure()
+    
+    # Colors for different metrics
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+    
+    for i, (metric_name, is_values, oos_val, formatter, axis_title) in enumerate(metrics_data):
+        # Create histogram for in-sample values
+        fig.add_trace(go.Histogram(
+            x=is_values,
+            name=f"{metric_name} (IS)",
+            nbinsx=20,
+            opacity=0.7,
+            marker_color=colors[i],
+            showlegend=True,
+            hovertemplate=f"<b>{metric_name}</b><br>" +
+                         "IS Value: %{x}<br>" +
+                         "Count: %{y}<extra></extra>"
+        ))
+        
+        # Add vertical line for OOS value
+        fig.add_vline(
+            x=oos_val,
+            line_dash="dash",
+            line_color="red",
+            line_width=3,
+            annotation_text=f"OOS: {formatter(oos_val)}",
+            annotation_position="top right",
+            annotation=dict(
+                font=dict(size=12, color="red"),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="red",
+                borderwidth=1
+            )
+        )
+    
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text=f"{symphony_name} - In-Sample Distributions with OOS Values",
+            x=0.5,
+            xanchor='center',
+            font=dict(size=16)
+        ),
+        xaxis_title="Metric Values",
+        yaxis_title="Frequency",
+        barmode='overlay',
+        height=600,
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
+    )
+    
+    return fig
+
 def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name: str) -> go.Figure:
     """Create interactive Plotly plot for rolling analysis."""
     if not rolling_results.get('sufficient_data', False):
@@ -747,7 +817,7 @@ def main():
     st.markdown('<h2 style="text-align: center; font-size: 1.5rem; color: #666; margin-bottom: 2rem;">Is your strategy\'s performance matching the backtest?</h2>', unsafe_allow_html=True)
     
     # Create tabs for better organization
-    tab1, tab2, tab3, tab4 = st.tabs(["🔧 Configuration", "📊 Results", "📈 Rolling Analysis", "📚 Help"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔧 Configuration", "📊 Results", "📊 Distributions", "📈 Rolling Analysis", "📚 Help"])
     
     # Configuration Tab
     with tab1:
@@ -1110,6 +1180,21 @@ def main():
                     'n_slices': len(slices)
                 }
                 
+                # Store core results in session state for other tabs
+                st.session_state.core_results = {
+                    'sym_name': sym_name,
+                    'ar_stats': ar_stats,
+                    'sh_stats': sh_stats,
+                    'cr_stats': cr_stats,
+                    'so_stats': so_stats,
+                    'ar_oos': ar_oos,
+                    'sh_oos': sh_oos,
+                    'cr_oos': cr_oos,
+                    'so_oos': so_oos,
+                    'reliability': reliability,
+                    'config': config
+                }
+                
                 # Display core results
                 display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats, 
                                    ar_oos, sh_oos, cr_oos, so_oos, reliability, config)
@@ -1140,8 +1225,49 @@ def main():
         else:
             st.info("👈 Please configure and run your analysis in the 'Configuration' tab first.")
 
-    # Rolling Analysis Tab
+    # Distributions Tab
     with tab3:
+        st.header("📊 In-Sample Distributions")
+        st.markdown("")  # Add spacing after header
+        
+        if hasattr(st.session_state, 'core_results') and st.session_state.core_results:
+            core_results = st.session_state.core_results
+            
+            st.success("✅ Distribution analysis ready!")
+            st.markdown("")  # Add spacing
+            
+            # Display distribution histograms
+            st.markdown("### 📈 Metric Distributions")
+            st.markdown("Histograms show the distribution of in-sample values for each metric, with red dashed lines indicating where your out-of-sample values fall.")
+            
+            # Create and display histogram
+            fig = create_distribution_histograms(
+                core_results['ar_stats'], 
+                core_results['sh_stats'], 
+                core_results['cr_stats'], 
+                core_results['so_stats'],
+                core_results['ar_oos'], 
+                core_results['sh_oos'], 
+                core_results['cr_oos'], 
+                core_results['so_oos'],
+                core_results['sym_name']
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Add interpretation
+            st.markdown("### 🎯 Interpretation")
+            st.markdown("""
+            - **Red dashed lines**: Show where your OOS performance falls relative to the IS distribution
+            - **Histogram bars**: Show the frequency of different performance levels during the backtest period
+            - **Left of distribution**: OOS underperforming relative to backtest expectations
+            - **Right of distribution**: OOS outperforming relative to backtest expectations
+            - **Center of distribution**: OOS performance matches backtest expectations
+            """)
+        else:
+            st.info("📊 No analysis data available. Please run the analysis first in the 'Results' tab.")
+
+    # Rolling Analysis Tab
+    with tab4:
         st.header("📈 Rolling Window Analysis")
         st.markdown("")  # Add spacing after header
         
@@ -1186,7 +1312,7 @@ def main():
             st.info("📊 No rolling analysis data available. Please run the analysis first in the 'Results' tab with rolling analysis enabled.")
 
     # Help Tab
-    with tab4:
+    with tab5:
         show_comprehensive_help()
 
 def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats, 
