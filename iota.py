@@ -994,6 +994,11 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
         rolling_iotas = []
         rolling_dates = []
         
+        # Debug: Check IS values
+        if metric_key == 'sh':
+            st.write(f"Debug - {metric_info['name']} IS values length:", len(metric_info['is_values']))
+            st.write(f"Debug - {metric_info['name']} IS values range:", np.min(metric_info['is_values']), "to", np.max(metric_info['is_values']))
+        
         # Use window_size to calculate rolling iota
         for i in range(window_size, len(all_dates)):
             # Get the window of returns
@@ -1013,6 +1018,11 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
                     rolling_dates.append(all_dates[i-1])  # Use end date of window
+        
+        # Debug: Check results for this metric
+        st.write(f"Debug - {metric_info['name']} rolling iotas calculated:", len(rolling_iotas))
+        if len(rolling_iotas) > 0:
+            st.write(f"Debug - {metric_info['name']} iota range:", np.min(rolling_iotas), "to", np.max(rolling_iotas))
         
         # Add smoothed line for this metric
         if len(rolling_iotas) >= 3:
@@ -1545,9 +1555,9 @@ def main():
                         )
                         st.session_state.rolling_results = rolling_results
                     
-                    st.success("✅ Rolling analysis complete! Check the 'Rolling Analysis' tab for overfitting insights.")
+                    st.success("✅ Rolling analysis complete! Check the 'Rolling Analysis' tab for time specific insights.")
                 else:
-                    st.info("ℹ️ Rolling analysis disabled. Enable it in the configuration to detect overfitting patterns.")
+                    st.info("ℹ️ Rolling analysis disabled. Enable it in the configuration to detect time specific patterns.")
                 
                 # Reset the flag
                 st.session_state.run_analysis = False
@@ -1678,6 +1688,12 @@ def main():
                                 data=daily_ret_data['values'],
                                 index=pd.to_datetime(daily_ret_data['dates'])
                             )
+                            
+                            # Debug: Check the reconstructed data
+                            st.write("Debug - daily_ret length:", len(daily_ret))
+                            st.write("Debug - daily_ret date range:", daily_ret.index[0], "to", daily_ret.index[-1])
+                            st.write("Debug - window_size:", 252)  # Default window size
+                            st.write("Debug - Available data points for rolling:", len(daily_ret) - 252)
                             
                             full_fig = create_full_backtest_rolling_plot(
                                 daily_ret,
