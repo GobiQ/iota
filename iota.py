@@ -1027,8 +1027,10 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             ))
     
     # Add OOS start date vertical line
+    # Convert date to datetime for Plotly compatibility
+    oos_start_datetime = pd.Timestamp(oos_start_dt)
     fig.add_vline(
-        x=oos_start_dt,
+        x=oos_start_datetime,
         line_dash="dash",
         line_color="red",
         line_width=2,
@@ -1478,8 +1480,6 @@ def main():
                     so_stats = compute_iota_with_stats(df["so_is"].values, so_oos, n_oos, "Sortino Ratio", overlap=config['overlap'])
                 
                 # Store core results in session state for all tabs
-                st.write("Debug - About to store core_results")
-                
                 # Convert pandas Series to dict for storage compatibility
                 daily_ret_dict = {
                     'dates': daily_ret.index.tolist(),
@@ -1515,12 +1515,6 @@ def main():
                     'so_is_values': df["so_is"].values,
                     'n_slices': len(slices)
                 }
-                
-                st.write("Debug - Stored core_results with keys:", list(st.session_state.core_results.keys()))
-                st.write("Debug - After storage, daily_ret in core_results:", 'daily_ret' in st.session_state.core_results)
-                if 'daily_ret' in st.session_state.core_results:
-                    st.write("Debug - daily_ret type after storage:", type(st.session_state.core_results['daily_ret']))
-                    st.write("Debug - daily_ret length after storage:", len(st.session_state.core_results['daily_ret']['values']))
                 
                 # Display core results
                 display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats, 
@@ -1665,14 +1659,6 @@ def main():
                         config = core_results.get('config', {})
                         oos_start_dt = config.get('oos_start')
                         
-                        # Debug: Check what's available
-                        st.write("Debug - Available keys:", list(core_results.keys()))
-                        st.write("Debug - oos_start_dt:", oos_start_dt)
-                        st.write("Debug - daily_ret in core_results:", 'daily_ret' in core_results)
-                        if 'daily_ret' in core_results:
-                            st.write("Debug - daily_ret type:", type(core_results['daily_ret']))
-                            st.write("Debug - daily_ret length:", len(core_results['daily_ret']))
-                        
                         if oos_start_dt and 'daily_ret' in core_results:
                             # Reconstruct pandas Series from stored dict
                             daily_ret_data = core_results['daily_ret']
@@ -1697,10 +1683,6 @@ def main():
                             st.plotly_chart(full_fig, use_container_width=True)
                         else:
                             st.warning("⚠️ Missing data for full backtest chart")
-                            if not oos_start_dt:
-                                st.write("Missing: oos_start_dt")
-                            if 'daily_ret' not in core_results:
-                                st.write("Missing: daily_ret")
                     else:
                         st.warning("⚠️ Core results not available for full backtest chart")
                     
