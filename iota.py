@@ -1468,6 +1468,8 @@ def main():
                     so_stats = compute_iota_with_stats(df["so_is"].values, so_oos, n_oos, "Sortino Ratio", overlap=config['overlap'])
                 
                 # Store core results in session state for all tabs
+                st.write("Debug - About to store core_results")
+                
                 # Convert pandas Series to dict for storage compatibility
                 daily_ret_dict = {
                     'dates': daily_ret.index.tolist(),
@@ -1504,7 +1506,7 @@ def main():
                     'n_slices': len(slices)
                 }
                 
-                # Debug: Check if data was stored correctly
+                st.write("Debug - Stored core_results with keys:", list(st.session_state.core_results.keys()))
                 st.write("Debug - After storage, daily_ret in core_results:", 'daily_ret' in st.session_state.core_results)
                 if 'daily_ret' in st.session_state.core_results:
                     st.write("Debug - daily_ret type after storage:", type(st.session_state.core_results['daily_ret']))
