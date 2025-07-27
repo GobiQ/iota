@@ -698,7 +698,7 @@ def create_rolling_analysis_plot(rolling_results: Dict[str, Any], symphony_name:
 def main():
     
     # Initialize query parameters for sharing
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     
     # Custom CSS
     st.markdown("""
@@ -756,7 +756,7 @@ def main():
             st.subheader("📝 Required Information")
             
             # Symphony URL
-            default_url = query_params.get("url", [""])[0] if "url" in query_params else ""
+            default_url = query_params.get("url", "")
             url = st.text_input(
                 "Composer Symphony URL *",
                 value=default_url,
@@ -767,7 +767,7 @@ def main():
             # Date configuration
             col1, col2 = st.columns(2)
             with col1:
-                default_early_date = query_params.get("early_date", ["2000-01-01"])[0] if "early_date" in query_params else "2000-01-01"
+                default_early_date = query_params.get("early_date", "2000-01-01")
                 early_date = st.date_input(
                     "Data Start Date:",
                     value=date.fromisoformat(default_early_date),
@@ -775,7 +775,7 @@ def main():
                 )
             
             with col2:
-                default_today_date = query_params.get("today_date", [date.today().isoformat()])[0] if "today_date" in query_params else date.today().isoformat()
+                default_today_date = query_params.get("today_date", date.today().isoformat())
                 today_date = st.date_input(
                     "Data End Date:",
                     value=date.fromisoformat(default_today_date),
@@ -783,7 +783,7 @@ def main():
                 )
             
             # OOS start date - this is crucial
-            default_oos_start = query_params.get("oos_start", [(date.today() - timedelta(days=730)).isoformat()])[0] if "oos_start" in query_params else (date.today() - timedelta(days=730)).isoformat()
+            default_oos_start = query_params.get("oos_start", (date.today() - timedelta(days=730)).isoformat())
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
                 value=date.fromisoformat(default_oos_start),
@@ -796,7 +796,7 @@ def main():
             # Analysis parameters in columns
             col1, col2 = st.columns(2)
             with col1:
-                default_n_slices = int(query_params.get("n_slices", ["100"])[0]) if "n_slices" in query_params else 100
+                default_n_slices = int(query_params.get("n_slices", "100"))
                 n_slices = st.number_input(
                     "Number of IS Slices:",
                     min_value=10,
@@ -806,7 +806,7 @@ def main():
                 )
             
             with col2:
-                default_overlap = query_params.get("overlap", ["true"])[0].lower() == "true" if "overlap" in query_params else True
+                default_overlap = query_params.get("overlap", "true").lower() == "true"
                 overlap = st.checkbox(
                     "Allow Overlapping Slices",
                     value=default_overlap,
@@ -817,7 +817,7 @@ def main():
             st.subheader("🔄 Rolling Analysis Parameters")
             col1, col2 = st.columns(2)
             with col1:
-                default_enable_rolling = query_params.get("enable_rolling", ["true"])[0].lower() == "true" if "enable_rolling" in query_params else True
+                default_enable_rolling = query_params.get("enable_rolling", "true").lower() == "true"
                 enable_rolling = st.checkbox(
                     "Enable Rolling Window Analysis",
                     value=default_enable_rolling,
@@ -826,7 +826,7 @@ def main():
             
             with col2:
                 if enable_rolling:
-                    default_auto_window = query_params.get("auto_window", ["true"])[0].lower() == "true" if "auto_window" in query_params else True
+                    default_auto_window = query_params.get("auto_window", "true").lower() == "true"
                     auto_window = st.checkbox(
                         "Auto Window Size",
                         value=default_auto_window,
@@ -839,7 +839,7 @@ def main():
             if enable_rolling and not auto_window:
                 col1, col2 = st.columns(2)
                 with col1:
-                    default_window_size = int(query_params.get("window_size", ["126"])[0]) if "window_size" in query_params else 126
+                    default_window_size = int(query_params.get("window_size", "126"))
                     window_size = st.number_input(
                         "Window Size (days):",
                         min_value=21,
@@ -848,7 +848,7 @@ def main():
                         help="Size of each rolling window in days"
                     )
                 with col2:
-                    default_step_size = int(query_params.get("step_size", ["21"])[0]) if "step_size" in query_params else 21
+                    default_step_size = int(query_params.get("step_size", "21"))
                     step_size = st.number_input(
                         "Step Size (days):",
                         min_value=1,
@@ -866,8 +866,10 @@ def main():
             
             # Optional exclusion windows
             st.subheader("🚫 Exclusion Windows (Optional)")
+            default_exclusions_str = query_params.get("exclusions_str", "")
             exclusions_str = st.text_area(
                 "Exclude specific date ranges:",
+                value=default_exclusions_str,
                 help="Exclude market crashes, unusual periods, etc. Format: YYYY-MM-DD to YYYY-MM-DD, separated by commas",
                 placeholder="2020-03-01 to 2020-05-01, 2022-01-01 to 2022-02-01"
             )
@@ -920,7 +922,6 @@ def main():
                     
                     # Create shareable URL
                     query_string = "&".join([f"{k}={v}" for k, v in params.items() if v])
-                    current_url = st.experimental_get_query_params()
                     shareable_url = f"?{query_string}"
                     
                     st.success("✅ Configuration saved! Redirecting to Results...")
