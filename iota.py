@@ -941,32 +941,8 @@ def main():
                     
                     st.success("✅ Configuration saved! Redirecting to Results...")
                     
-                    # Display shareable URL with copy functionality
-                    st.markdown("### 🔗 Share Your Analysis")
-                    st.info(f"**Shareable URL**: Copy this link to share your analysis settings with others:")
-                    
-                    # Display the URL in a code block for easy copying
-                    st.code(shareable_url, language=None)
-                    
-                    # Create a simple copy button using Streamlit
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        if st.button("📋 Copy URL", type="primary"):
-                            st.success("✅ URL copied to clipboard!")
-                            # Store the URL in session state for potential future use
-                            st.session_state.copied_url = shareable_url
-                    
-                    with col2:
-                        st.markdown("**Instructions**: Click the button above, then manually copy the URL from the code block above.")
-                    
-                    # Alternative: Create a text area that's easier to copy from
-                    st.markdown("**Alternative**: Copy from the text area below:")
-                    st.text_area(
-                        "Shareable URL:",
-                        value=shareable_url,
-                        height=100,
-                        help="Select all text (Ctrl+A) then copy (Ctrl+C)"
-                    )
+                    # Store the shareable URL in session state for display outside the form
+                    st.session_state.shareable_url = shareable_url
                     
                     # Auto-navigate to Results tab using JavaScript
                     st.markdown("""
@@ -1045,6 +1021,36 @@ def main():
                     # Fallback: Manual navigation button
                     st.markdown("---")
                     st.info("🔄 **Auto-navigation in progress...** If you don't see the Results tab automatically, please manually click the '📊 Results' tab above.")
+
+        # Display shareable URL outside the form (if available)
+        if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
+            st.markdown("---")
+            st.markdown("### 🔗 Share Your Analysis")
+            st.info(f"**Shareable URL**: Copy this link to share your analysis settings with others:")
+            
+            # Display the URL in a code block for easy copying
+            st.code(st.session_state.shareable_url, language=None)
+            
+            # Create a simple copy button using Streamlit
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.button("📋 Copy URL", type="primary", key="copy_url_button"):
+                    st.success("✅ URL copied to clipboard!")
+                    # Store the URL in session state for potential future use
+                    st.session_state.copied_url = st.session_state.shareable_url
+            
+            with col2:
+                st.markdown("**Instructions**: Click the button above, then manually copy the URL from the code block above.")
+            
+            # Alternative: Create a text area that's easier to copy from
+            st.markdown("**Alternative**: Copy from the text area below:")
+            st.text_area(
+                "Shareable URL:",
+                value=st.session_state.shareable_url,
+                height=100,
+                help="Select all text (Ctrl+A) then copy (Ctrl+C)",
+                key="shareable_url_textarea"
+            )
 
 
 
