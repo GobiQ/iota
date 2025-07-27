@@ -1955,6 +1955,16 @@ def show_comprehensive_help():
         1. Same historical analysis
         2. 12% returns and 1.5 Sharpe fall within your historical range (Iota ≈ +0.2)
         3. **Conclusion**: "Your strategy is performing as expected based on backtest"
+        
+        **Another Example - Extreme Overfitting**:
+        
+        **Scenario**: Your strategy backtest showed 890% annual returns with Sharpe ratio of 4.5. After 3 months of live trading, you're getting 80% annual returns with Sharpe ratio of 1.5.
+        
+        **What Iota Analysis Shows**:
+        1. Looks at 100 historical 3-month periods from your backtest
+        2. Finds your strategy typically got 200% to 400% annual returns with Sharpe ratios of 3.0 to 5.0
+        3. Calculates that 80% returns and 1.5 Sharpe are far below historical expectations (Iota ≈ -1.8)
+        4. **Conclusion**: "Your strategy is significantly underperforming relative to backtest - likely overfit to specific market conditions"
         """)
     
     with help_tab4:
