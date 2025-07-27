@@ -267,7 +267,7 @@ def compute_percentile_iota(is_values: np.ndarray, oos_value: float, n_oos: int,
         return 0.0
     
     # Find what percentile the OOS value falls in
-    percentile = np.percentileofscore(finite_is, oos_value)
+    percentile = stats.percentileofscore(finite_is, oos_value)
     
     # Convert to z-score equivalent
     # 50th percentile = 0, 84th percentile = 1, 16th percentile = -1
