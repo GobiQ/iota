@@ -838,6 +838,9 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
     all_dates = daily_ret.index.tolist()
     
     # Calculate rolling iota for each metric across the entire period
+    # Note: For cumulative return, the IS values are calculated from 252-day slices within the IS period,
+    # while rolling windows calculate cumulative returns from 252-day windows across the entire backtest.
+    # This could create scale differences if the IS period has different characteristics than the full backtest.
     metrics_data = {
         'sh': {'is_values': sh_is_values, 'oos_value': sh_oos, 'name': 'Sharpe Ratio', 'color': '#9467bd'},
         'cr': {'is_values': cr_is_values, 'oos_value': cr_oos, 'name': 'Cumulative Return', 'color': '#1f77b4'},
@@ -858,6 +861,7 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
             if metric_key == 'sh':
                 window_metric = sharpe_ratio(window_returns)
             elif metric_key == 'cr':
+                # Use cumulative return to match the IS slice calculation method
                 window_metric = cumulative_return(window_returns)
             elif metric_key == 'so':
                 window_metric = sortino_ratio(window_returns)
@@ -867,6 +871,8 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
                 # For rolling iota, each window is treated as an "OOS" period
                 # So n_oos should be the window size (252 days)
                 iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
+                
+
                 
                 if np.isfinite(iota_val):
                     rolling_iotas.append(iota_val)
