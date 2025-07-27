@@ -14,6 +14,7 @@ import warnings
 import re
 import io
 import contextlib
+import urllib.parse
 
 # Suppress warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered')
@@ -904,6 +905,7 @@ def main():
                     st.session_state.auto_switch_to_results = True
                     
                     # Update URL with current parameters for sharing
+                    
                     params = {
                         "url": url,
                         "early_date": early_date.isoformat(),
@@ -920,8 +922,20 @@ def main():
                     if step_size is not None:
                         params["step_size"] = str(step_size)
                     
-                    # Create shareable URL
-                    query_string = "&".join([f"{k}={v}" for k, v in params.items() if v])
+                    # Set query parameters in the URL
+                    for k, v in params.items():
+                        if v:  # Only include non-empty values
+                            st.query_params[k] = str(v)
+                    
+                    # Create shareable URL for display
+                    encoded_params = []
+                    for k, v in params.items():
+                        if v:  # Only include non-empty values
+                            encoded_key = urllib.parse.quote(k)
+                            encoded_value = urllib.parse.quote(str(v))
+                            encoded_params.append(f"{encoded_key}={encoded_value}")
+                    
+                    query_string = "&".join(encoded_params)
                     shareable_url = f"?{query_string}"
                     
                     st.success("✅ Configuration saved! Redirecting to Results...")
