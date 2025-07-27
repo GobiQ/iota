@@ -1215,7 +1215,7 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
                  help="Average of all metric iota values. Measures how many standard deviations your overall OOS performance differs from backtest expectations. Positive = outperforming, negative = underperforming.")
     with col2:
         st.metric("Composite Persistence Rating", f"{avg_rating}", 
-                 help="0-500 scale rating of strategy persistence. 100 = neutral (matches expectations), >100 = outperforming, <100 = underperforming. Higher values indicate better edge persistence.")
+                 help="0-100+ scale rating of strategy persistence. 100 = strategy exactly matches backtest, <100 = strategy underperforms relative to backtest, >100 = strategy outperforms backtest.")
     
     st.markdown("")  # Add spacing after metrics
     
