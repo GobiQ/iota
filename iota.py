@@ -1024,7 +1024,7 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
                     st.write(f"Debug - {metric_info['name']} IS values std:", np.std(metric_info['is_values']))
                     st.write(f"Debug - {metric_info['name']} window_size:", window_size)
                 
-                iota_val = compute_iota(metric_info['is_values'], window_metric, window_size)
+                iota_val = compute_iota(0.0, window_metric, window_size, is_values=metric_info['is_values'])
                 
                 # Debug: Check the iota result
                 if i == window_size + 1:  # Only debug the first calculation
