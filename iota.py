@@ -1037,8 +1037,7 @@ def main():
                 key="shareable_url_textarea"
             )
             
-            # Add helpful copy instructions
-            st.info("💡 **Copy Instructions**: Select the URL text above or in the text area below, then press Ctrl+C (or Cmd+C on Mac) to copy to your clipboard.")
+
 
 
 
