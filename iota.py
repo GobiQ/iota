@@ -920,12 +920,6 @@ def create_full_backtest_rolling_plot(daily_ret: pd.Series, oos_start_dt: date,
     
     # Add reference lines (without annotations to avoid text overlay)
     fig.add_hline(y=0, line_dash="solid", line_color="gray")
-    fig.add_hline(y=0.5, line_dash="dot", line_color="lightgreen")
-    fig.add_hline(y=-0.5, line_dash="dot", line_color="lightcoral")
-    fig.add_hline(y=1.0, line_dash="dot", line_color="green")
-    fig.add_hline(y=-1.0, line_dash="dot", line_color="red")
-    fig.add_hline(y=2.0, line_dash="dot", line_color="darkgreen")
-    fig.add_hline(y=-2.0, line_dash="dot", line_color="darkred")
     
     # Update layout
     title_text = f'{symphony_name} - Full Backtest Rolling Iota Proxy Analysis'
@@ -1868,16 +1862,16 @@ def show_comprehensive_help():
         
         ### Step 6: Rolling Window Analysis
         **What happens:**
-        1. **Window creation**: OOS period divided into overlapping windows (e.g., 6-month windows with 1-month steps)
+        1. **OOS Rolling Analysis**: OOS period divided into overlapping windows (e.g., 6-month windows with 1-month steps)
         2. **Historical comparison**: Each window compared against IS slice distribution
         3. **Time-specific analysis**: Performance patterns and trends over time
-        4. **Visual analysis**: Rolling iota values plotted to show performance evolution
+        4. **Full Backtest Rolling Analysis**: 252-day rolling windows across entire backtest period
         
         **Rationale:**
         - **Performance tracking**: Shows how strategy performance evolves over time
         - **Temporal granularity**: Rolling windows reveal when and how performance changes
         - **Pattern identification**: Helps identify consistent vs. volatile performance
-        - **Pre-OOS proxy**: Full backtest rolling analysis provides proxy iota for pre-OOS periods
+        - **Proxy iota analysis**: Full backtest analysis provides context for pre-OOS performance patterns
         
         ## CORE METRICS ANALYZED
         
@@ -2161,10 +2155,26 @@ def show_comprehensive_help():
         - **Trend identification**: Whether performance is improving or declining
         - **Volatility assessment**: How much performance varies between periods
         
-        ### 📈 Full Backtest Rolling Analysis
-        - **Pre-OOS proxy**: Rolling iota for periods before your OOS start date
-        - **Performance evolution**: How strategy performance changed throughout the backtest
-        - **OOS comparison**: Compare actual OOS performance with pre-OOS patterns
+        ### 📈 Full Backtest Rolling Iota Proxy Analysis
+        **Understanding the "Proxy" Nature:**
+        
+        **What is Iota?** Iota (ι) is a metric that compares out-of-sample (OOS) performance against in-sample (IS) expectations. By definition, iota only applies to true OOS data.
+        
+        **Why "Proxy" Iota?** For periods before your OOS start date, we calculate a "proxy iota" by:
+        - Treating each 252-day rolling window as a temporary "OOS" period
+        - Comparing that window's performance against the full IS distribution
+        - This provides insights into how your strategy performed relative to expectations throughout the backtest
+        
+        **Key Benefits:**
+        - **Performance Evolution**: See how strategy performance changed over time
+        - **Consistency Assessment**: Identify periods of stable vs. volatile performance
+        - **OOS Context**: Compare actual OOS performance with pre-OOS patterns
+        - **Early Warning**: Detect performance changes before your OOS period
+        
+        **Interpretation:**
+        - **Pre-OOS periods**: Show "proxy iota" - how each window performed vs. full IS distribution
+        - **OOS period**: Shows true iota - actual OOS performance vs. IS expectations
+        - **Patterns**: Look for consistency, trends, or sudden changes in performance
         
         ## Actionable Insights
         
@@ -2235,6 +2245,9 @@ def show_comprehensive_help():
         
         ### Q: What does "autocorrelation adjusted" mean?
         **A:** When using overlapping slices, adjacent periods share most of their data, violating statistical independence assumptions. The adjustment makes p-values more conservative (harder to achieve significance) to account for this correlation.
+        
+        ### Q: What is "proxy iota" in the full backtest rolling analysis?
+        **A:** Since iota technically only applies to true out-of-sample data, we use "proxy iota" for pre-OOS periods. Each 252-day rolling window is treated as a temporary "OOS" period and compared against the full in-sample distribution. This shows how your strategy performed relative to expectations throughout the backtest, providing context for your actual OOS performance.
         
         ## Technical Questions
         
