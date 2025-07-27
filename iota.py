@@ -2077,15 +2077,29 @@ def show_comprehensive_help():
         st.markdown("""
         ## WHAT IS IOTA (ι)?
         
-        Iota is a standardized metric that measures how many standard deviations your out-of-sample performance differs from the in-sample median, adjusted for sample size.
+        Iota is a standardized metric that measures how your out-of-sample performance compares to historical expectations. The calculation method automatically adapts to your data's distribution characteristics.
         
-        **Formula:** `ι = weight × (OOS_metric - IS_median) / IS_std_dev`
+        **Standard Method** (for normal distributions):
+        ```
+        ι = weight × (OOS_metric - IS_median) / IS_std_dev
+        ```
+        
+        **Robust Method** (for skewed or fat-tailed distributions):
+        ```
+        ι = weight × (OOS_metric - IS_median) / (IS_IQR / 1.35)
+        ```
+        
+        **Percentile Method** (for complex distributions):
+        ```
+        ι = weight × z_score_from_percentile(OOS_percentile_rank)
+        ```
         
         Where:
         - `weight = min(1.0, √(OOS_days / 252))` accounts for sample size reliability
         - `OOS_metric` = your strategy's out-of-sample performance value
         - `IS_median` = median of all in-sample slice performances  
         - `IS_std_dev` = standard deviation of in-sample slice performances
+        - `IS_IQR` = interquartile range of in-sample performances
         
         **INTERPRETATION:**
         - `ι = +1.0`: OOS performed 1 standard deviation better than historical median
@@ -2140,9 +2154,9 @@ def show_comprehensive_help():
         
         **Distribution Detection:**
         - **Normality test**: D'Agostino K² test for normal distribution
-        - **Skewness analysis**: Detects asymmetric distributions (|skewness| > 1.0)
-        - **Kurtosis analysis**: Detects fat-tailed distributions (kurtosis > 3.0)
-        - **Method selection**: Automatically chooses the most appropriate calculation
+        - **Skewness analysis**: Detects asymmetric distributions (|skewness| > 2.0)
+        - **Kurtosis analysis**: Detects fat-tailed distributions (kurtosis > 5.0)
+        - **Method selection**: Uses standard method for most cases, robust method only for extreme distributions (|skewness| > 3.0 or kurtosis > 7.0)
         
         **Rationale:**
         - **Adaptive approach**: Different distribution shapes require different statistical methods
@@ -2316,7 +2330,7 @@ def show_comprehensive_help():
         
         ### Best Practices
         
-        1. **Validate assumptions**: Check if your strategy's returns follow normal-ish distribution
+        1. **Trust the distribution detection**: The system automatically chooses the best calculation method for your data
         2. **Use multiple time periods**: Test different in-sample/out-of-sample splits
         3. **Consider market context**: Account for changing market conditions
         4. **Combine with other tools**: Don't rely solely on iota analysis for strategy evaluation
@@ -2568,6 +2582,8 @@ def show_comprehensive_help():
         - **Percentile Method**: Used for complex distributions (percentile-based ranking)
         
         The system runs normality tests, analyzes skewness and kurtosis, and automatically selects the best calculation method for your data. This ensures more accurate iota values regardless of your strategy's distribution characteristics.
+        
+        **Note**: Core analysis uses distribution-aware methods, while rolling analysis uses the standard method for consistency across time periods.
         
         ## Technical Questions
         
