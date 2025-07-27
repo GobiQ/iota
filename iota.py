@@ -2183,19 +2183,6 @@ def show_comprehensive_help():
         - **OOS period**: Shows true iota - actual OOS performance vs. IS expectations
         - **Patterns**: Look for consistency, trends, or sudden changes in performance
         
-        ## Actionable Insights
-        
-        ### ✅ If Rolling Analysis Shows Stable Performance:
-        - **Continue current strategy** with confidence
-        - **Periodic monitoring** (monthly/quarterly reviews)
-        - **Document current parameters** for future reference
-        
-        ### ⚠️ If Rolling Analysis Shows Performance Changes:
-        - **Monitor closely** for continued trends
-        - **Review recent market conditions** for regime changes
-        - **Consider parameter adjustments** if trends continue
-        - **Prepare contingency plans** if needed
-        
         ## Technical Parameters
         
         ### 🔧 Window Sizing (Adaptive)
