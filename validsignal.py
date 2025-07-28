@@ -16,52 +16,297 @@ import json
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+def clean_symphony_id(symphony_id: str) -> str:
+    """Clean symphony ID by removing URL parts if user pasted full URL."""
+    if not symphony_id or len(symphony_id.strip()) == 0:
+        return ""
+    
+    symph_id = symphony_id.strip()
+    if symph_id.startswith("https://app.composer.trade/symphony/"):
+        symph_id = symph_id.split("/")[-1]
+    
+    return symph_id
+
 def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
-    """Fetch backtest data from Composer Symphony API."""
+    """Fetch backtest data from Composer Symphony using multiple API methods."""
     
-    # Composer API endpoint (you may need to adjust this based on actual API)
-    api_url = f"https://api.composer.trade/v1/symphonies/{symphony_id}/backtest"
-    
-    params = {
-        'start_date': start_date,
-        'end_date': end_date,
-        'format': 'json'
-    }
-    
-    try:
-        response = requests.get(api_url, params=params, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Error fetching data from Composer: {str(e)}")
+    # Clean the symphony ID
+    clean_id = clean_symphony_id(symphony_id)
+    if not clean_id:
+        st.error("❌ Invalid Symphony ID")
         return None
+    
+    # Method 1: Try Composer Web API
+    try:
+        composer_url = f"https://app.composer.trade/api/symphony/{clean_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://app.composer.trade/'
+        }
+        
+        response = requests.get(composer_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                return data
+            except ValueError:
+                st.error("❌ Invalid JSON response from Composer API")
+                return None
+        else:
+            st.info(f"Composer API returned status {response.status_code}")
+            
+    except Exception as e:
+        st.info(f"Composer API method failed: {str(e)[:50]}")
+    
+    # Method 2: Try Firestore API
+    try:
+        firestore_url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{clean_id}"
+        
+        response = requests.get(firestore_url, timeout=30)
+        response.raise_for_status()
+        
+        if response.text.strip():
+            data = response.json()
+            if 'fields' in data:
+                return data
+        else:
+            st.info("Firestore API returned empty response")
+            
+    except Exception as e:
+        st.info(f"Firestore API method failed: {str(e)[:50]}")
+    
+    st.error("❌ Failed to fetch data from both Composer and Firestore APIs")
+    return None
+
+def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    """Fetch detailed signal data from Composer Symphony."""
+    
+    # Clean the symphony ID
+    clean_id = clean_symphony_id(symphony_id)
+    if not clean_id:
+        return None
+    
+    # Try to get signal data from the main symphony data
+    symphony_data = fetch_symphony_data(symphony_id, start_date, end_date)
+    
+    if symphony_data and 'signals' in symphony_data:
+        return {'signals': symphony_data['signals']}
+    
+    # If no signals in main data, try separate signal endpoint
+    try:
+        signal_url = f"https://app.composer.trade/api/symphony/{clean_id}/signals"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://app.composer.trade/'
+        }
+        
+        params = {
+            'start_date': start_date,
+            'end_date': end_date
+        }
+        
+        response = requests.get(signal_url, headers=headers, params=params, timeout=30)
+        if response.status_code == 200:
+            return response.json()
+            
+    except Exception as e:
+        st.info(f"Signal API method failed: {str(e)[:50]}")
+    
+    return None
 
 def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
     """Parse Composer Symphony data into a pandas DataFrame."""
     
-    if not data or 'returns' not in data:
-        st.error("❌ Invalid data format from Composer API")
+    if not data:
+        st.error("❌ No data received from Composer API")
         return pd.DataFrame()
     
     try:
-        # Extract returns data
-        returns_data = data['returns']
+        # Try to extract returns from different possible data structures
+        returns_data = None
+        
+        # Method 1: Direct returns field
+        if 'returns' in data:
+            returns_data = data['returns']
+        
+        # Method 2: Backtest data
+        elif 'backtest' in data and 'returns' in data['backtest']:
+            returns_data = data['backtest']['returns']
+        
+        # Method 3: Performance data
+        elif 'performance' in data and 'returns' in data['performance']:
+            returns_data = data['performance']['returns']
+        
+        # Method 4: Firestore fields structure
+        elif 'fields' in data:
+            fields = data['fields']
+            if 'returns' in fields:
+                returns_data = fields['returns']['arrayValue']['values']
+            elif 'backtest' in fields:
+                backtest_field = fields['backtest']['mapValue']['fields']
+                if 'returns' in backtest_field:
+                    returns_data = backtest_field['returns']['arrayValue']['values']
+        
+        if returns_data is None:
+            st.error("❌ Could not find returns data in Composer response")
+            st.info(f"Available fields: {list(data.keys())}")
+            return pd.DataFrame()
         
         # Convert to DataFrame
-        df = pd.DataFrame(returns_data)
+        if isinstance(returns_data, list):
+            df = pd.DataFrame(returns_data)
+        else:
+            # Handle different data formats
+            df = pd.DataFrame([returns_data])
         
         # Ensure we have the required columns
         if 'date' in df.columns and 'return' in df.columns:
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date')
             return df
+        elif 'timestamp' in df.columns and 'value' in df.columns:
+            # Alternative column names
+            df = df.rename(columns={'timestamp': 'date', 'value': 'return'})
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+            return df
         else:
             st.error("❌ Missing required columns (date, return) in Symphony data")
+            st.info(f"Available columns: {list(df.columns)}")
             return pd.DataFrame()
             
     except Exception as e:
         st.error(f"❌ Error parsing Symphony data: {str(e)}")
         return pd.DataFrame()
+
+def parse_signal_data(signal_data: Dict[str, Any]) -> pd.DataFrame:
+    """Parse Composer signal data into a pandas DataFrame."""
+    
+    if not signal_data:
+        st.error("❌ No signal data received from Composer API")
+        return pd.DataFrame()
+    
+    try:
+        # Try to extract signals from different possible data structures
+        signals = None
+        
+        # Method 1: Direct signals field
+        if 'signals' in signal_data:
+            signals = signal_data['signals']
+        
+        # Method 2: Firestore fields structure
+        elif 'fields' in signal_data:
+            fields = signal_data['fields']
+            if 'signals' in fields:
+                signals = fields['signals']['arrayValue']['values']
+        
+        # Method 3: Check if signal_data is already a list
+        elif isinstance(signal_data, list):
+            signals = signal_data
+        
+        if signals is None:
+            st.info("❌ Could not find signals data in Composer response")
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        if isinstance(signals, list):
+            df = pd.DataFrame(signals)
+        else:
+            df = pd.DataFrame([signals])
+        
+        # Handle different column name possibilities
+        column_mapping = {
+            'timestamp': 'date',
+            'signal_time': 'date',
+            'type': 'signal_type',
+            'signal_type': 'signal_type',
+            'branch': 'branch_name',
+            'signal_branch': 'branch_name',
+            'price': 'execution_price',
+            'execution_price': 'execution_price',
+            'size': 'quantity',
+            'amount': 'quantity'
+        }
+        
+        # Rename columns if needed
+        for old_col, new_col in column_mapping.items():
+            if old_col in df.columns and new_col not in df.columns:
+                df = df.rename(columns={old_col: new_col})
+        
+        # Ensure we have at least date and some signal information
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+            
+            # If we don't have branch_name, create a default one
+            if 'branch_name' not in df.columns:
+                df['branch_name'] = 'Default Branch'
+            
+            # If we don't have signal_type, try to infer from other columns
+            if 'signal_type' not in df.columns:
+                if 'type' in df.columns:
+                    df['signal_type'] = df['type']
+                else:
+                    df['signal_type'] = 'Unknown'
+            
+            return df
+        else:
+            st.error("❌ Missing date column in signal data")
+            st.info(f"Available columns: {list(df.columns)}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.error(f"❌ Error parsing signal data: {str(e)}")
+        return pd.DataFrame()
+
+def calculate_signal_metrics(signals_df: pd.DataFrame, returns_df: pd.DataFrame) -> Dict[str, Any]:
+    """Calculate metrics for each signal branch."""
+    
+    if signals_df.empty:
+        return {}
+    
+    signal_metrics = {}
+    
+    # Group by signal branch
+    for branch_name in signals_df['branch_name'].unique():
+        branch_signals = signals_df[signals_df['branch_name'] == branch_name]
+        
+        # Calculate metrics for this branch
+        total_signals = len(branch_signals)
+        
+        # Calculate P&L for each signal
+        branch_pnl = []
+        for _, signal in branch_signals.iterrows():
+            signal_date = signal['date']
+            # Find corresponding return data
+            if signal_date in returns_df['date'].values:
+                daily_return = returns_df[returns_df['date'] == signal_date]['return'].iloc[0]
+                branch_pnl.append(daily_return)
+        
+        if branch_pnl:
+            branch_pnl = pd.Series(branch_pnl)
+            
+            # Calculate metrics
+            win_rate = (branch_pnl > 0).mean() * 100
+            avg_return = branch_pnl.mean() * 100
+            total_return = branch_pnl.sum() * 100
+            best_signal = branch_pnl.max() * 100
+            worst_signal = branch_pnl.min() * 100
+            
+            signal_metrics[branch_name] = {
+                'Total Signals': total_signals,
+                'Win Rate': win_rate,
+                'Average Return': avg_return,
+                'Total Return': total_return,
+                'Best Signal': best_signal,
+                'Worst Signal': worst_signal,
+                'Success Count': (branch_pnl > 0).sum(),
+                'Failure Count': (branch_pnl <= 0).sum()
+            }
+    
+    return signal_metrics
 
 def calculate_backtest_metrics(returns_df: pd.DataFrame) -> Dict[str, Any]:
     """Calculate comprehensive backtest metrics from returns data."""
@@ -153,10 +398,24 @@ def main():
     
     with col1:
         symphony_id = st.text_input(
-            "Symphony ID",
-            placeholder="Enter your Composer Symphony ID",
-            help="The unique identifier for your Composer Symphony"
+            "Symphony ID or URL",
+            placeholder="Enter Symphony ID or full Composer URL",
+            help="Enter the Symphony ID (e.g., GiR9AkRAZ1S4IONmYIkS) or full Composer URL"
         )
+        
+        # Show example
+        with st.expander("💡 How to find your Symphony ID"):
+            st.markdown("""
+            **Option 1: From Composer URL**
+            - Go to your Symphony on Composer
+            - Copy the URL: `https://app.composer.trade/symphony/GiR9AkRAZ1S4IONmYIkS`
+            - Paste the full URL or just the ID: `GiR9AkRAZ1S4IONmYIkS`
+            
+            **Option 2: From Symphony Page**
+            - Open your Symphony in Composer
+            - Look at the URL in your browser
+            - The ID is the last part after `/symphony/`
+            """)
     
     with col2:
         # Date range selection
@@ -214,19 +473,26 @@ def main():
         start_date, end_date = date_range
         
         with st.spinner("🔄 Fetching Symphony data..."):
-            # Fetch data from Composer
-            data = fetch_symphony_data(
+            # Fetch both backtest and signal data from Composer
+            backtest_data = fetch_symphony_data(
+                symphony_id,
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d")
+            )
+            
+            signal_data = fetch_signal_data(
                 symphony_id,
                 start_date.strftime("%Y-%m-%d"),
                 end_date.strftime("%Y-%m-%d")
             )
         
-        if data is None:
-            st.error("❌ Failed to fetch data from Composer")
+        if backtest_data is None:
+            st.error("❌ Failed to fetch backtest data from Composer")
             return
         
         # Parse the data
-        returns_df = parse_symphony_data(data)
+        returns_df = parse_symphony_data(backtest_data)
+        signals_df = parse_signal_data(signal_data) if signal_data else pd.DataFrame()
         
         if returns_df.empty:
             st.error("❌ No valid data found for the specified period")
@@ -235,14 +501,19 @@ def main():
         if len(returns_df) < min_data_days:
             st.warning(f"⚠️ Limited data: Only {len(returns_df)} days available (minimum: {min_data_days})")
         
-        # Calculate metrics
+        # Calculate overall metrics
         metrics = calculate_backtest_metrics(returns_df)
+        
+        # Calculate signal-level metrics if signal data is available
+        signal_metrics = {}
+        if not signals_df.empty:
+            signal_metrics = calculate_signal_metrics(signals_df, returns_df)
         
         # Display results
         st.success("✅ Analysis completed successfully!")
         
-        # Performance metrics
-        st.subheader("📈 Performance Metrics")
+        # Overall Performance metrics
+        st.subheader("📈 Overall Performance Metrics")
         
         col1, col2, col3 = st.columns(3)
         
@@ -261,9 +532,90 @@ def main():
             st.metric("Best Day", f"{metrics['Best Day']:.2f}%")
             st.metric("Worst Day", f"{metrics['Worst Day']:.2f}%")
         
+        # Signal Branch Analysis
+        if signal_metrics:
+            st.subheader("🎯 Signal Branch Analysis")
+            st.markdown("Breakdown of performance by individual signal branches:")
+            
+            # Create signal metrics table
+            signal_data = []
+            for branch_name, branch_metrics in signal_metrics.items():
+                signal_data.append({
+                    'Branch Name': branch_name,
+                    'Total Signals': branch_metrics['Total Signals'],
+                    'Win Rate (%)': f"{branch_metrics['Win Rate']:.1f}",
+                    'Avg Return (%)': f"{branch_metrics['Average Return']:.2f}",
+                    'Total Return (%)': f"{branch_metrics['Total Return']:.2f}",
+                    'Success/Failure': f"{branch_metrics['Success Count']}/{branch_metrics['Failure Count']}",
+                    'Best Signal (%)': f"{branch_metrics['Best Signal']:.2f}",
+                    'Worst Signal (%)': f"{branch_metrics['Worst Signal']:.2f}"
+                })
+            
+            signal_df = pd.DataFrame(signal_data)
+            st.dataframe(signal_df, use_container_width=True)
+            
+            # Signal branch performance visualization
+            st.subheader("📊 Signal Branch Performance")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Win rate by branch
+                branch_names = list(signal_metrics.keys())
+                win_rates = [signal_metrics[branch]['Win Rate'] for branch in branch_names]
+                
+                fig_win_rate = go.Figure(data=[go.Bar(x=branch_names, y=win_rates)])
+                fig_win_rate.update_layout(
+                    title="Win Rate by Signal Branch",
+                    xaxis_title="Signal Branch",
+                    yaxis_title="Win Rate (%)",
+                    yaxis=dict(range=[0, 100])
+                )
+                st.plotly_chart(fig_win_rate, use_container_width=True)
+            
+            with col2:
+                # Total return by branch
+                total_returns = [signal_metrics[branch]['Total Return'] for branch in branch_names]
+                
+                fig_total_return = go.Figure(data=[go.Bar(x=branch_names, y=total_returns)])
+                fig_total_return.update_layout(
+                    title="Total Return by Signal Branch",
+                    xaxis_title="Signal Branch",
+                    yaxis_title="Total Return (%)"
+                )
+                st.plotly_chart(fig_total_return, use_container_width=True)
+            
+            # Signal frequency analysis
+            st.subheader("📈 Signal Frequency Analysis")
+            
+            if not signals_df.empty:
+                # Signal frequency over time
+                signal_counts = signals_df.groupby(['date', 'branch_name']).size().reset_index(name='count')
+                
+                fig_frequency = go.Figure()
+                for branch in signals_df['branch_name'].unique():
+                    branch_data = signal_counts[signal_counts['branch_name'] == branch]
+                    fig_frequency.add_trace(go.Scatter(
+                        x=branch_data['date'],
+                        y=branch_data['count'],
+                        mode='lines+markers',
+                        name=branch
+                    ))
+                
+                fig_frequency.update_layout(
+                    title="Signal Frequency Over Time",
+                    xaxis_title="Date",
+                    yaxis_title="Number of Signals"
+                )
+                st.plotly_chart(fig_frequency, use_container_width=True)
+        
         # Data summary
         st.subheader("📋 Data Summary")
         st.info(f"**Analysis Period**: {start_date} to {end_date} ({metrics['Total Days']} trading days)")
+        if signal_metrics:
+            st.info(f"**Total Signal Branches**: {len(signal_metrics)}")
+            total_signals = sum(signal_metrics[branch]['Total Signals'] for branch in signal_metrics)
+            st.info(f"**Total Signals Fired**: {total_signals}")
         
         # Returns distribution
         st.subheader("📊 Returns Distribution")
@@ -310,6 +662,26 @@ def main():
         with col2:
             st.info(f"**Consistency**: {'HIGH' if metrics['Win Rate'] > 60 else 'MEDIUM' if metrics['Win Rate'] > 50 else 'LOW'} ({metrics['Win Rate']:.1f}% win rate)")
             st.info(f"**Volatility**: {'LOW' if metrics['Volatility'] < 15 else 'MEDIUM' if metrics['Volatility'] < 25 else 'HIGH'} ({metrics['Volatility']:.2f}%)")
+        
+        # Signal branch insights
+        if signal_metrics:
+            st.subheader("💡 Signal Branch Insights")
+            
+            # Find best and worst performing branches
+            best_branch = max(signal_metrics.items(), key=lambda x: x[1]['Win Rate'])
+            worst_branch = min(signal_metrics.items(), key=lambda x: x[1]['Win Rate'])
+            most_active_branch = max(signal_metrics.items(), key=lambda x: x[1]['Total Signals'])
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.success(f"**Best Performing Branch**: {best_branch[0]} ({best_branch[1]['Win Rate']:.1f}% win rate)")
+            
+            with col2:
+                st.warning(f"**Worst Performing Branch**: {worst_branch[0]} ({worst_branch[1]['Win Rate']:.1f}% win rate)")
+            
+            with col3:
+                st.info(f"**Most Active Branch**: {most_active_branch[0]} ({most_active_branch[1]['Total Signals']} signals)")
 
 if __name__ == "__main__":
     main() 
