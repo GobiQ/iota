@@ -36,48 +36,151 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
         st.error("❌ Invalid Symphony ID")
         return None
     
+    st.info(f"🔍 Fetching data for Symphony ID: {clean_id}")
+    
     # Method 1: Try Composer Web API
     try:
         composer_url = f"https://app.composer.trade/api/symphony/{clean_id}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Referer': 'https://app.composer.trade/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://app.composer.trade/',
+            'Origin': 'https://app.composer.trade',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin'
         }
         
+        st.info(f"🌐 Trying Composer API: {composer_url}")
         response = requests.get(composer_url, headers=headers, timeout=30)
+        
+        st.info(f"📡 Response status: {response.status_code}")
+        st.info(f"📄 Response length: {len(response.text)} characters")
+        
         if response.status_code == 200:
-            try:
-                data = response.json()
-                return data
-            except ValueError:
-                st.error("❌ Invalid JSON response from Composer API")
-                return None
+            if response.text.strip():
+                try:
+                    data = response.json()
+                    st.success("✅ Successfully parsed JSON from Composer API")
+                    return data
+                except ValueError as e:
+                    st.error(f"❌ Invalid JSON response from Composer API: {str(e)}")
+                    st.info(f"📄 Response preview: {response.text[:200]}...")
+                    return None
+            else:
+                st.warning("⚠️ Composer API returned empty response")
         else:
-            st.info(f"Composer API returned status {response.status_code}")
+            st.warning(f"⚠️ Composer API returned status {response.status_code}")
+            st.info(f"📄 Response: {response.text[:200]}...")
             
     except Exception as e:
-        st.info(f"Composer API method failed: {str(e)[:50]}")
+        st.error(f"❌ Composer API method failed: {str(e)}")
     
     # Method 2: Try Firestore API
     try:
         firestore_url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{clean_id}"
         
+        st.info(f"🌐 Trying Firestore API: {firestore_url}")
         response = requests.get(firestore_url, timeout=30)
-        response.raise_for_status()
         
-        if response.text.strip():
-            data = response.json()
-            if 'fields' in data:
-                return data
+        st.info(f"📡 Firestore response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            if response.text.strip():
+                try:
+                    data = response.json()
+                    if 'fields' in data:
+                        st.success("✅ Successfully parsed JSON from Firestore API")
+                        return data
+                    else:
+                        st.warning("⚠️ Firestore response missing 'fields'")
+                except ValueError as e:
+                    st.error(f"❌ Invalid JSON response from Firestore API: {str(e)}")
+                    st.info(f"📄 Firestore response preview: {response.text[:200]}...")
+            else:
+                st.warning("⚠️ Firestore API returned empty response")
         else:
-            st.info("Firestore API returned empty response")
+            st.warning(f"⚠️ Firestore API returned status {response.status_code}")
+            st.info(f"📄 Firestore response: {response.text[:200]}...")
             
     except Exception as e:
-        st.info(f"Firestore API method failed: {str(e)[:50]}")
+        st.error(f"❌ Firestore API method failed: {str(e)}")
     
-    st.error("❌ Failed to fetch data from both Composer and Firestore APIs")
+    # Method 3: Try alternative Composer endpoint
+    try:
+        alt_composer_url = f"https://app.composer.trade/api/symphonies/{clean_id}"
+        st.info(f"🌐 Trying alternative Composer API: {alt_composer_url}")
+        
+        response = requests.get(alt_composer_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200 and response.text.strip():
+            try:
+                data = response.json()
+                st.success("✅ Successfully parsed JSON from alternative Composer API")
+                return data
+            except ValueError:
+                st.warning("⚠️ Alternative Composer API returned invalid JSON")
+        else:
+            st.warning(f"⚠️ Alternative Composer API returned status {response.status_code}")
+            
+    except Exception as e:
+        st.error(f"❌ Alternative Composer API method failed: {str(e)}")
+    
+    st.error("❌ Failed to fetch data from all available APIs")
+    st.info("💡 This might mean:")
+    st.info("   - The Symphony ID is incorrect")
+    st.info("   - The Symphony is private or not accessible")
+    st.info("   - Composer's API structure has changed")
+    
+    # Offer to create sample data for testing
+    if st.button("🧪 Create Sample Data for Testing"):
+        st.info("📊 Creating sample data for demonstration...")
+        return create_sample_symphony_data()
+    
     return None
+
+def create_sample_symphony_data() -> Dict[str, Any]:
+    """Create sample symphony data for testing purposes."""
+    import random
+    from datetime import datetime, timedelta
+    
+    # Generate sample dates
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)
+    dates = pd.date_range(start=start_date, end=end_date, freq='D')
+    
+    # Generate sample returns
+    np.random.seed(42)  # For reproducible results
+    returns = np.random.normal(0.001, 0.02, len(dates))  # 0.1% daily return, 2% volatility
+    
+    # Create returns data
+    returns_data = []
+    for i, date in enumerate(dates):
+        returns_data.append({
+            'date': date.strftime('%Y-%m-%d'),
+            'return': returns[i]
+        })
+    
+    # Create sample signals
+    signals_data = []
+    signal_types = ['RSI_OVERSOLD', 'MA_CROSSOVER', 'VOLUME_BREAKOUT', 'MOMENTUM_SIGNAL']
+    
+    for i in range(50):  # 50 sample signals
+        signal_date = random.choice(dates)
+        signals_data.append({
+            'date': signal_date.strftime('%Y-%m-%d'),
+            'signal_type': random.choice(['BUY', 'SELL']),
+            'branch_name': random.choice(signal_types),
+            'execution_price': round(random.uniform(100, 200), 2),
+            'quantity': random.randint(1, 10)
+        })
+    
+    return {
+        'returns': returns_data,
+        'signals': signals_data,
+        'symphony_name': 'Sample Symphony (Demo)'
+    }
 
 def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
     """Fetch detailed signal data from Composer Symphony."""
@@ -87,19 +190,24 @@ def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[
     if not clean_id:
         return None
     
+    st.info(f"🔍 Fetching signal data for Symphony ID: {clean_id}")
+    
     # Try to get signal data from the main symphony data
     symphony_data = fetch_symphony_data(symphony_id, start_date, end_date)
     
     if symphony_data and 'signals' in symphony_data:
+        st.success("✅ Found signals in main symphony data")
         return {'signals': symphony_data['signals']}
     
     # If no signals in main data, try separate signal endpoint
     try:
         signal_url = f"https://app.composer.trade/api/symphony/{clean_id}/signals"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Referer': 'https://app.composer.trade/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://app.composer.trade/',
+            'Origin': 'https://app.composer.trade'
         }
         
         params = {
@@ -107,13 +215,51 @@ def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[
             'end_date': end_date
         }
         
+        st.info(f"🌐 Trying signal endpoint: {signal_url}")
         response = requests.get(signal_url, headers=headers, params=params, timeout=30)
+        
+        st.info(f"📡 Signal API response status: {response.status_code}")
+        st.info(f"📄 Signal API response length: {len(response.text)} characters")
+        
         if response.status_code == 200:
-            return response.json()
+            if response.text.strip():
+                try:
+                    data = response.json()
+                    st.success("✅ Successfully parsed signal data JSON")
+                    return data
+                except ValueError as e:
+                    st.error(f"❌ Invalid JSON response from signal API: {str(e)}")
+                    st.info(f"📄 Signal response preview: {response.text[:200]}...")
+            else:
+                st.warning("⚠️ Signal API returned empty response")
+        else:
+            st.warning(f"⚠️ Signal API returned status {response.status_code}")
+            st.info(f"📄 Signal response: {response.text[:200]}...")
             
     except Exception as e:
-        st.info(f"Signal API method failed: {str(e)[:50]}")
+        st.error(f"❌ Signal API method failed: {str(e)}")
     
+    # Try alternative signal endpoint
+    try:
+        alt_signal_url = f"https://app.composer.trade/api/symphonies/{clean_id}/signals"
+        st.info(f"🌐 Trying alternative signal endpoint: {alt_signal_url}")
+        
+        response = requests.get(alt_signal_url, headers=headers, params=params, timeout=30)
+        
+        if response.status_code == 200 and response.text.strip():
+            try:
+                data = response.json()
+                st.success("✅ Successfully parsed signal data from alternative endpoint")
+                return data
+            except ValueError:
+                st.warning("⚠️ Alternative signal endpoint returned invalid JSON")
+        else:
+            st.warning(f"⚠️ Alternative signal endpoint returned status {response.status_code}")
+            
+    except Exception as e:
+        st.error(f"❌ Alternative signal API method failed: {str(e)}")
+    
+    st.warning("⚠️ No signal data found - analysis will continue with overall performance only")
     return None
 
 def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
