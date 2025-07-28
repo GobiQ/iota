@@ -2029,9 +2029,7 @@ def main():
                 smart_default = date.today() - timedelta(days=730)  # 2 years ago
                 oos_start_value = date.fromisoformat(default_oos_start)
                 
-                # Show helpful message for manual entry
-                if auto_fetch_oos:
-                    st.info("💡 **Tip**: You can find the OOS date on the Composer symphony page in the footer section.")
+
             
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
