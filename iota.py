@@ -907,7 +907,7 @@ def smooth_iotas(iotas, window=3):
     return smoothed
 
 def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
-    """Fetch OOS date from Composer symphony via Firestore API."""
+    """Fetch OOS date from Composer symphony using multiple API methods."""
     if not symph_id or len(symph_id.strip()) == 0:
         return None
         
@@ -916,38 +916,348 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
     if symph_id.startswith("https://app.composer.trade/symphony/"):
         symph_id = symph_id.split("/")[-1]
     
-    url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{symph_id}"
-    
+    # Method 1: Try Composer Web API
     try:
-        response = requests.get(url, timeout=10)
+        composer_url = f"https://app.composer.trade/api/symphony/{symph_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://app.composer.trade/'
+        }
+        
+        response = requests.get(composer_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                
+                # Look for OOS date in various possible fields
+                possible_fields = [
+                    'oos_start_date', 'live_start_date', 'trading_start_date',
+                    'last_semantic_update_at', 'created_at', 'updated_at',
+                    'start_date', 'live_date', 'oos_date'
+                ]
+                
+                for field in possible_fields:
+                    if field in data:
+                        date_str = data[field]
+                        if isinstance(date_str, str):
+                            # Handle different date formats
+                            if 'T' in date_str:  # ISO format
+                                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                return dt.date()
+                            else:  # Try other formats
+                                try:
+                                    dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                    return dt.date()
+                                except:
+                                    continue
+                
+                # Debug: Show available fields
+                available_fields = list(data.keys())
+                st.info(f"Composer API fields: {available_fields}")
+                
+            except ValueError:
+                # Empty response or invalid JSON - this is expected for some symphonies
+                pass
+            
+    except Exception as e:
+        # Only show error if it's not an empty response
+        if "Expecting value" not in str(e):
+            st.info(f"Composer API method failed: {str(e)[:50]}")
+    
+    # Method 2: Try Firestore API (original method)
+    try:
+        firestore_url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{symph_id}"
+        
+        response = requests.get(firestore_url, timeout=10)
         response.raise_for_status()
         
-        data = response.json()
+        if not response.text.strip():
+            # Empty response - this is expected for some symphonies
+            pass
+        else:
+            data = response.json()
+            
+            if 'fields' not in data:
+                # Symphony not found - this is expected for some symphonies
+                pass
+            else:
+                fields = data['fields']
+                
+                # Try multiple Firestore fields
+                firestore_fields = [
+                    'last_semantic_update_at', 'created_at', 'updated_at',
+                    'last_updated', 'oos_start_date', 'live_start_date',
+                    'trading_start_date', 'start_date', 'live_date'
+                ]
+                
+                for field in firestore_fields:
+                    if field in fields:
+                        try:
+                            timestamp_str = fields[field]['timestampValue']
+                            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                            return dt.date()
+                        except:
+                            continue
+                
+                # Debug: Show available Firestore fields
+                available_fields = list(fields.keys())
+                st.info(f"Firestore fields: {available_fields}")
         
-        # Check if the document exists and has the required field
-        if 'fields' not in data or 'last_semantic_update_at' not in data['fields']:
-            st.warning(f"Symphony {symph_id} not found or missing OOS date information.")
-            return None
-        
-        last_update_str = data['fields']['last_semantic_update_at']['timestampValue']
-        
-        # Parse the timestamp (2025-05-11T21:23:25.467Z)
-        dt = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
-        
-        # Convert to date
-        oos_date = dt.date()
-        
-        return oos_date
-        
-    except requests.exceptions.RequestException as e:
-        st.error(f"Network error fetching OOS date: {e}")
-        return None
-    except (KeyError, ValueError) as e:
-        st.error(f"Error parsing symphony data: {e}")
-        return None
     except Exception as e:
-        st.error(f"Unexpected error fetching OOS date: {e}")
-        return None
+        # Only show error if it's not an expected failure
+        if "404" not in str(e) and "not found" not in str(e).lower():
+            st.info(f"Firestore API method failed: {str(e)[:50]}")
+    
+    # Method 3: Extract OOS Start Date from Composer page (SPA-aware)
+    try:
+        # Get the symphony page HTML
+        symphony_url = f"https://app.composer.trade/symphony/{symph_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        response = requests.get(symphony_url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            html_content = response.text
+            
+            # Look for "OOS Start Date" text specifically
+            import re
+            
+            # Pattern 1: Look for "OOS Start Date: [date]" (exact format from image)
+            oos_pattern = r'OOS Start Date:\s*([A-Za-z]{3}\s+\d{1,2},\s+\d{4})'
+            matches = re.findall(oos_pattern, html_content)
+            if matches:
+                try:
+                    date_str = matches[0]
+                    dt = datetime.strptime(date_str, '%b %d, %Y')
+                    return dt.date()
+                except:
+                    pass
+            
+            # Pattern 2: Look for "OOS Start Date: [date]" with different format
+            oos_pattern2 = r'OOS Start Date:\s*(\d{1,2}/\d{1,2}/\d{4})'
+            matches = re.findall(oos_pattern2, html_content)
+            if matches:
+                try:
+                    date_str = matches[0]
+                    dt = datetime.strptime(date_str, '%m/%d/%Y')
+                    return dt.date()
+                except:
+                    pass
+            
+            # Pattern 3: Look for "OOS Start Date: [date]" with ISO format
+            oos_pattern3 = r'OOS Start Date:\s*(\d{4}-\d{2}-\d{2})'
+            matches = re.findall(oos_pattern3, html_content)
+            if matches:
+                try:
+                    date_str = matches[0]
+                    dt = datetime.strptime(date_str, '%Y-%m-%d')
+                    return dt.date()
+                except:
+                    pass
+            
+            # Pattern 4: Look for JSON data in script tags (SPA data)
+            script_patterns = [
+                r'"oos_start_date":"([^"]+)"',
+                r'"live_start_date":"([^"]+)"',
+                r'"oosDate":"([^"]+)"',
+                r'"liveDate":"([^"]+)"',
+                r'"startDate":"([^"]+)"',
+                r'"oos_start":"([^"]+)"',
+                r'"live_start":"([^"]+)"',
+                r'"oosStartDate":"([^"]+)"',
+                r'"liveStartDate":"([^"]+)"'
+            ]
+            
+            for pattern in script_patterns:
+                matches = re.findall(pattern, html_content)
+                if matches:
+                    try:
+                        date_str = matches[0]
+                        if 'T' in date_str:  # ISO format
+                            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            return dt.date()
+                        else:  # Try other formats
+                            try:
+                                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                return dt.date()
+                            except:
+                                try:
+                                    dt = datetime.strptime(date_str, '%m/%d/%Y')
+                                    return dt.date()
+                                except:
+                                    continue
+                    except:
+                        continue
+            
+            # Pattern 5: Look for React/JavaScript state data
+            state_patterns = [
+                r'oosStartDate["\']?\s*:\s*["\']([^"\']+)["\']',
+                r'liveStartDate["\']?\s*:\s*["\']([^"\']+)["\']',
+                r'oos_start_date["\']?\s*:\s*["\']([^"\']+)["\']',
+                r'live_start_date["\']?\s*:\s*["\']([^"\']+)["\']'
+            ]
+            
+            for pattern in state_patterns:
+                matches = re.findall(pattern, html_content)
+                if matches:
+                    try:
+                        date_str = matches[0]
+                        if 'T' in date_str:  # ISO format
+                            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            return dt.date()
+                        else:  # Try other formats
+                            try:
+                                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                return dt.date()
+                            except:
+                                try:
+                                    dt = datetime.strptime(date_str, '%m/%d/%Y')
+                                    return dt.date()
+                                except:
+                                    continue
+                    except:
+                        continue
+            
+            # Debug: Show what we found in the HTML
+            if 'OOS Start Date' in html_content:
+                # Find the line containing OOS Start Date
+                lines = html_content.split('\n')
+                for line in lines:
+                    if 'OOS Start Date' in line:
+                        st.info(f"Found OOS Start Date line: {line.strip()[:200]}")
+                        break
+            else:
+                st.info("OOS Start Date text not found in HTML - this is expected for SPAs")
+                
+                # Show what we did find
+                if 'symphony' in html_content.lower():
+                    st.info("Symphony page loaded but data may be loaded dynamically")
+                else:
+                    st.info("Page may not be loading correctly")
+                        
+    except Exception as e:
+        st.info(f"Web scraping method failed: {str(e)[:50]}")
+    
+    # Method 4: Try to wait for dynamic content to load
+    try:
+        # Try with a longer timeout and different approach
+        symphony_url = f"https://app.composer.trade/symphony/{symph_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0'
+        }
+        
+        response = requests.get(symphony_url, headers=headers, timeout=20)
+        if response.status_code == 200:
+            html_content = response.text
+            
+            # Look for any mention of OOS Start Date
+            if 'OOS Start Date' in html_content:
+                # Try to find the actual date near this text
+                lines = html_content.split('\n')
+                for i, line in enumerate(lines):
+                    if 'OOS Start Date' in line:
+                        # Look at this line and the next few lines for a date
+                        search_lines = lines[i:i+5]
+                        for search_line in search_lines:
+                            # Look for date patterns
+                            date_patterns = [
+                                r'([A-Za-z]{3}\s+\d{1,2},\s+\d{4})',  # Jul 20, 2022
+                                r'(\d{1,2}/\d{1,2}/\d{4})',  # 07/20/2022
+                                r'(\d{4}-\d{2}-\d{2})',  # 2022-07-20
+                            ]
+                            
+                            for pattern in date_patterns:
+                                matches = re.findall(pattern, search_line)
+                                if matches:
+                                    try:
+                                        date_str = matches[0]
+                                        if ' ' in date_str:  # Jul 20, 2022 format
+                                            dt = datetime.strptime(date_str, '%b %d, %Y')
+                                            return dt.date()
+                                        elif '/' in date_str:  # 07/20/2022 format
+                                            dt = datetime.strptime(date_str, '%m/%d/%Y')
+                                            return dt.date()
+                                        elif '-' in date_str:  # 2022-07-20 format
+                                            dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                            return dt.date()
+                                    except:
+                                        continue
+                        
+                        st.info(f"Found 'OOS Start Date' but couldn't parse the date from: {line.strip()[:200]}")
+                        break
+            else:
+                st.info("'OOS Start Date' text not found in the page HTML")
+                        
+    except Exception as e:
+        st.info(f"Enhanced web scraping method failed: {str(e)[:50]}")
+    
+    # Method 4: Try Composer's GraphQL API (if available)
+    try:
+        graphql_url = "https://app.composer.trade/graphql"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        
+        # GraphQL query to get symphony details
+        query = {
+            "query": """
+            query GetSymphony($id: ID!) {
+                symphony(id: $id) {
+                    id
+                    oosStartDate
+                    liveStartDate
+                    createdAt
+                    updatedAt
+                }
+            }
+            """,
+            "variables": {"id": symph_id}
+        }
+        
+        response = requests.post(graphql_url, headers=headers, json=query, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if 'data' in data and 'symphony' in data['data']:
+                symphony_data = data['data']['symphony']
+                
+                # Try different field names
+                date_fields = ['oosStartDate', 'liveStartDate', 'createdAt', 'updatedAt']
+                for field in date_fields:
+                    if field in symphony_data and symphony_data[field]:
+                        try:
+                            date_str = symphony_data[field]
+                            if 'T' in date_str:  # ISO format
+                                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                return dt.date()
+                            else:
+                                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                return dt.date()
+                        except:
+                            continue
+                            
+    except Exception as e:
+        st.info(f"GraphQL API method failed: {str(e)[:50]}")
+    
+    st.warning(f"All methods failed for symphony {symph_id}. Please enter OOS date manually.")
+    return None
 
 def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date, 
                         is_ret: pd.Series, n_slices: int = 100, overlap: bool = True,
@@ -1691,20 +2001,35 @@ def main():
             # Extract symphony ID from URL for auto-fetch
             symph_id = ""
             if url and "symphony/" in url:
-                symph_id = url.split("symphony/")[-1].split("?")[0].split("#")[0]
+                # Extract the symphony ID more carefully
+                symph_part = url.split("symphony/")[-1]
+                # Remove any query parameters, fragments, or additional paths
+                symph_id = symph_part.split("?")[0].split("#")[0].split("/")[0]
+                st.info(f"Extracted Symphony ID: {symph_id}")
             
             # Auto-fetch OOS date if enabled and symphony ID is available
             fetched_oos_date = None
             if auto_fetch_oos and symph_id:
-                with st.spinner("Fetching OOS date from symphony..."):
-                    fetched_oos_date = fetch_oos_date_from_symphony(symph_id)
-                    if fetched_oos_date:
-                        st.success(f"✅ Auto-fetched OOS date: {fetched_oos_date}")
-                    else:
-                        st.warning("⚠️ Could not auto-fetch OOS date. Please enter manually.")
+                try:
+                    with st.spinner("Fetching OOS date from symphony..."):
+                        fetched_oos_date = fetch_oos_date_from_symphony(symph_id)
+                        if fetched_oos_date:
+                            st.success(f"✅ Auto-fetched OOS date: {fetched_oos_date}")
+                        else:
+                            st.warning("⚠️ Could not auto-fetch OOS date. Please enter manually.")
+                except Exception as e:
+                    st.warning(f"⚠️ Auto-fetch failed: {str(e)}. Please enter OOS date manually.")
+                    fetched_oos_date = None
             
-            # Use fetched date if available, otherwise use default
-            oos_start_value = fetched_oos_date if fetched_oos_date else date.fromisoformat(default_oos_start)
+            # Smart default: Use fetched date if available, otherwise use a reasonable default
+            if fetched_oos_date:
+                oos_start_value = fetched_oos_date
+            else:
+                # Use a smart default based on current date (typically 2 years ago)
+                smart_default = date.today() - timedelta(days=730)  # 2 years ago
+                oos_start_value = date.fromisoformat(default_oos_start)
+                
+
             
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
