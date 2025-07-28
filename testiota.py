@@ -927,36 +927,43 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
         
         response = requests.get(composer_url, headers=headers, timeout=10)
         if response.status_code == 200:
-            data = response.json()
-            
-            # Look for OOS date in various possible fields
-            possible_fields = [
-                'oos_start_date', 'live_start_date', 'trading_start_date',
-                'last_semantic_update_at', 'created_at', 'updated_at',
-                'start_date', 'live_date', 'oos_date'
-            ]
-            
-            for field in possible_fields:
-                if field in data:
-                    date_str = data[field]
-                    if isinstance(date_str, str):
-                        # Handle different date formats
-                        if 'T' in date_str:  # ISO format
-                            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                            return dt.date()
-                        else:  # Try other formats
-                            try:
-                                dt = datetime.strptime(date_str, '%Y-%m-%d')
+            try:
+                data = response.json()
+                
+                # Look for OOS date in various possible fields
+                possible_fields = [
+                    'oos_start_date', 'live_start_date', 'trading_start_date',
+                    'last_semantic_update_at', 'created_at', 'updated_at',
+                    'start_date', 'live_date', 'oos_date'
+                ]
+                
+                for field in possible_fields:
+                    if field in data:
+                        date_str = data[field]
+                        if isinstance(date_str, str):
+                            # Handle different date formats
+                            if 'T' in date_str:  # ISO format
+                                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                                 return dt.date()
-                            except:
-                                continue
-            
-            # Debug: Show available fields
-            available_fields = list(data.keys())
-            st.info(f"Composer API fields: {available_fields}")
+                            else:  # Try other formats
+                                try:
+                                    dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                    return dt.date()
+                                except:
+                                    continue
+                
+                # Debug: Show available fields
+                available_fields = list(data.keys())
+                st.info(f"Composer API fields: {available_fields}")
+                
+            except ValueError:
+                # Empty response or invalid JSON - this is expected for some symphonies
+                pass
             
     except Exception as e:
-        st.info(f"Composer API method failed: {str(e)[:50]}")
+        # Only show error if it's not an empty response
+        if "Expecting value" not in str(e):
+            st.info(f"Composer API method failed: {str(e)[:50]}")
     
     # Method 2: Try Firestore API (original method)
     try:
@@ -966,39 +973,41 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
         response.raise_for_status()
         
         if not response.text.strip():
-            st.warning(f"Empty response from Firestore API for symphony {symph_id}")
-            return None
-        
-        data = response.json()
-        
-        if 'fields' not in data:
-            st.warning(f"Symphony {symph_id} not found in Firestore.")
-            return None
-        
-        fields = data['fields']
-        
-        # Try multiple Firestore fields
-        firestore_fields = [
-            'last_semantic_update_at', 'created_at', 'updated_at',
-            'last_updated', 'oos_start_date', 'live_start_date',
-            'trading_start_date', 'start_date', 'live_date'
-        ]
-        
-        for field in firestore_fields:
-            if field in fields:
-                try:
-                    timestamp_str = fields[field]['timestampValue']
-                    dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                    return dt.date()
-                except:
-                    continue
-        
-        # Debug: Show available Firestore fields
-        available_fields = list(fields.keys())
-        st.info(f"Firestore fields: {available_fields}")
+            # Empty response - this is expected for some symphonies
+            pass
+        else:
+            data = response.json()
+            
+            if 'fields' not in data:
+                # Symphony not found - this is expected for some symphonies
+                pass
+            else:
+                fields = data['fields']
+                
+                # Try multiple Firestore fields
+                firestore_fields = [
+                    'last_semantic_update_at', 'created_at', 'updated_at',
+                    'last_updated', 'oos_start_date', 'live_start_date',
+                    'trading_start_date', 'start_date', 'live_date'
+                ]
+                
+                for field in firestore_fields:
+                    if field in fields:
+                        try:
+                            timestamp_str = fields[field]['timestampValue']
+                            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                            return dt.date()
+                        except:
+                            continue
+                
+                # Debug: Show available Firestore fields
+                available_fields = list(fields.keys())
+                st.info(f"Firestore fields: {available_fields}")
         
     except Exception as e:
-        st.info(f"Firestore API method failed: {str(e)[:50]}")
+        # Only show error if it's not an expected failure
+        if "404" not in str(e) and "not found" not in str(e).lower():
+            st.info(f"Firestore API method failed: {str(e)[:50]}")
     
     # Method 3: Extract OOS Start Date from Composer page (SPA-aware)
     try:
