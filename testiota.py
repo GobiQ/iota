@@ -1000,40 +1000,99 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
     except Exception as e:
         st.info(f"Firestore API method failed: {str(e)[:50]}")
     
-    # Method 3: Try to extract from symphony URL metadata
+    # Method 3: Extract OOS Start Date from Composer page
     try:
-        # Try to get symphony details from the web page
+        # Get the symphony page HTML
         symphony_url = f"https://app.composer.trade/symphony/{symph_id}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         
-        response = requests.get(symphony_url, headers=headers, timeout=10)
+        response = requests.get(symphony_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            # Look for date patterns in the HTML
+            html_content = response.text
+            
+            # Look for "OOS Start Date" text specifically
             import re
-            date_patterns = [
+            
+            # Pattern 1: Look for "OOS Start Date: [date]"
+            oos_pattern = r'OOS Start Date:\s*([A-Za-z]{3}\s+\d{1,2},\s+\d{4})'
+            matches = re.findall(oos_pattern, html_content)
+            if matches:
+                try:
+                    date_str = matches[0]
+                    dt = datetime.strptime(date_str, '%b %d, %Y')
+                    return dt.date()
+                except:
+                    pass
+            
+            # Pattern 2: Look for "OOS Start Date: [date]" with different format
+            oos_pattern2 = r'OOS Start Date:\s*(\d{1,2}/\d{1,2}/\d{4})'
+            matches = re.findall(oos_pattern2, html_content)
+            if matches:
+                try:
+                    date_str = matches[0]
+                    dt = datetime.strptime(date_str, '%m/%d/%Y')
+                    return dt.date()
+                except:
+                    pass
+            
+            # Pattern 3: Look for "OOS Start Date: [date]" with ISO format
+            oos_pattern3 = r'OOS Start Date:\s*(\d{4}-\d{2}-\d{2})'
+            matches = re.findall(oos_pattern3, html_content)
+            if matches:
+                try:
+                    date_str = matches[0]
+                    dt = datetime.strptime(date_str, '%Y-%m-%d')
+                    return dt.date()
+                except:
+                    pass
+            
+            # Pattern 4: Look for JSON data in script tags
+            script_patterns = [
                 r'"oos_start_date":"([^"]+)"',
                 r'"live_start_date":"([^"]+)"',
-                r'"created_at":"([^"]+)"',
-                r'"updated_at":"([^"]+)"',
-                r'data-oos-date="([^"]+)"',
-                r'data-live-date="([^"]+)"'
+                r'"oosDate":"([^"]+)"',
+                r'"liveDate":"([^"]+)"',
+                r'"startDate":"([^"]+)"'
             ]
             
-            for pattern in date_patterns:
-                matches = re.findall(pattern, response.text)
+            for pattern in script_patterns:
+                matches = re.findall(pattern, html_content)
                 if matches:
                     try:
                         date_str = matches[0]
-                        if 'T' in date_str:
+                        if 'T' in date_str:  # ISO format
                             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                             return dt.date()
-                        else:
-                            dt = datetime.strptime(date_str, '%Y-%m-%d')
-                            return dt.date()
+                        else:  # Try other formats
+                            try:
+                                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                return dt.date()
+                            except:
+                                try:
+                                    dt = datetime.strptime(date_str, '%m/%d/%Y')
+                                    return dt.date()
+                                except:
+                                    continue
                     except:
                         continue
+            
+            # Debug: Show a snippet of the HTML to help debug
+            if 'OOS Start Date' in html_content:
+                # Find the line containing OOS Start Date
+                lines = html_content.split('\n')
+                for line in lines:
+                    if 'OOS Start Date' in line:
+                        st.info(f"Found OOS Start Date line: {line.strip()[:200]}")
+                        break
+            else:
+                st.info("OOS Start Date text not found in HTML")
                         
     except Exception as e:
         st.info(f"Web scraping method failed: {str(e)[:50]}")
