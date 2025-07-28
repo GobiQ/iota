@@ -1935,15 +1935,28 @@ def main():
             # Auto-fetch OOS date if enabled and symphony ID is available
             fetched_oos_date = None
             if auto_fetch_oos and symph_id:
-                with st.spinner("Fetching OOS date from symphony..."):
-                    fetched_oos_date = fetch_oos_date_from_symphony(symph_id)
-                    if fetched_oos_date:
-                        st.success(f"✅ Auto-fetched OOS date: {fetched_oos_date}")
-                    else:
-                        st.warning("⚠️ Could not auto-fetch OOS date. Please enter manually.")
+                try:
+                    with st.spinner("Fetching OOS date from symphony..."):
+                        fetched_oos_date = fetch_oos_date_from_symphony(symph_id)
+                        if fetched_oos_date:
+                            st.success(f"✅ Auto-fetched OOS date: {fetched_oos_date}")
+                        else:
+                            st.warning("⚠️ Could not auto-fetch OOS date. Please enter manually.")
+                except Exception as e:
+                    st.warning(f"⚠️ Auto-fetch failed: {str(e)}. Please enter OOS date manually.")
+                    fetched_oos_date = None
             
-            # Use fetched date if available, otherwise use default
-            oos_start_value = fetched_oos_date if fetched_oos_date else date.fromisoformat(default_oos_start)
+            # Smart default: Use fetched date if available, otherwise use a reasonable default
+            if fetched_oos_date:
+                oos_start_value = fetched_oos_date
+            else:
+                # Use a smart default based on current date (typically 2 years ago)
+                smart_default = date.today() - timedelta(days=730)  # 2 years ago
+                oos_start_value = date.fromisoformat(default_oos_start)
+                
+                # Show helpful message for manual entry
+                if auto_fetch_oos:
+                    st.info("💡 **Tip**: You can find the OOS date on the Composer symphony page in the footer section.")
             
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
