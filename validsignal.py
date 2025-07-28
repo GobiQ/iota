@@ -61,7 +61,9 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
             'Origin': 'https://app.composer.trade',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin'
+            'Sec-Fetch-Site': 'same-origin',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
         }
         
         st.info(f"🌐 Trying Composer API: {composer_url}")
@@ -158,11 +160,81 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
     except Exception as e:
         st.error(f"❌ Alternative Composer API method failed: {str(e)}")
     
+    # Method 4: Try Composer API with different authentication pattern
+    try:
+        auth_composer_url = f"https://api.composer.trade/v1/symphonies/{clean_id}/backtest"
+        st.info(f"🌐 Trying Composer API v1: {auth_composer_url}")
+        
+        auth_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer public'  # Try public access
+        }
+        
+        params = {
+            'start_date': start_date,
+            'end_date': end_date,
+            'format': 'json'
+        }
+        
+        response = requests.get(auth_composer_url, headers=auth_headers, params=params, timeout=30)
+        
+        st.info(f"📡 Composer API v1 response status: {response.status_code}")
+        
+        if response.status_code == 200 and response.text.strip():
+            # Check for HTML response
+            if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
+                st.warning("⚠️ Composer API v1 returned HTML")
+            else:
+                try:
+                    data = response.json()
+                    st.success("✅ Successfully parsed JSON from Composer API v1")
+                    return data
+                except ValueError:
+                    st.warning("⚠️ Composer API v1 returned invalid JSON")
+        else:
+            st.warning(f"⚠️ Composer API v1 returned status {response.status_code}")
+            
+    except Exception as e:
+        st.error(f"❌ Composer API v1 method failed: {str(e)}")
+    
+    # Method 5: Try to extract data from Composer's web interface
+    try:
+        web_url = f"https://app.composer.trade/symphony/{clean_id}"
+        st.info(f"🌐 Trying to access Symphony web page: {web_url}")
+        st.info("💡 This method attempts to extract data from the public web interface")
+        
+        web_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        response = requests.get(web_url, headers=web_headers, timeout=30)
+        
+        if response.status_code == 200:
+            st.info("✅ Successfully accessed Symphony web page")
+            st.info("💡 Note: Web scraping is limited and may not provide full data")
+            st.info("📄 Web page length: {} characters".format(len(response.text)))
+            
+            # For now, just indicate that web access worked
+            st.warning("⚠️ Web interface access successful, but data extraction requires additional development")
+        else:
+            st.warning(f"⚠️ Web interface returned status {response.status_code}")
+            
+    except Exception as e:
+        st.error(f"❌ Web interface method failed: {str(e)}")
+    
     st.error("❌ Failed to fetch data from all available APIs")
     st.info("💡 This might mean:")
     st.info("   - The Symphony ID is incorrect")
     st.info("   - The Symphony is private or not accessible")
     st.info("   - Composer's API structure has changed")
+    st.info("   - The API requires authentication or has changed")
     
     # Always offer sample data when APIs fail
     st.info("🧪 Would you like to test with sample data?")
