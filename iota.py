@@ -2290,7 +2290,6 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
     """Display detailed analysis for a single metric."""
     
     # Key metrics section
-    st.markdown("#### 📊 Key Metrics")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -2708,6 +2707,73 @@ def show_comprehensive_help():
         - **Highly leveraged strategies** may have non-normal risk distributions
         
         ### Best Practices
+        
+        ## Understanding P-Values
+        
+        **P-values** provide statistical significance testing for your iota results. They answer the question: *"What's the probability that your strategy is performing exactly as expected (iota = 0) given the observed data?"*
+        
+        ### P-Value Interpretation
+        
+        | P-Value Range | Significance | Interpretation |
+        |----------------|--------------|----------------|
+        | **p < 0.01** | ✅ **Highly Significant** | Strong evidence that performance differs from expectations |
+        | **0.01 ≤ p < 0.05** | ✅ **Significant** | Evidence that performance differs from expectations |
+        | **0.05 ≤ p < 0.10** | ⚠️ **Marginally Significant** | Weak evidence of difference from expectations |
+        | **p ≥ 0.10** | ❌ **Not Significant** | No strong evidence of difference from expectations |
+        
+        ### What the P-Value Tests
+        
+        **Null Hypothesis (H₀)**: iota = 0 (your strategy is performing exactly as expected)
+        **Alternative Hypothesis (H₁)**: iota ≠ 0 (your strategy is performing differently than expected)
+        
+        - **Low p-value** (< 0.05): Reject the null hypothesis - your performance is statistically different from expectations
+        - **High p-value** (≥ 0.05): Fail to reject the null hypothesis - no strong evidence that your performance differs from expectations
+        
+        ### P-Value Methods Used
+        
+        The system automatically chooses the most appropriate statistical test based on your data's distribution:
+        
+        **Parametric Method** (for normal distributions):
+        - Uses t-test or z-test depending on sample size
+        - Tests whether iota = 0 using standard statistical theory
+        - Most powerful when data follows normal distribution
+        
+        **Robust Method** (for skewed/fat-tailed distributions):
+        - Uses bootstrap-based testing or Wilcoxon signed-rank test
+        - Less sensitive to outliers and non-normal distributions
+        - More conservative but more reliable for complex data
+        
+        **Percentile Method** (for complex distributions):
+        - Uses rank-based methods like Mann-Whitney U test
+        - Tests percentile position relative to historical distribution
+        - Non-parametric approach for highly irregular distributions
+        
+        ### P-Value vs. Iota Relationship
+        
+        **High Iota + Low P-Value**: Strong evidence of outperformance
+        **Low Iota + Low P-Value**: Strong evidence of underperformance  
+        **Any Iota + High P-Value**: No strong evidence of difference from expectations
+        
+        ### Example P-Value Scenarios
+        
+        **Scenario 1**: ι = +1.5, p = 0.002
+        - **Interpretation**: "Strong evidence that your strategy is significantly outperforming expectations"
+        
+        **Scenario 2**: ι = -0.8, p = 0.03  
+        - **Interpretation**: "Evidence that your strategy is underperforming relative to expectations"
+        
+        **Scenario 3**: ι = +0.3, p = 0.15
+        - **Interpretation**: "No strong evidence that your performance differs from expectations"
+        
+        **Scenario 4**: ι = -2.1, p = 0.001
+        - **Interpretation**: "Highly significant evidence of severe underperformance"
+        
+        ### Important Notes
+        
+        - **P-values are not effect sizes**: A significant p-value doesn't tell you how large the difference is (that's what iota measures)
+        - **Sample size matters**: Larger samples can detect smaller differences
+        - **Multiple testing**: When testing multiple metrics, some p-values may be significant by chance
+        - **Practical significance**: Consider both statistical significance (p-value) and practical importance (iota magnitude)
         
         1. **Trust the distribution detection**: The system automatically chooses the best calculation method for your data
         2. **Use multiple time periods**: Test different in-sample/out-of-sample splits
