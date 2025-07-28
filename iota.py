@@ -2313,6 +2313,11 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
     col1, col2 = st.columns(2)
     
     with col1:
+        # Confidence interval
+        ci_lower, ci_upper = stats_dict['confidence_interval']
+        if np.isfinite(ci_lower) and np.isfinite(ci_upper):
+            st.write(f"**95% Confidence Interval:** [{ci_lower:.3f}, {ci_upper:.3f}]")
+        
         # IQR
         q25, q75 = stats_dict['iqr_is']
         st.write(f"**IS Range (25th-75th):** {formatter(q25)} - {formatter(q75)}")
