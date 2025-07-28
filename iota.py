@@ -596,34 +596,243 @@ def bootstrap_iota_confidence(is_values: np.ndarray, oos_value: float, n_oos: in
     
     return distribution_aware_iota_confidence(is_values, oos_value, n_oos, confidence_level)
 
-def wilcoxon_iota_test(is_values: np.ndarray, oos_value: float, n_oos: int,
-                      lower_is_better: bool = False, overlap: bool = True) -> Tuple[float, bool]:
-    """Wilcoxon test with autocorrelation adjustment."""
-    if len(is_values) < 6:
-        return np.nan, False
-    
-    slice_iotas = []
-    for is_val in is_values:
-        iota_val = compute_iota(is_val, oos_value, n_oos, lower_is_better=lower_is_better, 
-                               is_values=is_values, use_distribution_aware=False)
-        if np.isfinite(iota_val):
-            slice_iotas.append(iota_val)
-    
-    if len(slice_iotas) < 6:
-        return np.nan, False
-    
+def parametric_p_value(is_values: np.ndarray, oos_value: float, n_oos: int,
+                      lower_is_better: bool = False, overlap: bool = True,
+                      null_hypothesis: str = "zero_iota") -> Tuple[float, bool, str]:
+    """
+    Parametric p-value using t-test or z-test depending on sample size.
+    """
     try:
-        _, p_value_raw = stats.wilcoxon(slice_iotas, alternative='two-sided')
+        from scipy import stats
         
-        if overlap:
-            autocorr_adjustment = calculate_autocorrelation_adjustment(np.array(slice_iotas), overlap)
-            p_value_adjusted = min(1.0, p_value_raw / autocorr_adjustment)
-            return p_value_adjusted, p_value_adjusted < 0.05
-        else:
-            return p_value_raw, p_value_raw < 0.05
+        n_is = len(is_values)
+        is_median = np.median(is_values)
+        is_std = np.std(is_values, ddof=1)
+        
+        if is_std < 1e-6:
+            return np.nan, False, "zero_variance"
+        
+        # Weight factor
+        w = min(1.0, np.sqrt(n_oos / 252))
+        
+        if null_hypothesis == "zero_iota":
+            # H0: iota = 0 (performance matches expectations)
+            # H1: iota ≠ 0 (performance differs from expectations)
             
-    except (ValueError, ZeroDivisionError):
-        return np.nan, False
+            # Calculate iota
+            iota_observed = w * (oos_value - is_median) / is_std
+            
+            # Standard error of iota using delta method
+            se_median = 1.25 * is_std / np.sqrt(n_is)
+            se_std = is_std / np.sqrt(2 * (n_is - 1))
+            se_iota = w * np.sqrt((se_median/is_std)**2 + 
+                                 ((oos_value - is_median) * se_std / is_std**2)**2)
+            
+            # Test statistic
+            if se_iota < 1e-6:
+                return np.nan, False, "zero_se"
+            
+            t_stat = iota_observed / se_iota
+            
+            # Use t-distribution for small samples, normal for large samples
+            if n_is < 30:
+                p_value_raw = 2 * (1 - stats.t.cdf(abs(t_stat), df=n_is-1))
+            else:
+                p_value_raw = 2 * (1 - stats.norm.cdf(abs(t_stat)))
+        
+        elif null_hypothesis == "median_performance":
+            # H0: OOS_value = IS_median
+            # H1: OOS_value ≠ IS_median
+            
+            # One-sample t-test equivalent
+            # Standard error of the difference
+            se_diff = is_std / np.sqrt(n_is) * 1.25  # 1.25 factor for median vs mean
+            
+            t_stat = (oos_value - is_median) / se_diff
+            
+            if n_is < 30:
+                p_value_raw = 2 * (1 - stats.t.cdf(abs(t_stat), df=n_is-1))
+            else:
+                p_value_raw = 2 * (1 - stats.norm.cdf(abs(t_stat)))
+        
+        else:
+            return np.nan, False, "invalid_hypothesis"
+        
+        # Adjust for autocorrelation if overlapping
+        if overlap:
+            autocorr_adjustment = calculate_autocorrelation_adjustment(is_values, overlap)
+            p_value_adjusted = min(1.0, p_value_raw / autocorr_adjustment)
+        else:
+            p_value_adjusted = p_value_raw
+        
+        significant = p_value_adjusted < 0.05
+        
+        return p_value_adjusted, significant, "parametric"
+        
+    except Exception as e:
+        return np.nan, False, f"error_{str(e)[:20]}"
+
+def robust_p_value(is_values: np.ndarray, oos_value: float, n_oos: int,
+                  lower_is_better: bool = False, overlap: bool = True,
+                  null_hypothesis: str = "zero_iota") -> Tuple[float, bool, str]:
+    """
+    Robust p-value using bootstrap or sign-based tests.
+    """
+    try:
+        from scipy import stats
+        
+        # For robust method, use bootstrap-based p-value
+        n_bootstrap = 2000
+        
+        # Calculate observed test statistic
+        is_median = np.median(is_values)
+        q25, q75 = np.percentile(is_values, [25, 75])
+        iqr = q75 - q25
+        
+        if iqr < 1e-6:
+            return np.nan, False, "zero_iqr"
+        
+        robust_std = iqr / 1.35
+        w = min(1.0, np.sqrt(n_oos / 252))
+        
+        if null_hypothesis == "zero_iota":
+            # Observed iota
+            iota_observed = w * (oos_value - is_median) / robust_std
+            
+            # Bootstrap under null hypothesis (iota = 0)
+            # This means OOS_value should equal IS_median
+            bootstrap_stats = []
+            
+            for _ in range(n_bootstrap):
+                # Bootstrap sample
+                boot_sample = np.random.choice(is_values, size=len(is_values), replace=True)
+                boot_median = np.median(boot_sample)
+                boot_q25, boot_q75 = np.percentile(boot_sample, [25, 75])
+                boot_iqr = boot_q75 - boot_q25
+                
+                if boot_iqr > 1e-6:
+                    boot_robust_std = boot_iqr / 1.35
+                    # Under null: test against bootstrap median (represents null distribution)
+                    boot_iota = w * (boot_median - boot_median) / boot_robust_std  # This is 0
+                    bootstrap_stats.append(0)  # Under null, iota should be 0
+            
+            # P-value: proportion of bootstrap statistics as extreme as observed
+            bootstrap_stats = np.array(bootstrap_stats)
+            p_value_raw = np.mean(np.abs(bootstrap_stats) >= np.abs(iota_observed))
+            
+        elif null_hypothesis == "median_performance":
+            # Use sign test or Wilcoxon signed-rank test
+            # H0: OOS performance equals typical IS performance
+            
+            # Compare OOS value to each IS value
+            differences = is_values - oos_value
+            
+            # Wilcoxon signed-rank test (robust alternative to t-test)
+            if len(differences) >= 6:
+                _, p_value_raw = stats.wilcoxon(differences, alternative='two-sided')
+            else:
+                # Sign test for very small samples
+                n_positive = np.sum(differences > 0)
+                n_total = len(differences)
+                p_value_raw = 2 * stats.binom.cdf(min(n_positive, n_total - n_positive), 
+                                                 n_total, 0.5)
+        
+        else:
+            return np.nan, False, "invalid_hypothesis"
+        
+        # Adjust for autocorrelation if overlapping
+        if overlap:
+            autocorr_adjustment = calculate_autocorrelation_adjustment(is_values, overlap)
+            p_value_adjusted = min(1.0, p_value_raw / autocorr_adjustment)
+        else:
+            p_value_adjusted = p_value_raw
+        
+        significant = p_value_adjusted < 0.05
+        
+        return p_value_adjusted, significant, "robust"
+        
+    except Exception as e:
+        return np.nan, False, f"error_{str(e)[:20]}"
+
+def percentile_p_value(is_values: np.ndarray, oos_value: float, n_oos: int,
+                      lower_is_better: bool = False, overlap: bool = True,
+                      null_hypothesis: str = "zero_iota") -> Tuple[float, bool, str]:
+    """
+    Percentile-based p-value using rank-based methods.
+    """
+    try:
+        from scipy import stats
+        
+        if null_hypothesis == "zero_iota":
+            # For percentile method, iota=0 means OOS is at 50th percentile
+            percentile = stats.percentileofscore(is_values, oos_value)
+            
+            # Two-tailed test: how far is this percentile from 50?
+            deviation_from_median = abs(percentile - 50)
+            
+            # Convert to p-value: probability of being this far or farther from median
+            # Under null, percentiles should be uniformly distributed
+            p_value_raw = 2 * min(percentile / 100, (100 - percentile) / 100)
+            
+        elif null_hypothesis == "median_performance":
+            # Direct rank-based test
+            # H0: OOS value comes from same distribution as IS values
+            
+            # Use Mann-Whitney U test (comparing OOS value to IS distribution)
+            # Treat OOS as a single observation
+            oos_array = np.array([oos_value])
+            
+            try:
+                _, p_value_raw = stats.mannwhitneyu(is_values, oos_array, 
+                                                  alternative='two-sided')
+            except ValueError:
+                # Fallback to simple percentile test
+                percentile = stats.percentileofscore(is_values, oos_value)
+                p_value_raw = 2 * min(percentile / 100, (100 - percentile) / 100)
+        
+        else:
+            return np.nan, False, "invalid_hypothesis"
+        
+        # Adjust for autocorrelation if overlapping
+        if overlap:
+            autocorr_adjustment = calculate_autocorrelation_adjustment(is_values, overlap)
+            p_value_adjusted = min(1.0, p_value_raw / autocorr_adjustment)
+        else:
+            p_value_adjusted = p_value_raw
+        
+        significant = p_value_adjusted < 0.05
+        
+        return p_value_adjusted, significant, "percentile"
+        
+    except Exception as e:
+        return np.nan, False, f"error_{str(e)[:20]}"
+
+def distribution_aware_p_value(is_values: np.ndarray, oos_value: float, n_oos: int,
+                             lower_is_better: bool = False, overlap: bool = True,
+                             null_hypothesis: str = "zero_iota") -> Tuple[float, bool, str]:
+    """
+    Distribution-aware p-value calculation that matches the iota calculation method.
+    
+    Parameters:
+    - null_hypothesis: "zero_iota" (iota=0) or "median_performance" (OOS=IS_median)
+    """
+    if len(is_values) < 6:
+        return np.nan, False, "insufficient_data"
+    
+    # Detect distribution characteristics
+    dist_info = detect_distribution_characteristics(is_values)
+    method = dist_info['recommended_method']
+    
+    # Calculate p-value using appropriate method
+    if method == 'robust':
+        return robust_p_value(is_values, oos_value, n_oos, lower_is_better, 
+                             overlap, null_hypothesis)
+    elif method == 'percentile':
+        return percentile_p_value(is_values, oos_value, n_oos, lower_is_better, 
+                                 overlap, null_hypothesis)
+    else:  # standard method
+        return parametric_p_value(is_values, oos_value, n_oos, lower_is_better, 
+                                 overlap, null_hypothesis)
 
 def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int, 
                            metric_name: str = "metric", lower_is_better: bool = False,
@@ -652,8 +861,10 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
     # Use distribution-aware confidence interval
     ci_lower, ci_upper = distribution_aware_iota_confidence(is_values, oos_value, n_oos)
     
-    p_value, significant = wilcoxon_iota_test(is_values, oos_value, n_oos, 
-                                            lower_is_better=lower_is_better, overlap=overlap)
+    # Use distribution-aware p-value
+    p_value, significant, p_method = distribution_aware_p_value(
+        is_values, oos_value, n_oos, lower_is_better, overlap, "zero_iota"
+    )
     
     return {
         'iota': iota,
@@ -669,7 +880,8 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
         'has_fat_tails': dist_info['has_fat_tails'],
         'skewness': dist_info['skewness'],
         'kurtosis': dist_info['kurtosis'],
-        'ci_method': dist_info['recommended_method']  # Track which CI method was used
+        'ci_method': dist_info['recommended_method'],  # Track which CI method was used
+        'p_value_method': p_method  # Track which p-value method was used
     }
 
 def format_sortino_output(sortino_val: float) -> str:
@@ -2114,6 +2326,14 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         ci_lower, ci_upper = stats_dict['confidence_interval']
         if np.isfinite(ci_lower) and np.isfinite(ci_upper):
             st.write(f"**95% Confidence Interval:** [{ci_lower:.3f}, {ci_upper:.3f}]")
+        
+        # P-value
+        p_value = stats_dict.get('p_value', np.nan)
+        p_method = stats_dict.get('p_value_method', 'unknown')
+        if np.isfinite(p_value):
+            significance = "✅ Significant" if stats_dict.get('significant', False) else "❌ Not Significant"
+            st.write(f"**P-value:** {p_value:.4f} ({p_method})")
+            st.write(f"**Statistical Significance:** {significance}")
         
         # IQR
         q25, q75 = stats_dict['iqr_is']
