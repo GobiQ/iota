@@ -2317,6 +2317,25 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         ci_lower, ci_upper = stats_dict['confidence_interval']
         if np.isfinite(ci_lower) and np.isfinite(ci_upper):
             st.write(f"**95% Confidence Interval:** [{ci_lower:.3f}, {ci_upper:.3f}]")
+            
+            # Add confidence interval explanation
+            ci_width = ci_upper - ci_lower
+            if ci_width < 0.5:
+                ci_quality = "✅ **High confidence** - narrow interval indicates reliable estimate"
+            elif ci_width < 1.0:
+                ci_quality = "⚠️ **Moderate confidence** - reasonable uncertainty in estimate"
+            else:
+                ci_quality = "❌ **Low confidence** - wide interval suggests high uncertainty"
+            
+            st.write(f"**Quality:** {ci_quality}")
+            
+            # Interpretation of confidence interval
+            if ci_lower <= 0 <= ci_upper:
+                ci_interpretation = "**Includes 0**: No strong evidence that performance differs from expectations"
+            else:
+                ci_interpretation = "**Excludes 0**: Evidence that performance differs from expectations"
+            
+            st.write(f"**Interpretation:** {ci_interpretation}")
         
         # IQR
         q25, q75 = stats_dict['iqr_is']
@@ -2329,6 +2348,19 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
             confidence = stats_dict['distribution_confidence']
             st.write(f"**Distribution Method:** {method.title()}")
             st.write(f"**Confidence:** {confidence.title()}")
+            
+            # Confidence interval method explanation
+            ci_method = stats_dict.get('ci_method', method)
+            if ci_method == 'parametric':
+                ci_explanation = "**Parametric CI**: Uses normal distribution assumptions"
+            elif ci_method == 'robust':
+                ci_explanation = "**Robust CI**: Uses IQR-based methods for non-normal data"
+            elif ci_method == 'percentile':
+                ci_explanation = "**Percentile CI**: Uses rank-based methods for complex distributions"
+            else:
+                ci_explanation = f"**{ci_method.title()} CI**: Distribution-appropriate method"
+            
+            st.write(f"**CI Method:** {ci_explanation}")
             
             if stats_dict.get('is_skewed', False):
                 skewness = stats_dict.get('skewness', 0)
@@ -2413,9 +2445,22 @@ def show_comprehensive_help():
         ### 🎯 Iota (ι) Score
         **The main number that tells you how your strategy is doing:**
         
+        **Standard Method** (for normal distributions):
         - **ι = +1.0**: You're doing 1 standard deviation BETTER than expected ✅
         - **ι = 0.0**: You're performing exactly as expected ➡️
         - **ι = -1.0**: You're doing 1 standard deviation WORSE than expected ⚠️
+        
+        **Robust Method** (for skewed/fat-tailed distributions):
+        - **ι = +1.0**: You're doing 1 IQR unit BETTER than expected ✅
+        - **ι = 0.0**: You're performing exactly as expected ➡️
+        - **ι = -1.0**: You're doing 1 IQR unit WORSE than expected ⚠️
+        
+        **Percentile Method** (for complex distributions):
+        - **ι = +1.0**: You're performing at ~84th percentile vs. historical expectations ✅
+        - **ι = 0.0**: You're performing at ~50th percentile (median) ➡️
+        - **ι = -1.0**: You're performing at ~16th percentile vs. historical expectations ⚠️
+        
+        **Note**: The system automatically chooses the most appropriate method based on your data's distribution characteristics.
         
         ### 📊 Persistence Rating
         **Easy-to-understand 0-500 scale:**
