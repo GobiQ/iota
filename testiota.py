@@ -907,7 +907,7 @@ def smooth_iotas(iotas, window=3):
     return smoothed
 
 def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
-    """Fetch OOS date from Composer symphony via Firestore API using multiple methods."""
+    """Fetch OOS date from Composer symphony using multiple API methods."""
     if not symph_id or len(symph_id.strip()) == 0:
         return None
         
@@ -916,83 +916,130 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
     if symph_id.startswith("https://app.composer.trade/symphony/"):
         symph_id = symph_id.split("/")[-1]
     
-    url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{symph_id}"
-    
+    # Method 1: Try Composer Web API
     try:
-        response = requests.get(url, timeout=10)
+        composer_url = f"https://app.composer.trade/api/symphony/{symph_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://app.composer.trade/'
+        }
+        
+        response = requests.get(composer_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Look for OOS date in various possible fields
+            possible_fields = [
+                'oos_start_date', 'live_start_date', 'trading_start_date',
+                'last_semantic_update_at', 'created_at', 'updated_at',
+                'start_date', 'live_date', 'oos_date'
+            ]
+            
+            for field in possible_fields:
+                if field in data:
+                    date_str = data[field]
+                    if isinstance(date_str, str):
+                        # Handle different date formats
+                        if 'T' in date_str:  # ISO format
+                            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            return dt.date()
+                        else:  # Try other formats
+                            try:
+                                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                return dt.date()
+                            except:
+                                continue
+            
+            # Debug: Show available fields
+            available_fields = list(data.keys())
+            st.info(f"Composer API fields: {available_fields}")
+            
+    except Exception as e:
+        st.info(f"Composer API method failed: {str(e)[:50]}")
+    
+    # Method 2: Try Firestore API (original method)
+    try:
+        firestore_url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{symph_id}"
+        
+        response = requests.get(firestore_url, timeout=10)
         response.raise_for_status()
         
-        # Check if response is empty
         if not response.text.strip():
-            st.warning(f"Empty response from API for symphony {symph_id}")
+            st.warning(f"Empty response from Firestore API for symphony {symph_id}")
             return None
         
         data = response.json()
         
-        # Check if the document exists
         if 'fields' not in data:
-            st.warning(f"Symphony {symph_id} not found.")
+            st.warning(f"Symphony {symph_id} not found in Firestore.")
             return None
         
         fields = data['fields']
         
-        # Method 1: Try last_semantic_update_at (primary method)
-        if 'last_semantic_update_at' in fields:
-            last_update_str = fields['last_semantic_update_at']['timestampValue']
-            dt = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
-            return dt.date()
+        # Try multiple Firestore fields
+        firestore_fields = [
+            'last_semantic_update_at', 'created_at', 'updated_at',
+            'last_updated', 'oos_start_date', 'live_start_date',
+            'trading_start_date', 'start_date', 'live_date'
+        ]
         
-        # Method 2: Try created_at field
-        if 'created_at' in fields:
-            created_str = fields['created_at']['timestampValue']
-            dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-            return dt.date()
+        for field in firestore_fields:
+            if field in fields:
+                try:
+                    timestamp_str = fields[field]['timestampValue']
+                    dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    return dt.date()
+                except:
+                    continue
         
-        # Method 3: Try updated_at field
-        if 'updated_at' in fields:
-            updated_str = fields['updated_at']['timestampValue']
-            dt = datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
-            return dt.date()
-        
-        # Method 4: Try last_updated field
-        if 'last_updated' in fields:
-            last_updated_str = fields['last_updated']['timestampValue']
-            dt = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
-            return dt.date()
-        
-        # Method 5: Try oos_start_date field (if it exists)
-        if 'oos_start_date' in fields:
-            oos_str = fields['oos_start_date']['timestampValue']
-            dt = datetime.fromisoformat(oos_str.replace('Z', '+00:00'))
-            return dt.date()
-        
-        # Method 6: Try live_start_date field
-        if 'live_start_date' in fields:
-            live_str = fields['live_start_date']['timestampValue']
-            dt = datetime.fromisoformat(live_str.replace('Z', '+00:00'))
-            return dt.date()
-        
-        # Method 7: Try trading_start_date field
-        if 'trading_start_date' in fields:
-            trading_str = fields['trading_start_date']['timestampValue']
-            dt = datetime.fromisoformat(trading_str.replace('Z', '+00:00'))
-            return dt.date()
-        
-        # Debug: Show available fields for troubleshooting
+        # Debug: Show available Firestore fields
         available_fields = list(fields.keys())
-        st.info(f"Available fields in symphony: {available_fields}")
-        st.warning(f"Symphony {symph_id} found but no OOS date fields detected.")
-        return None
+        st.info(f"Firestore fields: {available_fields}")
         
-    except requests.exceptions.RequestException as e:
-        st.error(f"Network error fetching OOS date: {e}")
-        return None
-    except (KeyError, ValueError) as e:
-        st.error(f"Error parsing symphony data: {e}")
-        return None
     except Exception as e:
-        st.error(f"Unexpected error fetching OOS date: {e}")
-        return None
+        st.info(f"Firestore API method failed: {str(e)[:50]}")
+    
+    # Method 3: Try to extract from symphony URL metadata
+    try:
+        # Try to get symphony details from the web page
+        symphony_url = f"https://app.composer.trade/symphony/{symph_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(symphony_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            # Look for date patterns in the HTML
+            import re
+            date_patterns = [
+                r'"oos_start_date":"([^"]+)"',
+                r'"live_start_date":"([^"]+)"',
+                r'"created_at":"([^"]+)"',
+                r'"updated_at":"([^"]+)"',
+                r'data-oos-date="([^"]+)"',
+                r'data-live-date="([^"]+)"'
+            ]
+            
+            for pattern in date_patterns:
+                matches = re.findall(pattern, response.text)
+                if matches:
+                    try:
+                        date_str = matches[0]
+                        if 'T' in date_str:
+                            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            return dt.date()
+                        else:
+                            dt = datetime.strptime(date_str, '%Y-%m-%d')
+                            return dt.date()
+                    except:
+                        continue
+                        
+    except Exception as e:
+        st.info(f"Web scraping method failed: {str(e)[:50]}")
+    
+    st.warning(f"All methods failed for symphony {symph_id}. Please enter OOS date manually.")
+    return None
 
 def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date, 
                         is_ret: pd.Series, n_slices: int = 100, overlap: bool = True,
