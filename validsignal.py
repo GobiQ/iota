@@ -164,8 +164,9 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
     st.info("   - The Symphony is private or not accessible")
     st.info("   - Composer's API structure has changed")
     
-    # Offer to create sample data for testing
-    if st.button("🧪 Create Sample Data for Testing"):
+    # Always offer sample data when APIs fail
+    st.info("🧪 Would you like to test with sample data?")
+    if st.button("📊 Create Sample Data for Testing"):
         st.info("📊 Creating sample data for demonstration...")
         return create_sample_symphony_data()
     
