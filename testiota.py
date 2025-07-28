@@ -907,7 +907,7 @@ def smooth_iotas(iotas, window=3):
     return smoothed
 
 def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
-    """Fetch OOS date from Composer symphony via Firestore API."""
+    """Fetch OOS date from Composer symphony via Firestore API using multiple methods."""
     if not symph_id or len(symph_id.strip()) == 0:
         return None
         
@@ -922,22 +922,67 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         
-        data = response.json()
-        
-        # Check if the document exists and has the required field
-        if 'fields' not in data or 'last_semantic_update_at' not in data['fields']:
-            st.warning(f"Symphony {symph_id} not found or missing OOS date information.")
+        # Check if response is empty
+        if not response.text.strip():
+            st.warning(f"Empty response from API for symphony {symph_id}")
             return None
         
-        last_update_str = data['fields']['last_semantic_update_at']['timestampValue']
+        data = response.json()
         
-        # Parse the timestamp (2025-05-11T21:23:25.467Z)
-        dt = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
+        # Check if the document exists
+        if 'fields' not in data:
+            st.warning(f"Symphony {symph_id} not found.")
+            return None
         
-        # Convert to date
-        oos_date = dt.date()
+        fields = data['fields']
         
-        return oos_date
+        # Method 1: Try last_semantic_update_at (primary method)
+        if 'last_semantic_update_at' in fields:
+            last_update_str = fields['last_semantic_update_at']['timestampValue']
+            dt = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Method 2: Try created_at field
+        if 'created_at' in fields:
+            created_str = fields['created_at']['timestampValue']
+            dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Method 3: Try updated_at field
+        if 'updated_at' in fields:
+            updated_str = fields['updated_at']['timestampValue']
+            dt = datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Method 4: Try last_updated field
+        if 'last_updated' in fields:
+            last_updated_str = fields['last_updated']['timestampValue']
+            dt = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Method 5: Try oos_start_date field (if it exists)
+        if 'oos_start_date' in fields:
+            oos_str = fields['oos_start_date']['timestampValue']
+            dt = datetime.fromisoformat(oos_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Method 6: Try live_start_date field
+        if 'live_start_date' in fields:
+            live_str = fields['live_start_date']['timestampValue']
+            dt = datetime.fromisoformat(live_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Method 7: Try trading_start_date field
+        if 'trading_start_date' in fields:
+            trading_str = fields['trading_start_date']['timestampValue']
+            dt = datetime.fromisoformat(trading_str.replace('Z', '+00:00'))
+            return dt.date()
+        
+        # Debug: Show available fields for troubleshooting
+        available_fields = list(fields.keys())
+        st.info(f"Available fields in symphony: {available_fields}")
+        st.warning(f"Symphony {symph_id} found but no OOS date fields detected.")
+        return None
         
     except requests.exceptions.RequestException as e:
         st.error(f"Network error fetching OOS date: {e}")
