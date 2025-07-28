@@ -1136,6 +1136,68 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
     except Exception as e:
         st.info(f"Web scraping method failed: {str(e)[:50]}")
     
+    # Method 4: Try to wait for dynamic content to load
+    try:
+        # Try with a longer timeout and different approach
+        symphony_url = f"https://app.composer.trade/symphony/{symph_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0'
+        }
+        
+        response = requests.get(symphony_url, headers=headers, timeout=20)
+        if response.status_code == 200:
+            html_content = response.text
+            
+            # Look for any mention of OOS Start Date
+            if 'OOS Start Date' in html_content:
+                # Try to find the actual date near this text
+                lines = html_content.split('\n')
+                for i, line in enumerate(lines):
+                    if 'OOS Start Date' in line:
+                        # Look at this line and the next few lines for a date
+                        search_lines = lines[i:i+5]
+                        for search_line in search_lines:
+                            # Look for date patterns
+                            date_patterns = [
+                                r'([A-Za-z]{3}\s+\d{1,2},\s+\d{4})',  # Jul 20, 2022
+                                r'(\d{1,2}/\d{1,2}/\d{4})',  # 07/20/2022
+                                r'(\d{4}-\d{2}-\d{2})',  # 2022-07-20
+                            ]
+                            
+                            for pattern in date_patterns:
+                                matches = re.findall(pattern, search_line)
+                                if matches:
+                                    try:
+                                        date_str = matches[0]
+                                        if ' ' in date_str:  # Jul 20, 2022 format
+                                            dt = datetime.strptime(date_str, '%b %d, %Y')
+                                            return dt.date()
+                                        elif '/' in date_str:  # 07/20/2022 format
+                                            dt = datetime.strptime(date_str, '%m/%d/%Y')
+                                            return dt.date()
+                                        elif '-' in date_str:  # 2022-07-20 format
+                                            dt = datetime.strptime(date_str, '%Y-%m-%d')
+                                            return dt.date()
+                                    except:
+                                        continue
+                        
+                        st.info(f"Found 'OOS Start Date' but couldn't parse the date from: {line.strip()[:200]}")
+                        break
+            else:
+                st.info("'OOS Start Date' text not found in the page HTML")
+                        
+    except Exception as e:
+        st.info(f"Enhanced web scraping method failed: {str(e)[:50]}")
+    
     # Method 4: Try Composer's GraphQL API (if available)
     try:
         graphql_url = "https://app.composer.trade/graphql"
@@ -1930,7 +1992,11 @@ def main():
             # Extract symphony ID from URL for auto-fetch
             symph_id = ""
             if url and "symphony/" in url:
-                symph_id = url.split("symphony/")[-1].split("?")[0].split("#")[0]
+                # Extract the symphony ID more carefully
+                symph_part = url.split("symphony/")[-1]
+                # Remove any query parameters, fragments, or additional paths
+                symph_id = symph_part.split("?")[0].split("#")[0].split("/")[0]
+                st.info(f"Extracted Symphony ID: {symph_id}")
             
             # Auto-fetch OOS date if enabled and symphony ID is available
             fetched_oos_date = None
