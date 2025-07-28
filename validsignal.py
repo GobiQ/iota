@@ -22,8 +22,20 @@ def clean_symphony_id(symphony_id: str) -> str:
         return ""
     
     symph_id = symphony_id.strip()
+    
+    # Handle full Composer URLs
     if symph_id.startswith("https://app.composer.trade/symphony/"):
         symph_id = symph_id.split("/")[-1]
+    
+    # Validate Symphony ID format (should be alphanumeric, typically 20+ characters)
+    if len(symph_id) < 10:
+        st.warning(f"⚠️ Symphony ID '{symph_id}' seems too short. Valid IDs are typically 20+ characters.")
+    
+    # Check for common invalid values
+    invalid_values = ['details', 'help', 'about', 'login', 'signup', 'home', 'dashboard']
+    if symph_id.lower() in invalid_values:
+        st.error(f"❌ '{symph_id}' is not a valid Symphony ID. Please enter a real Symphony ID from Composer.")
+        return ""
     
     return symph_id
 
@@ -60,13 +72,32 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
         
         if response.status_code == 200:
             if response.text.strip():
+                # Check if response is HTML instead of JSON
+                if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
+                    st.error("❌ Composer API returned HTML instead of JSON")
+                    st.info("💡 This usually means:")
+                    st.info("   - The Symphony ID is invalid")
+                    st.info("   - The API requires authentication")
+                    st.info("   - The API endpoint has changed")
+                    st.info("📄 Response preview: <!DOCTYPE html>...")
+                    return None
+                
                 try:
                     data = response.json()
                     st.success("✅ Successfully parsed JSON from Composer API")
                     return data
                 except ValueError as e:
-                    st.error(f"❌ Invalid JSON response from Composer API: {str(e)}")
-                    st.info(f"📄 Response preview: {response.text[:200]}...")
+                    # Check if it's HTML after JSON parsing fails
+                    if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
+                        st.error("❌ Composer API returned HTML instead of JSON")
+                        st.info("💡 This usually means:")
+                        st.info("   - The Symphony ID is invalid")
+                        st.info("   - The API requires authentication")
+                        st.info("   - The API endpoint has changed")
+                        st.info("📄 Response preview: <!DOCTYPE html>...")
+                    else:
+                        st.error(f"❌ Invalid JSON response from Composer API: {str(e)}")
+                        st.info(f"📄 Response preview: {response.text[:200]}...")
                     return None
             else:
                 st.warning("⚠️ Composer API returned empty response")
@@ -223,13 +254,27 @@ def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[
         
         if response.status_code == 200:
             if response.text.strip():
+                # Check if response is HTML instead of JSON
+                if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
+                    st.error("❌ Signal API returned HTML instead of JSON")
+                    st.info("💡 This usually means the Symphony ID is invalid or the API requires authentication")
+                    st.info("📄 Response preview: <!DOCTYPE html>...")
+                    return None
+                
                 try:
                     data = response.json()
                     st.success("✅ Successfully parsed signal data JSON")
                     return data
                 except ValueError as e:
-                    st.error(f"❌ Invalid JSON response from signal API: {str(e)}")
-                    st.info(f"📄 Signal response preview: {response.text[:200]}...")
+                    # Check if it's HTML after JSON parsing fails
+                    if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
+                        st.error("❌ Signal API returned HTML instead of JSON")
+                        st.info("💡 This usually means the Symphony ID is invalid or the API requires authentication")
+                        st.info("📄 Response preview: <!DOCTYPE html>...")
+                    else:
+                        st.error(f"❌ Invalid JSON response from signal API: {str(e)}")
+                        st.info(f"📄 Signal response preview: {response.text[:200]}...")
+                    return None
             else:
                 st.warning("⚠️ Signal API returned empty response")
         else:
@@ -561,6 +606,22 @@ def main():
             - Open your Symphony in Composer
             - Look at the URL in your browser
             - The ID is the last part after `/symphony/`
+            
+            **Valid Symphony ID Examples:**
+            - `GiR9AkRAZ1S4IONmYIkS` (20+ characters, alphanumeric)
+            - `abc123def456ghi789jkl` (typical format)
+            
+            **Invalid Examples:**
+            - `details` ❌ (too short, not a real ID)
+            - `help` ❌ (not a Symphony ID)
+            - `123` ❌ (too short)
+            """)
+            
+            st.markdown("""
+            **💡 Tip:** If you don't have a Symphony ID, you can:
+            1. Create a new Symphony on Composer
+            2. Use the sample data option for testing
+            3. Ask someone with a Symphony to share their ID
             """)
     
     with col2:
@@ -610,6 +671,13 @@ def main():
     if st.button("🚀 Analyze Symphony", type="primary"):
         if not symphony_id:
             st.error("❌ Please enter a Symphony ID")
+            return
+        
+        # Validate Symphony ID before making API calls
+        clean_id = clean_symphony_id(symphony_id)
+        if not clean_id:
+            st.error("❌ Please enter a valid Symphony ID")
+            st.info("💡 Valid Symphony IDs are typically 20+ characters long and alphanumeric")
             return
         
         if len(date_range) != 2:
