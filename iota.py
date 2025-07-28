@@ -2201,6 +2201,11 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
     else:
         st.markdown(f'<div class="critical-card" style="font-size: 1.2rem;"><strong>⚠️ {interpretation}</strong></div>', unsafe_allow_html=True)
     
+    # Add significant spacing after Overall Assessment
+    st.markdown("")  # Add spacing
+    st.markdown("")  # Add more spacing
+    st.markdown("")  # Add even more spacing
+    
     # Detailed metrics section
     st.subheader("📈 Detailed Metric Analysis")
     st.markdown("")  # Add spacing
