@@ -2265,10 +2265,10 @@ def display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats,
         **Percentile**: Used for complex distributions (percentile-based)
         """)
     
-    # Show warning for problematic distributions
+    # Show info for distribution characteristics
     if distribution_issues:
-        st.warning(f"""
-        ⚠️ **Distribution Characteristics Detected**
+        st.info(f"""
+        📊 **Distribution Characteristics Detected**
         
         The following metrics have non-normal distributions:
         - {', '.join(distribution_issues)}
@@ -2321,9 +2321,7 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         # Distribution information
         if 'distribution_method' in stats_dict:
             method = stats_dict['distribution_method']
-            confidence = stats_dict['distribution_confidence']
             st.write(f"**Distribution Method:** {method.title()}")
-            st.write(f"**Confidence:** {confidence.title()}")
             
             if stats_dict.get('is_skewed', False):
                 skewness = stats_dict.get('skewness', 0)
