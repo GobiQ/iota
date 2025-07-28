@@ -861,10 +861,7 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
     # Use distribution-aware confidence interval
     ci_lower, ci_upper = distribution_aware_iota_confidence(is_values, oos_value, n_oos)
     
-    # Use distribution-aware p-value
-    p_value, significant, p_method = distribution_aware_p_value(
-        is_values, oos_value, n_oos, lower_is_better, overlap, "zero_iota"
-    )
+
     
     return {
         'iota': iota,
@@ -880,8 +877,7 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
         'has_fat_tails': dist_info['has_fat_tails'],
         'skewness': dist_info['skewness'],
         'kurtosis': dist_info['kurtosis'],
-        'ci_method': dist_info['recommended_method'],  # Track which CI method was used
-        'p_value_method': p_method  # Track which p-value method was used
+        'ci_method': dist_info['recommended_method']  # Track which CI method was used
     }
 
 def format_sortino_output(sortino_val: float) -> str:
@@ -2326,14 +2322,6 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         if np.isfinite(ci_lower) and np.isfinite(ci_upper):
             st.write(f"**95% Confidence Interval:** [{ci_lower:.3f}, {ci_upper:.3f}]")
         
-        # P-value
-        p_value = stats_dict.get('p_value', np.nan)
-        p_method = stats_dict.get('p_value_method', 'unknown')
-        if np.isfinite(p_value):
-            significance = "✅ Significant" if stats_dict.get('significant', False) else "❌ Not Significant"
-            st.write(f"**P-value:** {p_value:.4f} ({p_method})")
-            st.write(f"**Statistical Significance:** {significance}")
-        
         # IQR
         q25, q75 = stats_dict['iqr_is']
         st.write(f"**IS Range (25th-75th):** {formatter(q25)} - {formatter(q75)}")
@@ -2708,73 +2696,6 @@ def show_comprehensive_help():
         
         ### Best Practices
         
-        ## Understanding P-Values
-        
-        **P-values** provide statistical significance testing for your iota results. They answer the question: *"What's the probability that your strategy is performing exactly as expected (iota = 0) given the observed data?"*
-        
-        ### P-Value Interpretation
-        
-        | P-Value Range | Significance | Interpretation |
-        |----------------|--------------|----------------|
-        | **p < 0.01** | ✅ **Highly Significant** | Strong evidence that performance differs from expectations |
-        | **0.01 ≤ p < 0.05** | ✅ **Significant** | Evidence that performance differs from expectations |
-        | **0.05 ≤ p < 0.10** | ⚠️ **Marginally Significant** | Weak evidence of difference from expectations |
-        | **p ≥ 0.10** | ❌ **Not Significant** | No strong evidence of difference from expectations |
-        
-        ### What the P-Value Tests
-        
-        **Null Hypothesis (H₀)**: iota = 0 (your strategy is performing exactly as expected)
-        **Alternative Hypothesis (H₁)**: iota ≠ 0 (your strategy is performing differently than expected)
-        
-        - **Low p-value** (< 0.05): Reject the null hypothesis - your performance is statistically different from expectations
-        - **High p-value** (≥ 0.05): Fail to reject the null hypothesis - no strong evidence that your performance differs from expectations
-        
-        ### P-Value Methods Used
-        
-        The system automatically chooses the most appropriate statistical test based on your data's distribution:
-        
-        **Parametric Method** (for normal distributions):
-        - Uses t-test or z-test depending on sample size
-        - Tests whether iota = 0 using standard statistical theory
-        - Most powerful when data follows normal distribution
-        
-        **Robust Method** (for skewed/fat-tailed distributions):
-        - Uses bootstrap-based testing or Wilcoxon signed-rank test
-        - Less sensitive to outliers and non-normal distributions
-        - More conservative but more reliable for complex data
-        
-        **Percentile Method** (for complex distributions):
-        - Uses rank-based methods like Mann-Whitney U test
-        - Tests percentile position relative to historical distribution
-        - Non-parametric approach for highly irregular distributions
-        
-        ### P-Value vs. Iota Relationship
-        
-        **High Iota + Low P-Value**: Strong evidence of outperformance
-        **Low Iota + Low P-Value**: Strong evidence of underperformance  
-        **Any Iota + High P-Value**: No strong evidence of difference from expectations
-        
-        ### Example P-Value Scenarios
-        
-        **Scenario 1**: ι = +1.5, p = 0.002
-        - **Interpretation**: "Strong evidence that your strategy is significantly outperforming expectations"
-        
-        **Scenario 2**: ι = -0.8, p = 0.03  
-        - **Interpretation**: "Evidence that your strategy is underperforming relative to expectations"
-        
-        **Scenario 3**: ι = +0.3, p = 0.15
-        - **Interpretation**: "No strong evidence that your performance differs from expectations"
-        
-        **Scenario 4**: ι = -2.1, p = 0.001
-        - **Interpretation**: "Highly significant evidence of severe underperformance"
-        
-        ### Important Notes
-        
-        - **P-values are not effect sizes**: A significant p-value doesn't tell you how large the difference is (that's what iota measures)
-        - **Sample size matters**: Larger samples can detect smaller differences
-        - **Multiple testing**: When testing multiple metrics, some p-values may be significant by chance
-        - **Practical significance**: Consider both statistical significance (p-value) and practical importance (iota magnitude)
-        
         1. **Trust the distribution detection**: The system automatically chooses the best calculation method for your data
         2. **Use multiple time periods**: Test different in-sample/out-of-sample splits
         3. **Consider market context**: Account for changing market conditions
@@ -3092,10 +3013,23 @@ def show_comprehensive_help():
         
         ## Troubleshooting
         
-        ### Q: Confidence intervals are very wide - what does this mean?
+        ### Q: What are confidence intervals and how do I interpret them?
         **A:** 
-        - **High uncertainty** in the iota estimate
+        
+        **95% Confidence Intervals** show the range where the true iota value likely falls:
+        
+        - **Narrow intervals** (e.g., [-0.2, +0.3]): High confidence in the iota estimate
+        - **Wide intervals** (e.g., [-1.5, +2.0]): High uncertainty in the estimate
+        - **Interval includes 0**: No strong evidence that performance differs from expectations
+        - **Interval excludes 0**: Evidence that performance differs from expectations
+        
+        **Example**: If your iota is +0.8 with 95% CI [-0.1, +1.7]:
+        - The interval includes 0, so we can't be confident that performance differs from expectations
+        - The wide range suggests high uncertainty in the estimate
+        
+        **Wide intervals usually mean**:
         - **Need more data** - longer OOS period or more IS slices
+        - **High volatility** in your strategy's historical performance
         - **Results less reliable** - interpret with caution
         - **Consider extending** analysis period
         
