@@ -2316,7 +2316,7 @@ def display_metric_detail(metric_name, stats_dict, oos_val, formatter):
         # Confidence interval
         ci_lower, ci_upper = stats_dict['confidence_interval']
         if np.isfinite(ci_lower) and np.isfinite(ci_upper):
-            st.write(f"**95% Confidence Interval:** [{ci_lower:.3f}, {ci_upper:.3f}]")
+            st.write(f"**95% CI for Iota:** [{ci_lower:.3f}, {ci_upper:.3f}]")
         
         # IQR
         q25, q75 = stats_dict['iqr_is']
