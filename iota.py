@@ -403,40 +403,198 @@ def calculate_autocorrelation_adjustment(values: np.ndarray, overlap: bool) -> f
     except Exception:
         return 0.7
 
-def standard_bootstrap_confidence(is_values: np.ndarray, oos_value: float, n_oos: int,
-                                 n_bootstrap: int, confidence_level: float, 
-                                 lower_is_better: bool) -> Tuple[float, float]:
-    """Standard bootstrap for non-overlapping slices."""
+def parametric_iota_confidence(is_values: np.ndarray, oos_value: float, n_oos: int,
+                              confidence_level: float = 0.95) -> Tuple[float, float]:
+    """
+    Parametric confidence interval for iota using delta method approximation.
+    Assumes normal distribution of the iota statistic.
+    """
+    if len(is_values) < 10:
+        return np.nan, np.nan
+    
     try:
+        from scipy import stats
+        
+        # Estimate parameters
+        is_median = np.median(is_values)
+        is_std = np.std(is_values, ddof=1)
+        
+        if is_std < 1e-6:
+            return np.nan, np.nan
+        
+        # Weight factor
+        w = min(1.0, np.sqrt(n_oos / 252))
+        
+        # Point estimate
+        iota_val = w * (oos_value - is_median) / is_std
+        
+        # Standard errors using asymptotic theory
+        n_is = len(is_values)
+        se_median = 1.25 * is_std / np.sqrt(n_is)  # Asymptotic SE of median
+        se_std = is_std / np.sqrt(2 * (n_is - 1))  # SE of std deviation
+        
+        # Combined standard error using delta method
+        se_iota = w * np.sqrt((se_median/is_std)**2 + ((oos_value - is_median) * se_std / is_std**2)**2)
+        
+        # Normal approximation for CI
+        z_crit = stats.norm.ppf(1 - (1 - confidence_level) / 2)
+        ci_lower = iota_val - z_crit * se_iota
+        ci_upper = iota_val + z_crit * se_iota
+        
+        return ci_lower, ci_upper
+        
+    except Exception:
+        return np.nan, np.nan
+
+def robust_iota_confidence(is_values: np.ndarray, oos_value: float, n_oos: int,
+                          confidence_level: float = 0.95) -> Tuple[float, float]:
+    """
+    Robust confidence interval for iota using IQR-based methods.
+    Suitable for skewed or fat-tailed distributions.
+    """
+    if len(is_values) < 10:
+        return np.nan, np.nan
+    
+    try:
+        from scipy import stats
+        
+        # Use IQR-based robust statistics
+        is_median = np.median(is_values)
+        q25, q75 = np.percentile(is_values, [25, 75])
+        iqr = q75 - q25
+        
+        if iqr < 1e-6:
+            return np.nan, np.nan
+        
+        # Robust "standard deviation" (IQR/1.35 for normal distributions)
+        robust_std = iqr / 1.35
+        
+        # Weight factor
+        w = min(1.0, np.sqrt(n_oos / 252))
+        
+        # Point estimate
+        iota_val = w * (oos_value - is_median) / robust_std
+        
+        # Bootstrap for robust CI (since analytical formulas are complex)
         bootstrap_iotas = []
+        n_bootstrap = 1000
+        
         for _ in range(n_bootstrap):
-            try:
-                boot_sample = np.random.choice(is_values, size=len(is_values), replace=True)
-                boot_median = np.median(boot_sample)
-                boot_iota = compute_iota(boot_median, oos_value, n_oos, lower_is_better=lower_is_better, 
-                                       is_values=boot_sample, use_distribution_aware=False)
+            # Bootstrap the IS values
+            boot_sample = np.random.choice(is_values, size=len(is_values), replace=True)
+            boot_median = np.median(boot_sample)
+            boot_q25, boot_q75 = np.percentile(boot_sample, [25, 75])
+            boot_iqr = boot_q75 - boot_q25
+            
+            if boot_iqr > 1e-6:
+                boot_robust_std = boot_iqr / 1.35
+                boot_iota = w * (oos_value - boot_median) / boot_robust_std
                 if np.isfinite(boot_iota):
                     bootstrap_iotas.append(boot_iota)
-            except Exception:
-                continue
         
         if len(bootstrap_iotas) < 50:
             return np.nan, np.nan
         
+        # Use percentile method for robust CI
         alpha = 1 - confidence_level
-        return tuple(np.percentile(bootstrap_iotas, [100 * alpha/2, 100 * (1 - alpha/2)]))
+        ci_lower = np.percentile(bootstrap_iotas, 100 * alpha/2)
+        ci_upper = np.percentile(bootstrap_iotas, 100 * (1 - alpha/2))
+        
+        return ci_lower, ci_upper
+        
     except Exception:
         return np.nan, np.nan
+
+def percentile_iota_confidence(is_values: np.ndarray, oos_value: float, n_oos: int,
+                              confidence_level: float = 0.95) -> Tuple[float, float]:
+    """
+    Confidence interval for percentile-based iota using bootstrap.
+    Suitable for complex, non-normal distributions.
+    """
+    if len(is_values) < 10:
+        return np.nan, np.nan
+    
+    try:
+        from scipy import stats
+        
+        # Weight factor
+        w = min(1.0, np.sqrt(n_oos / 252))
+        
+        # Point estimate
+        percentile = stats.percentileofscore(is_values, oos_value)
+        percentile_decimal = percentile / 100.0
+        
+        if percentile_decimal <= 0:
+            iota_val = -10.0
+        elif percentile_decimal >= 1:
+            iota_val = 10.0
+        else:
+            iota_val = w * stats.norm.ppf(percentile_decimal)
+        
+        # Bootstrap for percentile-based CI
+        bootstrap_iotas = []
+        n_bootstrap = 1000
+        
+        for _ in range(n_bootstrap):
+            # Bootstrap the IS values
+            boot_sample = np.random.choice(is_values, size=len(is_values), replace=True)
+            boot_percentile = stats.percentileofscore(boot_sample, oos_value)
+            boot_percentile_decimal = boot_percentile / 100.0
+            
+            if boot_percentile_decimal <= 0:
+                boot_iota = -10.0
+            elif boot_percentile_decimal >= 1:
+                boot_iota = 10.0
+            else:
+                boot_iota = w * stats.norm.ppf(boot_percentile_decimal)
+            
+            if np.isfinite(boot_iota):
+                bootstrap_iotas.append(boot_iota)
+        
+        if len(bootstrap_iotas) < 50:
+            return np.nan, np.nan
+        
+        # Use percentile method for CI
+        alpha = 1 - confidence_level
+        ci_lower = np.percentile(bootstrap_iotas, 100 * alpha/2)
+        ci_upper = np.percentile(bootstrap_iotas, 100 * (1 - alpha/2))
+        
+        return ci_lower, ci_upper
+        
+    except Exception:
+        return np.nan, np.nan
+
+def distribution_aware_iota_confidence(is_values: np.ndarray, oos_value: float, n_oos: int,
+                                     confidence_level: float = 0.95) -> Tuple[float, float]:
+    """
+    Distribution-aware confidence interval that chooses the appropriate method
+    based on the detected distribution characteristics.
+    """
+    if len(is_values) < 10:
+        return np.nan, np.nan
+    
+    # Detect distribution characteristics
+    dist_info = detect_distribution_characteristics(is_values)
+    
+    # Choose appropriate CI method based on distribution
+    if dist_info['recommended_method'] == 'robust':
+        return robust_iota_confidence(is_values, oos_value, n_oos, confidence_level)
+    elif dist_info['recommended_method'] == 'percentile':
+        return percentile_iota_confidence(is_values, oos_value, n_oos, confidence_level)
+    else:  # standard method
+        return parametric_iota_confidence(is_values, oos_value, n_oos, confidence_level)
 
 def bootstrap_iota_confidence(is_values: np.ndarray, oos_value: float, n_oos: int, 
                              n_bootstrap: int = 1000, confidence_level: float = 0.95,
                              lower_is_better: bool = False, overlap: bool = True) -> Tuple[float, float]:
-    """Bootstrap confidence interval."""
+    """
+    Main confidence interval function - now uses distribution-aware methods.
+    Kept for backward compatibility but delegates to distribution-aware method.
+    """
     if len(is_values) < 3:
         return np.nan, np.nan
     
-    return standard_bootstrap_confidence(is_values, oos_value, n_oos, n_bootstrap, 
-                                       confidence_level, lower_is_better)
+    return distribution_aware_iota_confidence(is_values, oos_value, n_oos, confidence_level)
 
 def wilcoxon_iota_test(is_values: np.ndarray, oos_value: float, n_oos: int,
                       lower_is_better: bool = False, overlap: bool = True) -> Tuple[float, bool]:
@@ -488,14 +646,14 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
     iota = compute_iota(median_is, oos_value, n_oos, lower_is_better=lower_is_better, is_values=is_values, use_distribution_aware=True)
     persistence_rating = iota_to_persistence_rating(iota)
     
-    ci_lower, ci_upper = bootstrap_iota_confidence(is_values, oos_value, n_oos, 
-                                                  lower_is_better=lower_is_better, overlap=overlap)
+    # Get distribution characteristics first
+    dist_info = detect_distribution_characteristics(is_values)
+    
+    # Use distribution-aware confidence interval
+    ci_lower, ci_upper = distribution_aware_iota_confidence(is_values, oos_value, n_oos)
     
     p_value, significant = wilcoxon_iota_test(is_values, oos_value, n_oos, 
                                             lower_is_better=lower_is_better, overlap=overlap)
-    
-    # Get distribution characteristics
-    dist_info = detect_distribution_characteristics(is_values)
     
     return {
         'iota': iota,
@@ -510,7 +668,8 @@ def compute_iota_with_stats(is_values: np.ndarray, oos_value: float, n_oos: int,
         'is_skewed': dist_info['is_skewed'],
         'has_fat_tails': dist_info['has_fat_tails'],
         'skewness': dist_info['skewness'],
-        'kurtosis': dist_info['kurtosis']
+        'kurtosis': dist_info['kurtosis'],
+        'ci_method': dist_info['recommended_method']  # Track which CI method was used
     }
 
 def format_sortino_output(sortino_val: float) -> str:
