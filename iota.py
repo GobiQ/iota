@@ -63,6 +63,13 @@ if missing_deps:
 from scipy import stats
 from sim import fetch_backtest, calculate_portfolio_returns
 
+# Add requests import for API calls
+try:
+    import requests
+except ImportError:
+    st.error("Missing requests library. Install with: pip install requests")
+    st.stop()
+
 # ===== CORE FUNCTIONS (Enhanced from Iota.py) =====
 
 def parse_exclusion_input(user_str: str) -> List[Tuple[date, date]]:
@@ -899,6 +906,49 @@ def smooth_iotas(iotas, window=3):
         smoothed.append(np.mean(iotas[start_idx:end_idx]))
     return smoothed
 
+def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
+    """Fetch OOS date from Composer symphony via Firestore API."""
+    if not symph_id or len(symph_id.strip()) == 0:
+        return None
+        
+    # Clean the symphony ID (remove URL parts if user pasted full URL)
+    symph_id = symph_id.strip()
+    if symph_id.startswith("https://app.composer.trade/symphony/"):
+        symph_id = symph_id.split("/")[-1]
+    
+    url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{symph_id}"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Check if the document exists and has the required field
+        if 'fields' not in data or 'last_semantic_update_at' not in data['fields']:
+            st.warning(f"Symphony {symph_id} not found or missing OOS date information.")
+            return None
+        
+        last_update_str = data['fields']['last_semantic_update_at']['timestampValue']
+        
+        # Parse the timestamp (2025-05-11T21:23:25.467Z)
+        dt = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
+        
+        # Convert to date
+        oos_date = dt.date()
+        
+        return oos_date
+        
+    except requests.exceptions.RequestException as e:
+        st.error(f"Network error fetching OOS date: {e}")
+        return None
+    except (KeyError, ValueError) as e:
+        st.error(f"Error parsing symphony data: {e}")
+        return None
+    except Exception as e:
+        st.error(f"Unexpected error fetching OOS date: {e}")
+        return None
+
 def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date, 
                         is_ret: pd.Series, n_slices: int = 100, overlap: bool = True,
                         window_size: int = None, step_size: int = None, 
@@ -1628,12 +1678,38 @@ def main():
                     help="End date for data fetching. Will default to most recent possible date if left untouched."
                 )
             
-            # OOS start date - this is crucial
+            # OOS start date with auto-fetch functionality
             default_oos_start = query_params.get("oos_start", (date.today() - timedelta(days=730)).isoformat())
+            
+            # Auto-fetch checkbox
+            auto_fetch_oos = st.checkbox(
+                "🔗 Auto-fetch OOS date from symphony",
+                value=True,
+                help="Automatically fetch the OOS date from the symphony's last_semantic_update_at field. Uncheck to manually enter the date."
+            )
+            
+            # Extract symphony ID from URL for auto-fetch
+            symph_id = ""
+            if url and "symphony/" in url:
+                symph_id = url.split("symphony/")[-1].split("?")[0].split("#")[0]
+            
+            # Auto-fetch OOS date if enabled and symphony ID is available
+            fetched_oos_date = None
+            if auto_fetch_oos and symph_id:
+                with st.spinner("Fetching OOS date from symphony..."):
+                    fetched_oos_date = fetch_oos_date_from_symphony(symph_id)
+                    if fetched_oos_date:
+                        st.success(f"✅ Auto-fetched OOS date: {fetched_oos_date}")
+                    else:
+                        st.warning("⚠️ Could not auto-fetch OOS date. Please enter manually.")
+            
+            # Use fetched date if available, otherwise use default
+            oos_start_value = fetched_oos_date if fetched_oos_date else date.fromisoformat(default_oos_start)
+            
             oos_start = st.date_input(
                 "Out-of-Sample Start Date *",
-                value=date.fromisoformat(default_oos_start),
-                help="⚠️ CRITICAL: Date when your 'live trading' or out-of-sample period begins. Everything before this is historical backtest data, everything after is 'real world' performance. This will NOT default to the OOS date indicated by Composer."
+                value=oos_start_value,
+                help="⚠️ CRITICAL: Date when your 'live trading' or out-of-sample period begins. Everything before this is historical backtest data, everything after is 'real world' performance."
             )
             
             st.markdown("---")
