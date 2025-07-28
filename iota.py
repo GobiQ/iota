@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
-    page_title="Iota Calculator Enhanced",
+    page_title="Iota Calculator",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
