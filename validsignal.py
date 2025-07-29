@@ -82,7 +82,7 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
                     st.info("   - The API requires authentication")
                     st.info("   - The API endpoint has changed")
                     st.info("📄 Response preview: <!DOCTYPE html>...")
-                    return None
+                    # Don't return here, continue to next method
                 
                 try:
                     data = response.json()
@@ -100,7 +100,7 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
                     else:
                         st.error(f"❌ Invalid JSON response from Composer API: {str(e)}")
                         st.info(f"📄 Response preview: {response.text[:200]}...")
-                    return None
+                    # Don't return here, continue to next method
             else:
                 st.warning("⚠️ Composer API returned empty response")
         else:
@@ -332,7 +332,7 @@ def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[
                     st.error("❌ Signal API returned HTML instead of JSON")
                     st.info("💡 This usually means the Symphony ID is invalid or the API requires authentication")
                     st.info("📄 Response preview: <!DOCTYPE html>...")
-                    return None
+                    # Don't return here, continue to next method
                 
                 try:
                     data = response.json()
@@ -347,7 +347,7 @@ def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[
                     else:
                         st.error(f"❌ Invalid JSON response from signal API: {str(e)}")
                         st.info(f"📄 Signal response preview: {response.text[:200]}...")
-                    return None
+                    # Don't return here, continue to next method
             else:
                 st.warning("⚠️ Signal API returned empty response")
         else:
