@@ -343,6 +343,54 @@ def create_sample_symphony_data() -> Dict[str, Any]:
         'symphony_name': 'Sample Symphony (Demo)'
     }
 
+def list_available_symphonies(api_key: str) -> List[Dict[str, Any]]:
+    """List available Symphonies for the authenticated user."""
+    
+    if not api_key:
+        st.warning("⚠️ API key required to list Symphonies")
+        return []
+    
+    try:
+        list_url = "https://api.composer.trade/v1/symphonies"
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Composer-Analysis-App/1.0'
+        }
+        
+        st.info("🔍 Fetching available Symphonies...")
+        response = requests.get(list_url, headers=headers, timeout=30)
+        
+        st.info(f"📡 Symphony list response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if isinstance(data, list):
+                    st.success(f"✅ Found {len(data)} available Symphonies")
+                    return data
+                elif isinstance(data, dict) and 'symphonies' in data:
+                    symphonies = data['symphonies']
+                    st.success(f"✅ Found {len(symphonies)} available Symphonies")
+                    return symphonies
+                else:
+                    st.warning("⚠️ Unexpected response format from Symphony list API")
+                    return []
+            except ValueError as e:
+                st.error(f"❌ Invalid JSON response from Symphony list API: {str(e)}")
+                return []
+        elif response.status_code == 401:
+            st.error("❌ Authentication failed - please check your API key")
+            return []
+        else:
+            st.warning(f"⚠️ Symphony list API returned status {response.status_code}")
+            return []
+            
+    except Exception as e:
+        st.error(f"❌ Symphony list API method failed: {str(e)}")
+        return []
+
 def fetch_signal_data(symphony_id: str, start_date: str, end_date: str, api_key: str = None) -> Dict[str, Any]:
     """Fetch detailed signal data from Composer Symphony."""
     
@@ -830,7 +878,8 @@ def main():
         symphony_id = st.text_input(
             "Symphony ID or URL",
             placeholder="Enter Symphony ID or full Composer URL",
-            help="Enter the Symphony ID (e.g., GiR9AkRAZ1S4IONmYIkS) or full Composer URL"
+            help="Enter the Symphony ID (e.g., GiR9AkRAZ1S4IONmYIkS) or full Composer URL",
+            key="symphony_id_input"
         )
         
         # API Key input (optional)
@@ -845,6 +894,40 @@ def main():
         if st.checkbox("Use provided API key for testing", value=True):
             api_key = "c67819a7-c646-4f41-8210-567f3ac3d36d"
             st.info("🔑 Using provided API key for testing")
+        
+        # Button to list available Symphonies
+        if api_key and st.button("📋 List Available Symphonies", key="list_symphonies"):
+            with st.spinner("🔄 Fetching available Symphonies..."):
+                symphonies = list_available_symphonies(api_key)
+                if symphonies:
+                    st.subheader("📋 Available Symphonies")
+                    symphony_data = []
+                    for symphony in symphonies:
+                        symphony_data.append({
+                            'ID': symphony.get('id', 'N/A'),
+                            'Name': symphony.get('name', 'N/A'),
+                            'Description': symphony.get('description', 'N/A')[:50] + '...' if symphony.get('description') else 'N/A',
+                            'Created': symphony.get('created_at', 'N/A'),
+                            'Updated': symphony.get('updated_at', 'N/A')
+                        })
+                    
+                    df = pd.DataFrame(symphony_data)
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Allow user to select a Symphony
+                    if len(symphonies) > 0:
+                        selected_symphony = st.selectbox(
+                            "Select a Symphony to analyze:",
+                            options=[f"{s.get('name', 'Unknown')} ({s.get('id', 'N/A')})" for s in symphonies],
+                            key="symphony_selector"
+                        )
+                        
+                        if selected_symphony:
+                            # Extract ID from selection
+                            selected_id = selected_symphony.split('(')[-1].rstrip(')')
+                            st.info(f"🎯 Selected Symphony ID: {selected_id}")
+                            # Update the symphony_id input
+                            st.session_state.symphony_id = selected_id
         
         # Show example
         with st.expander("💡 How to find your Symphony ID"):
