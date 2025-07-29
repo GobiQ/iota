@@ -50,8 +50,8 @@ def clean_symphony_id(symphony_id: str) -> str:
     
     return symph_id
 
-def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
-    """Fetch backtest data from Composer Symphony using multiple API methods."""
+def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str, api_key: str = None) -> Dict[str, Any]:
+    """Fetch backtest data from Composer Symphony using authenticated API."""
     
     # Clean the symphony ID
     clean_id = clean_symphony_id(symphony_id)
@@ -61,7 +61,53 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
     
     st.info(f"🔍 Fetching data for Symphony ID: {clean_id}")
     
-    # Method 1: Try Composer Web API
+    # Method 1: Try Composer API with authentication
+    if api_key:
+        try:
+            composer_url = f"https://api.composer.trade/v1/symphonies/{clean_id}/backtest"
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Composer-Analysis-App/1.0'
+            }
+            
+            params = {
+                'start_date': start_date,
+                'end_date': end_date,
+                'format': 'json'
+            }
+            
+            st.info(f"🌐 Trying authenticated Composer API: {composer_url}")
+            response = requests.get(composer_url, headers=headers, params=params, timeout=30)
+            
+            st.info(f"📡 Authenticated API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                if response.text.strip():
+                    try:
+                        data = response.json()
+                        st.success("✅ Successfully fetched data from authenticated Composer API")
+                        return data
+                    except ValueError as e:
+                        st.error(f"❌ Invalid JSON response from authenticated API: {str(e)}")
+                        st.info(f"📄 Response preview: {response.text[:200]}...")
+                else:
+                    st.warning("⚠️ Authenticated API returned empty response")
+            elif response.status_code == 401:
+                st.error("❌ Authentication failed - please check your API key")
+                return None
+            elif response.status_code == 404:
+                st.error("❌ Symphony not found or not accessible with your API key")
+                return None
+            else:
+                st.warning(f"⚠️ Authenticated API returned status {response.status_code}")
+                st.info(f"📄 Response: {response.text[:200]}...")
+                
+        except Exception as e:
+            st.error(f"❌ Authenticated API method failed: {str(e)}")
+    
+    # Method 2: Try Composer Web API (fallback)
     try:
         composer_url = f"https://app.composer.trade/api/symphony/{clean_id}"
         headers = {
@@ -240,12 +286,12 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
     except Exception as e:
         st.error(f"❌ Web interface method failed: {str(e)}")
     
-    st.error("❌ Failed to fetch data from all available APIs")
+    st.error("❌ Failed to fetch data from Composer APIs")
     st.info("💡 This might mean:")
     st.info("   - The Symphony ID is incorrect")
-    st.info("   - The Symphony is private or not accessible")
-    st.info("   - Composer's API structure has changed")
-    st.info("   - The API requires authentication or has changed")
+    st.info("   - The Symphony is private and requires authentication")
+    st.info("   - The API key is invalid or expired")
+    st.info("   - The Symphony doesn't exist")
     
     # Always offer sample data when APIs fail
     st.info("🧪 Would you like to test with sample data?")
@@ -297,7 +343,7 @@ def create_sample_symphony_data() -> Dict[str, Any]:
         'symphony_name': 'Sample Symphony (Demo)'
     }
 
-def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
+def fetch_signal_data(symphony_id: str, start_date: str, end_date: str, api_key: str = None) -> Dict[str, Any]:
     """Fetch detailed signal data from Composer Symphony."""
     
     # Clean the symphony ID
@@ -308,7 +354,7 @@ def fetch_signal_data(symphony_id: str, start_date: str, end_date: str) -> Dict[
     st.info(f"🔍 Fetching signal data for Symphony ID: {clean_id}")
     
     # Try to get signal data from the main symphony data
-    symphony_data = fetch_symphony_data(symphony_id, start_date, end_date)
+    symphony_data = fetch_symphony_data(symphony_id, start_date, end_date, api_key)
     
     if symphony_data and 'signals' in symphony_data:
         st.success("✅ Found signals in main symphony data")
@@ -787,6 +833,19 @@ def main():
             help="Enter the Symphony ID (e.g., GiR9AkRAZ1S4IONmYIkS) or full Composer URL"
         )
         
+        # API Key input (optional)
+        api_key = st.text_input(
+            "Composer API Key (Optional)",
+            placeholder="Enter your Composer API key for authenticated access",
+            help="For authenticated access to private Symphonies. Leave empty for public access only.",
+            type="password"
+        )
+        
+        # Quick test with provided API key
+        if st.checkbox("Use provided API key for testing", value=True):
+            api_key = "c67819a7-c646-4f41-8210-567f3ac3d36d"
+            st.info("🔑 Using provided API key for testing")
+        
         # Show example
         with st.expander("💡 How to find your Symphony ID"):
             st.markdown("""
@@ -891,13 +950,15 @@ def main():
             backtest_data = fetch_symphony_data(
                 symphony_id,
                 start_date.strftime("%Y-%m-%d"),
-                end_date.strftime("%Y-%m-%d")
+                end_date.strftime("%Y-%m-%d"),
+                api_key
             )
             
             signal_data = fetch_signal_data(
                 symphony_id,
                 start_date.strftime("%Y-%m-%d"),
-                end_date.strftime("%Y-%m-%d")
+                end_date.strftime("%Y-%m-%d"),
+                api_key
             )
         
         if backtest_data is None:
