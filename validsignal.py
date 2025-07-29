@@ -417,21 +417,102 @@ def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
         # Method 4: Firestore fields structure
         elif 'fields' in data:
             fields = data['fields']
-            if 'returns' in fields:
-                returns_data = fields['returns']['arrayValue']['values']
-            elif 'backtest' in fields:
-                backtest_field = fields['backtest']['mapValue']['fields']
-                if 'returns' in backtest_field:
-                    returns_data = backtest_field['returns']['arrayValue']['values']
+            st.info(f"🔍 Found Firestore fields: {list(fields.keys())}")
+            
+            # Try different possible field names for returns data
+            possible_return_fields = ['returns', 'backtest', 'performance', 'data', 'history']
+            
+            for field_name in possible_return_fields:
+                if field_name in fields:
+                    field_data = fields[field_name]
+                    st.info(f"🔍 Found field '{field_name}': {type(field_data)}")
+                    
+                    # Handle different Firestore value types
+                    if 'arrayValue' in field_data:
+                        returns_data = field_data['arrayValue']['values']
+                        st.info(f"✅ Found returns data in arrayValue")
+                        break
+                    elif 'mapValue' in field_data:
+                        map_fields = field_data['mapValue']['fields']
+                        st.info(f"🔍 MapValue fields: {list(map_fields.keys())}")
+                        
+                        # Look for returns in nested map
+                        for nested_field in ['returns', 'data', 'history']:
+                            if nested_field in map_fields:
+                                nested_data = map_fields[nested_field]
+                                if 'arrayValue' in nested_data:
+                                    returns_data = nested_data['arrayValue']['values']
+                                    st.info(f"✅ Found returns data in nested {nested_field}")
+                                    break
+                        if returns_data:
+                            break
+                    elif 'stringValue' in field_data:
+                        # Try to parse JSON string
+                        try:
+                            json_data = json.loads(field_data['stringValue'])
+                            if isinstance(json_data, list):
+                                returns_data = json_data
+                                st.info(f"✅ Found returns data in JSON string")
+                                break
+                        except:
+                            pass
+                    elif 'timestampValue' in field_data:
+                        # Handle timestamp data
+                        st.info(f"🔍 Found timestamp data, checking for returns...")
+                        # This might be a single timestamp, not returns data
+                        pass
         
         if returns_data is None:
             st.error("❌ Could not find returns data in Composer response")
             st.info(f"Available fields: {list(data.keys())}")
+            if 'fields' in data:
+                st.info(f"Firestore fields: {list(data['fields'].keys())}")
+                for field_name, field_data in data['fields'].items():
+                    st.info(f"  - {field_name}: {type(field_data)}")
             return pd.DataFrame()
         
         # Convert to DataFrame
         if isinstance(returns_data, list):
-            df = pd.DataFrame(returns_data)
+            # Handle Firestore arrayValue format
+            if returns_data and isinstance(returns_data[0], dict) and 'mapValue' in returns_data[0]:
+                # Firestore arrayValue with mapValue structure
+                processed_data = []
+                for item in returns_data:
+                    if 'mapValue' in item and 'fields' in item['mapValue']:
+                        fields = item['mapValue']['fields']
+                        row_data = {}
+                        
+                        # Extract date and return values from Firestore fields
+                        if 'date' in fields:
+                            if 'timestampValue' in fields['date']:
+                                row_data['date'] = fields['date']['timestampValue']
+                            elif 'stringValue' in fields['date']:
+                                row_data['date'] = fields['date']['stringValue']
+                        
+                        if 'return' in fields:
+                            if 'doubleValue' in fields['return']:
+                                row_data['return'] = fields['return']['doubleValue']
+                            elif 'stringValue' in fields['return']:
+                                row_data['return'] = float(fields['return']['stringValue'])
+                        
+                        if 'value' in fields:
+                            if 'doubleValue' in fields['value']:
+                                row_data['return'] = fields['value']['doubleValue']
+                            elif 'stringValue' in fields['value']:
+                                row_data['return'] = float(fields['value']['stringValue'])
+                        
+                        if 'date' in row_data and 'return' in row_data:
+                            processed_data.append(row_data)
+                
+                if processed_data:
+                    df = pd.DataFrame(processed_data)
+                    st.info(f"✅ Successfully processed {len(processed_data)} data points from Firestore")
+                else:
+                    st.error("❌ Could not extract date/return data from Firestore structure")
+                    return pd.DataFrame()
+            else:
+                # Regular list format
+                df = pd.DataFrame(returns_data)
         else:
             # Handle different data formats
             df = pd.DataFrame([returns_data])
@@ -440,16 +521,20 @@ def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
         if 'date' in df.columns and 'return' in df.columns:
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date')
+            st.info(f"✅ Successfully parsed Symphony data: {len(df)} rows")
             return df
         elif 'timestamp' in df.columns and 'value' in df.columns:
             # Alternative column names
             df = df.rename(columns={'timestamp': 'date', 'value': 'return'})
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date')
+            st.info(f"✅ Successfully parsed Symphony data: {len(df)} rows")
             return df
         else:
             st.error("❌ Missing required columns (date, return) in Symphony data")
             st.info(f"Available columns: {list(df.columns)}")
+            if not df.empty:
+                st.info(f"Sample data: {df.head().to_dict()}")
             return pd.DataFrame()
             
     except Exception as e:
