@@ -420,7 +420,7 @@ def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
             st.info(f"🔍 Found Firestore fields: {list(fields.keys())}")
             
             # Try different possible field names for returns data
-            possible_return_fields = ['returns', 'backtest', 'performance', 'data', 'history']
+            possible_return_fields = ['returns', 'backtest', 'performance', 'data', 'history', 'stats', 'latest_backtest_info']
             
             for field_name in possible_return_fields:
                 if field_name in fields:
@@ -461,6 +461,30 @@ def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
                         st.info(f"🔍 Found timestamp data, checking for returns...")
                         # This might be a single timestamp, not returns data
                         pass
+                    elif 'mapValue' in field_data:
+                        # Handle mapValue structure (like stats field)
+                        map_fields = field_data['mapValue']['fields']
+                        st.info(f"🔍 MapValue fields in {field_name}: {list(map_fields.keys())}")
+                        
+                        # Look for returns data in nested map fields
+                        for nested_field in ['returns', 'data', 'history', 'backtest', 'performance']:
+                            if nested_field in map_fields:
+                                nested_data = map_fields[nested_field]
+                                if 'arrayValue' in nested_data:
+                                    returns_data = nested_data['arrayValue']['values']
+                                    st.info(f"✅ Found returns data in nested {nested_field}")
+                                    break
+                                elif 'stringValue' in nested_data:
+                                    try:
+                                        json_data = json.loads(nested_data['stringValue'])
+                                        if isinstance(json_data, list):
+                                            returns_data = json_data
+                                            st.info(f"✅ Found returns data in JSON string from {nested_field}")
+                                            break
+                                    except:
+                                        pass
+                        if returns_data:
+                            break
         
         if returns_data is None:
             st.error("❌ Could not find returns data in Composer response")
