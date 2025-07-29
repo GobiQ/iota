@@ -23,16 +23,27 @@ def clean_symphony_id(symphony_id: str) -> str:
     
     symph_id = symphony_id.strip()
     
-    # Handle full Composer URLs
+    # Handle full Composer URLs with various suffixes
     if symph_id.startswith("https://app.composer.trade/symphony/"):
-        symph_id = symph_id.split("/")[-1]
+        # Remove the base URL and any trailing suffixes like /details, /factsheet, etc.
+        symph_id = symph_id.replace("https://app.composer.trade/symphony/", "")
+        # Remove common suffixes
+        for suffix in ['/details', '/factsheet', '/backtest', '/performance']:
+            if symph_id.endswith(suffix):
+                symph_id = symph_id[:-len(suffix)]
+                break
+    
+    # Handle URLs that might have been pasted with additional paths
+    if '/' in symph_id and not symph_id.startswith('http'):
+        # Extract just the ID part before any slashes
+        symph_id = symph_id.split('/')[0]
     
     # Validate Symphony ID format (should be alphanumeric, typically 20+ characters)
     if len(symph_id) < 10:
         st.warning(f"⚠️ Symphony ID '{symph_id}' seems too short. Valid IDs are typically 20+ characters.")
     
     # Check for common invalid values
-    invalid_values = ['details', 'help', 'about', 'login', 'signup', 'home', 'dashboard']
+    invalid_values = ['details', 'help', 'about', 'login', 'signup', 'home', 'dashboard', 'factsheet']
     if symph_id.lower() in invalid_values:
         st.error(f"❌ '{symph_id}' is not a valid Symphony ID. Please enter a real Symphony ID from Composer.")
         return ""
@@ -238,7 +249,7 @@ def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str) -> Dic
     
     # Always offer sample data when APIs fail
     st.info("🧪 Would you like to test with sample data?")
-    if st.button("📊 Create Sample Data for Testing"):
+    if st.button("📊 Create Sample Data for Testing", key="sample_data_button"):
         st.info("📊 Creating sample data for demonstration...")
         return create_sample_symphony_data()
     
@@ -680,12 +691,19 @@ def main():
             - Look at the URL in your browser
             - The ID is the last part after `/symphony/`
             
+            **Option 3: URLs with Suffixes**
+            - The app automatically handles URLs with suffixes like:
+              - `https://app.composer.trade/symphony/GiR9AkRAZ1S4IONmYIkS/details`
+              - `https://app.composer.trade/symphony/GiR9AkRAZ1S4IONmYIkS/factsheet`
+            - Just paste the full URL and the app will extract the ID
+            
             **Valid Symphony ID Examples:**
             - `GiR9AkRAZ1S4IONmYIkS` (20+ characters, alphanumeric)
             - `abc123def456ghi789jkl` (typical format)
             
             **Invalid Examples:**
             - `details` ❌ (too short, not a real ID)
+            - `factsheet` ❌ (not a real Symphony ID)
             - `help` ❌ (not a Symphony ID)
             - `123` ❌ (too short)
             """)
