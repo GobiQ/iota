@@ -618,6 +618,108 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             - Remember that past performance doesn't guarantee future results
             """)
         
+        # Confidence Level vs RSI Threshold Analysis
+        st.subheader("📊 Confidence Level vs RSI Threshold Analysis")
+        st.info("💡 **What this shows:** This scatter plot shows how confidence levels vary across different RSI thresholds. The size of each point indicates the effect size - larger points mean stronger effects. This helps you identify which RSI levels are most reliable and impactful.")
+        
+        # Create scatter plot for confidence vs RSI threshold
+        fig_confidence_rsi = go.Figure()
+        
+        # Add points for significant strategies (green)
+        significant_data = valid_strategies[valid_strategies['significant'] == True]
+        if not significant_data.empty:
+            fig_confidence_rsi.add_trace(go.Scatter(
+                x=significant_data['RSI_Threshold'],
+                y=significant_data['confidence_level'],
+                mode='markers',
+                name='Significant Strategies',
+                marker=dict(
+                    color='green',
+                    size=abs(significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
+                    sizemin=5,
+                    sizemode='area',
+                    opacity=0.7
+                ),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Confidence: %{y:.1f}%<br>' +
+                            'Effect Size: %{marker.size:.1f}<br>' +
+                            'Significant: ✓<extra></extra>'
+            ))
+        
+        # Add points for non-significant strategies (red)
+        non_significant_data = valid_strategies[valid_strategies['significant'] == False]
+        if not non_significant_data.empty:
+            fig_confidence_rsi.add_trace(go.Scatter(
+                x=non_significant_data['RSI_Threshold'],
+                y=non_significant_data['confidence_level'],
+                mode='markers',
+                name='Non-Significant Strategies',
+                marker=dict(
+                    color='red',
+                    size=abs(non_significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
+                    sizemin=5,
+                    sizemode='area',
+                    opacity=0.7
+                ),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Confidence: %{y:.1f}%<br>' +
+                            'Effect Size: %{marker.size:.1f}<br>' +
+                            'Significant: ✗<extra></extra>'
+            ))
+        
+        # Add reference lines
+        fig_confidence_rsi.add_hline(y=95, line_dash="dash", line_color="red", 
+                                   annotation_text="95% Confidence")
+        fig_confidence_rsi.add_hline(y=80, line_dash="dash", line_color="orange", 
+                                   annotation_text="80% Confidence")
+        
+        fig_confidence_rsi.update_layout(
+            title="Confidence Level vs RSI Threshold (Point Size = Effect Size)",
+            xaxis_title="RSI Threshold",
+            yaxis_title="Confidence Level (%)",
+            hovermode='closest',
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_confidence_rsi, use_container_width=True)
+        
+        # Add explanation for the new chart
+        with st.expander("📚 Understanding Confidence vs RSI Threshold"):
+            st.write("""
+            **What This Chart Tells You:**
+            
+            **📊 X-Axis (RSI Threshold):**
+            - Shows different RSI levels tested
+            - Helps identify which RSI ranges are most effective
+            
+            **📈 Y-Axis (Confidence Level):**
+            - Higher values = stronger statistical evidence
+            - Above 95% = highly significant
+            - 80-95% = borderline significant
+            - Below 80% = weak evidence
+            
+            **🔴 Point Size (Effect Size):**
+            - Larger points = stronger effects (bigger differences from SPY)
+            - Smaller points = weaker effects
+            - Size is proportional to the absolute effect size
+            
+            **🎯 Color Coding:**
+            - **Green points**: Statistically significant strategies
+            - **Red points**: Non-significant strategies
+            
+            **💡 What to Look For:**
+            - **Large green points high on the chart**: Best strategies (high confidence + large effect)
+            - **Clusters of large points**: RSI ranges with consistent strong performance
+            - **Small red points low on the chart**: Weak strategies to avoid
+            - **Patterns**: Look for RSI ranges where confidence and effect size are consistently high
+            
+            **🔍 Practical Insights:**
+            - Identify optimal RSI ranges for your strategy
+            - Spot RSI levels that consistently produce significant results
+            - Avoid RSI ranges with low confidence or small effects
+            - Understand the relationship between RSI levels and statistical reliability
+            """)
+        
         # Download results
         st.subheader("📥 Download Results")
         st.info("💡 **What this does:** Download your analysis results as a CSV file that you can open in Excel or other spreadsheet programs. This includes all the performance metrics for every RSI threshold tested.")
@@ -721,7 +823,11 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                     with col1:
                         st.metric("Total Trades", row['Total_Trades'], 
                                  help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
-                        st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                        # Calculate trades won from original win rate data
+                        original_row = results_df.loc[idx] if 'analysis_completed' in st.session_state else row
+                        win_rate_decimal = original_row['Win_Rate']  # This is already a decimal (0.0 to 1.0)
+                        trades_won = int(row['Total_Trades'] * win_rate_decimal)
+                        st.metric("Trades Won", trades_won, 
                                  help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
                     
                     with col2:
@@ -909,7 +1015,11 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                     with col1:
                         st.metric("Total Trades", row['Total_Trades'], 
                                  help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
-                        st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                        # Calculate trades won from original win rate data
+                        original_row = results_df.loc[idx] if 'analysis_completed' in st.session_state else row
+                        win_rate_decimal = original_row['Win_Rate']  # This is already a decimal (0.0 to 1.0)
+                        trades_won = int(row['Total_Trades'] * win_rate_decimal)
+                        st.metric("Trades Won", trades_won, 
                                  help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
                     
                     with col2:
@@ -1274,6 +1384,108 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         - Remember that past performance doesn't guarantee future results
                         """)
                     
+                    # Confidence Level vs RSI Threshold Analysis
+                    st.subheader("📊 Confidence Level vs RSI Threshold Analysis")
+                    st.info("💡 **What this shows:** This scatter plot shows how confidence levels vary across different RSI thresholds. The size of each point indicates the effect size - larger points mean stronger effects. This helps you identify which RSI levels are most reliable and impactful.")
+                    
+                    # Create scatter plot for confidence vs RSI threshold
+                    fig_confidence_rsi = go.Figure()
+                    
+                    # Add points for significant strategies (green)
+                    significant_data = valid_strategies[valid_strategies['significant'] == True]
+                    if not significant_data.empty:
+                        fig_confidence_rsi.add_trace(go.Scatter(
+                            x=significant_data['RSI_Threshold'],
+                            y=significant_data['confidence_level'],
+                            mode='markers',
+                            name='Significant Strategies',
+                            marker=dict(
+                                color='green',
+                                size=abs(significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
+                                sizemin=5,
+                                sizemode='area',
+                                opacity=0.7
+                            ),
+                            hovertemplate='<b>RSI %{x}</b><br>' +
+                                        'Confidence: %{y:.1f}%<br>' +
+                                        'Effect Size: %{marker.size:.1f}<br>' +
+                                        'Significant: ✓<extra></extra>'
+                        ))
+                    
+                    # Add points for non-significant strategies (red)
+                    non_significant_data = valid_strategies[valid_strategies['significant'] == False]
+                    if not non_significant_data.empty:
+                        fig_confidence_rsi.add_trace(go.Scatter(
+                            x=non_significant_data['RSI_Threshold'],
+                            y=non_significant_data['confidence_level'],
+                            mode='markers',
+                            name='Non-Significant Strategies',
+                            marker=dict(
+                                color='red',
+                                size=abs(non_significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
+                                sizemin=5,
+                                sizemode='area',
+                                opacity=0.7
+                            ),
+                            hovertemplate='<b>RSI %{x}</b><br>' +
+                                        'Confidence: %{y:.1f}%<br>' +
+                                        'Effect Size: %{marker.size:.1f}<br>' +
+                                        'Significant: ✗<extra></extra>'
+                        ))
+                    
+                    # Add reference lines
+                    fig_confidence_rsi.add_hline(y=95, line_dash="dash", line_color="red", 
+                                               annotation_text="95% Confidence")
+                    fig_confidence_rsi.add_hline(y=80, line_dash="dash", line_color="orange", 
+                                               annotation_text="80% Confidence")
+                    
+                    fig_confidence_rsi.update_layout(
+                        title="Confidence Level vs RSI Threshold (Point Size = Effect Size)",
+                        xaxis_title="RSI Threshold",
+                        yaxis_title="Confidence Level (%)",
+                        hovermode='closest',
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_confidence_rsi, use_container_width=True)
+                    
+                    # Add explanation for the new chart
+                    with st.expander("📚 Understanding Confidence vs RSI Threshold"):
+                        st.write("""
+                        **What This Chart Tells You:**
+                        
+                        **📊 X-Axis (RSI Threshold):**
+                        - Shows different RSI levels tested
+                        - Helps identify which RSI ranges are most effective
+                        
+                        **📈 Y-Axis (Confidence Level):**
+                        - Higher values = stronger statistical evidence
+                        - Above 95% = highly significant
+                        - 80-95% = borderline significant
+                        - Below 80% = weak evidence
+                        
+                        **🔴 Point Size (Effect Size):**
+                        - Larger points = stronger effects (bigger differences from SPY)
+                        - Smaller points = weaker effects
+                        - Size is proportional to the absolute effect size
+                        
+                        **🎯 Color Coding:**
+                        - **Green points**: Statistically significant strategies
+                        - **Red points**: Non-significant strategies
+                        
+                        **💡 What to Look For:**
+                        - **Large green points high on the chart**: Best strategies (high confidence + large effect)
+                        - **Clusters of large points**: RSI ranges with consistent strong performance
+                        - **Small red points low on the chart**: Weak strategies to avoid
+                        - **Patterns**: Look for RSI ranges where confidence and effect size are consistently high
+                        
+                        **🔍 Practical Insights:**
+                        - Identify optimal RSI ranges for your strategy
+                        - Spot RSI levels that consistently produce significant results
+                        - Avoid RSI ranges with low confidence or small effects
+                        - Understand the relationship between RSI levels and statistical reliability
+                        """)
+                    
                     # Download results
                     st.subheader("📥 Download Results")
                     st.info("💡 **What this does:** Download your analysis results as a CSV file that you can open in Excel or other spreadsheet programs. This includes all the performance metrics for every RSI threshold tested.")
@@ -1377,7 +1589,11 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                 with col1:
                                     st.metric("Total Trades", row['Total_Trades'], 
                                              help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
-                                    st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                                    # Calculate trades won from original win rate data
+                                    original_row = results_df.loc[idx] if 'analysis_completed' in st.session_state else row
+                                    win_rate_decimal = original_row['Win_Rate']  # This is already a decimal (0.0 to 1.0)
+                                    trades_won = int(row['Total_Trades'] * win_rate_decimal)
+                                    st.metric("Trades Won", trades_won, 
                                              help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
                                 
                                 with col2:
@@ -1565,7 +1781,11 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                 with col1:
                                     st.metric("Total Trades", row['Total_Trades'], 
                                              help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
-                                    st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                                    # Calculate trades won from original win rate data
+                                    original_row = results_df.loc[idx] if 'analysis_completed' in st.session_state else row
+                                    win_rate_decimal = original_row['Win_Rate']  # This is already a decimal (0.0 to 1.0)
+                                    trades_won = int(row['Total_Trades'] * win_rate_decimal)
+                                    st.metric("Trades Won", trades_won, 
                                              help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
                                 
                                 with col2:
