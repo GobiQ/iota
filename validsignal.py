@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="RSI Threshold Analysis", layout="wide")
 
 st.title("RSI Threshold Analysis")
-st.write("Analyzing RSI thresholds using real market data")
+st.write("Statistical Validation of RSI Thresholds")
 
 def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     """Calculate RSI with standard 14-period window"""
