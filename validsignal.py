@@ -843,8 +843,6 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                                    annotation_text="95% Confidence")
         fig_confidence_rsi.add_hline(y=85, line_dash="dash", line_color="yellow", 
                                    annotation_text="85% Confidence")
-        fig_confidence_rsi.add_hline(y=80, line_dash="dash", line_color="orange", 
-                                   annotation_text="80% Confidence")
         
         fig_confidence_rsi.update_layout(
             title="Confidence Level vs RSI Threshold (Point Size = Effect Size)",
@@ -1021,10 +1019,10 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         if len(significant_signals) > 0:
             st.subheader("🏆 Top Statistically Significant Signals")
             
-            # Sort by annualized return (most profitable) instead of confidence level
+            # Sort by total return (highest cumulative return) instead of confidence level
             # Use the original results_df for sorting since it has numerical values
             original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True].copy()
-            top_significant = original_significant_signals.nlargest(5, 'annualized_return')
+            top_significant = original_significant_signals.nlargest(5, 'Total_Return')
             
             # Debug: Check what columns are available
             st.write(f"Available columns in results_df: {list(st.session_state['results_df'].columns)}")
@@ -1033,8 +1031,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 st.write(f"Sample row keys: {list(original_significant_signals.iloc[0].keys())}")
             
             # Multiple Signal Comparison for Significant Signals
-            st.subheader("📊 Most Profitable Significant Signals Comparison")
-            st.info(f"💡 **What this shows:** This chart compares the top 5 most profitable statistically significant signals against {benchmark_name} buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The signals are ranked by annualized return, showing the most profitable signals first.")
+            st.subheader("📊 Highest Cumulative Return Significant Signals Comparison")
+            st.info(f"💡 **What this shows:** This chart compares the top 5 signals with the highest cumulative returns among statistically significant signals against {benchmark_name} buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The signals are ranked by total return, showing the highest cumulative return signals first.")
             
             # Create comparison chart with all significant signals
             fig_comparison = go.Figure()
@@ -1058,14 +1056,14 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                         x=row['equity_curve'].index,
                         y=row['equity_curve'].values,
                         mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} ({row['annualized_return']:.3%} annualized)",
+                        name=f"RSI {row['RSI_Threshold']} ({row['Total_Return']:.3%} cumulative)",
                         line=dict(color=color, width=2)
                     ))
                 else:
                     st.warning(f"No equity curve found for RSI {row['RSI_Threshold']}")
             
             fig_comparison.update_layout(
-                title=f"Most Profitable Significant Signals Comparison vs {benchmark_name}",
+                title=f"Highest Cumulative Return Significant Signals Comparison vs {benchmark_name}",
                 xaxis_title="Date",
                 yaxis_title="Equity Value",
                 hovermode='x unified',
@@ -1179,8 +1177,6 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                                annotation_text="95% Confidence")
             fig_effect.add_hline(y=85, line_dash="dash", line_color="yellow", 
                                annotation_text="85% Confidence")
-            fig_effect.add_hline(y=80, line_dash="dash", line_color="orange", 
-                               annotation_text="80% Confidence")
             fig_effect.add_vline(x=0, line_dash="dash", line_color="gray", 
                                annotation_text="No Effect")
             
