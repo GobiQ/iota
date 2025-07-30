@@ -466,6 +466,12 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
             if results_df is not None and benchmark is not None and not results_df.empty:
                 st.success("✅ Analysis completed successfully!")
                 
+                # Store necessary data in session state for individual strategy details
+                st.session_state['signal_data'] = get_stock_data(signal_ticker, start_date, end_date)
+                st.session_state['benchmark_data'] = get_stock_data("SPY", start_date, end_date)
+                st.session_state['rsi_period'] = rsi_period
+                st.session_state['comparison'] = comparison
+                
                 # Display results table
                 st.subheader("📊 RSI Analysis Results")
                 st.info("💡 **What this shows:** This table displays all the RSI thresholds tested and their performance metrics. Each row represents a different RSI level and shows how well that strategy performed.")
@@ -641,10 +647,48 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         # Sort by confidence level
                         top_significant = significant_strategies.nlargest(5, 'confidence_level')
                         
+                        # Multiple Strategy Comparison for Significant Strategies
+                        st.subheader("📊 Significant Strategies Comparison")
+                        st.info("💡 **What this shows:** This chart compares all statistically significant strategies against SPY. Each line represents a different RSI threshold that showed significant outperformance.")
+                        
+                        # Create comparison chart with all significant strategies
+                        fig_comparison = go.Figure()
+                        
+                        # Add benchmark
+                        fig_comparison.add_trace(go.Scatter(
+                            x=benchmark.index,
+                            y=benchmark.values,
+                            mode='lines',
+                            name="SPY Buy & Hold",
+                            line=dict(color='red', width=2, dash='dash')
+                        ))
+                        
+                        # Add significant strategies
+                        colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
+                        for i, (idx, row) in enumerate(top_significant.iterrows()):
+                            if row['equity_curve'] is not None:
+                                color = colors[i % len(colors)]
+                                fig_comparison.add_trace(go.Scatter(
+                                    x=row['equity_curve'].index,
+                                    y=row['equity_curve'].values,
+                                    mode='lines',
+                                    name=f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% conf)",
+                                    line=dict(color=color, width=2)
+                                ))
+                        
+                        fig_comparison.update_layout(
+                            title="Significant Strategies Comparison vs SPY",
+                            xaxis_title="Date",
+                            yaxis_title="Equity Value",
+                            hovermode='x unified',
+                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                        )
+                        st.plotly_chart(fig_comparison, use_container_width=True)
+                        
                         # Individual strategy details
                         st.subheader("📈 Individual Strategy Details")
                         st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
-                        for idx, row in top_significant.iterrows():
+                        for idx, row in significant_strategies.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
                                 # Performance metrics - comprehensive display
                                 col1, col2, col3, col4 = st.columns(4)
@@ -691,24 +735,24 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                     strategy_equity = row['equity_curve']
                                     if strategy_equity is not None and len(strategy_equity) > 0:
                                         # Create SPY equity curve that follows the same RSI conditions
-                                        signal_rsi = calculate_rsi(signal_data, window=rsi_period)
+                                        signal_rsi = calculate_rsi(st.session_state['signal_data'], window=st.session_state['rsi_period'])
                                         
                                         # Generate buy signals for SPY (same as strategy)
-                                        if comparison == "less_than":
+                                        if st.session_state['comparison'] == "less_than":
                                             spy_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
                                         else:  # greater_than
                                             spy_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
                                         
                                         # Calculate SPY equity curve using same conditions
-                                        spy_equity_curve = pd.Series(1.0, index=benchmark_data.index)
+                                        spy_equity_curve = pd.Series(1.0, index=st.session_state['benchmark_data'].index)
                                         current_equity = 1.0
                                         in_position = False
                                         entry_equity = 1.0
                                         entry_price = None
                                         
-                                        for date in benchmark_data.index:
+                                        for date in st.session_state['benchmark_data'].index:
                                             current_signal = spy_signals[date] if date in spy_signals.index else 0
-                                            current_price = benchmark_data[date]
+                                            current_price = st.session_state['benchmark_data'][date]
                                             
                                             if current_signal == 1 and not in_position:
                                                 # Enter position
@@ -730,7 +774,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                         
                                         # Handle case where we're still in position at the end
                                         if in_position:
-                                            final_price = benchmark_data.iloc[-1]
+                                            final_price = st.session_state['benchmark_data'].iloc[-1]
                                             trade_return = (final_price - entry_price) / entry_price
                                             current_equity = entry_equity * (1 + trade_return)
                                             spy_equity_curve.iloc[-1] = current_equity
