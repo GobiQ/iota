@@ -398,6 +398,18 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Format the dataframe for display
                 display_df = results_df.copy()
+                
+                # Check if required columns exist before formatting
+                required_columns = ['Win_Rate', 'Avg_Return', 'Total_Return', 'annualized_return', 
+                                  'Sortino_Ratio', 'Avg_Hold_Days', 'Return_Std', 'Best_Return', 
+                                  'Worst_Return', 'Final_Equity', 'confidence_level', 'significant', 'effect_size']
+                
+                missing_columns = [col for col in required_columns if col not in results_df.columns]
+                if missing_columns:
+                    st.error(f"Missing columns in results: {missing_columns}")
+                    st.stop()
+                
+                # Format the columns for display
                 display_df['Win_Rate'] = display_df['Win_Rate'].apply(lambda x: f"{x:.1%}")
                 display_df['Avg_Return'] = display_df['Avg_Return'].apply(lambda x: f"{x:.2%}")
                 display_df['Total_Return'] = display_df['Total_Return'].apply(lambda x: f"{x:.2%}")
@@ -416,6 +428,13 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
                                'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
                                'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size']
+                
+                # Check if all display columns exist
+                missing_display_cols = [col for col in display_cols if col not in display_df.columns]
+                if missing_display_cols:
+                    st.error(f"Missing display columns: {missing_display_cols}")
+                    st.stop()
+                
                 st.dataframe(display_df[display_cols], use_container_width=True)
                 
                 # Find best strategies (needed for subsequent sections)
@@ -469,11 +488,11 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     best_annualized_strategy = results_df.loc[best_annualized_idx]
                     st.write(f"**Strategy:** RSI {best_annualized_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_annualized_strategy['RSI_Threshold']})")
                     
-                    # Performance metrics
+                    # Performance metrics - standardized order
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Annualized Return", f"{best_annualized_strategy['annualized_return']:.2%}")
                         st.metric("Total Return", f"{best_annualized_strategy['Total_Return']:.2%}")
+                        st.metric("Annualized Return", f"{best_annualized_strategy['annualized_return']:.2%}")
                     with col2:
                         st.metric("Win Rate", f"{best_annualized_strategy['Win_Rate']:.1%}")
                         st.metric("Total Trades", best_annualized_strategy['Total_Trades'])
@@ -488,16 +507,16 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     best_sortino_strategy = results_df.loc[best_sortino_idx]
                     st.write(f"**Strategy:** RSI {best_sortino_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_sortino_strategy['RSI_Threshold']})")
                     
-                    # Performance metrics
+                    # Performance metrics - standardized order
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Sortino Ratio", f"{best_sortino_strategy['Sortino_Ratio']:.2f}")
+                        st.metric("Total Return", f"{best_sortino_strategy['Total_Return']:.2%}")
                         st.metric("Annualized Return", f"{best_sortino_strategy['annualized_return']:.2%}")
                     with col2:
                         st.metric("Win Rate", f"{best_sortino_strategy['Win_Rate']:.1%}")
                         st.metric("Total Trades", best_sortino_strategy['Total_Trades'])
                     with col3:
-                        st.metric("Total Return", f"{best_sortino_strategy['Total_Return']:.2%}")
+                        st.metric("Sortino Ratio", f"{best_sortino_strategy['Sortino_Ratio']:.2f}")
                         st.metric("Avg Hold Days", f"{best_sortino_strategy['Avg_Hold_Days']:.1f}")
                     with col4:
                         st.metric("Confidence Level", f"{best_sortino_strategy['confidence_level']:.1f}%")
@@ -507,16 +526,16 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     best_winrate_strategy = results_df.loc[best_winrate_idx]
                     st.write(f"**Strategy:** RSI {best_winrate_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_winrate_strategy['RSI_Threshold']})")
                     
-                    # Performance metrics
+                    # Performance metrics - standardized order
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Win Rate", f"{best_winrate_strategy['Win_Rate']:.1%}")
+                        st.metric("Total Return", f"{best_winrate_strategy['Total_Return']:.2%}")
                         st.metric("Annualized Return", f"{best_winrate_strategy['annualized_return']:.2%}")
                     with col2:
+                        st.metric("Win Rate", f"{best_winrate_strategy['Win_Rate']:.1%}")
                         st.metric("Total Trades", best_winrate_strategy['Total_Trades'])
-                        st.metric("Sortino Ratio", f"{best_winrate_strategy['Sortino_Ratio']:.2f}")
                     with col3:
-                        st.metric("Total Return", f"{best_winrate_strategy['Total_Return']:.2%}")
+                        st.metric("Sortino Ratio", f"{best_winrate_strategy['Sortino_Ratio']:.2f}")
                         st.metric("Avg Hold Days", f"{best_winrate_strategy['Avg_Hold_Days']:.1f}")
                     with col4:
                         st.metric("Confidence Level", f"{best_winrate_strategy['confidence_level']:.1f}%")
@@ -526,7 +545,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     best_total_return_strategy = results_df.loc[best_total_return_idx]
                     st.write(f"**Strategy:** RSI {best_total_return_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_total_return_strategy['RSI_Threshold']})")
                     
-                    # Performance metrics
+                    # Performance metrics - standardized order
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Total Return", f"{best_total_return_strategy['Total_Return']:.2%}")
