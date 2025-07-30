@@ -179,11 +179,11 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
         'annualized_return': annualized_return
     }
 
-def calculate_statistical_significance(strategy_trades: List[Dict], benchmark_trades: List[Dict], 
+def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchmark_equity_curve: pd.Series, 
                                     strategy_annualized: float, benchmark_annualized: float) -> Dict:
-    """Calculate statistical significance by comparing actual trade returns vs SPY trade returns under same conditions"""
+    """Calculate statistical significance by comparing strategy vs SPY equity curves under same conditions"""
     
-    if len(strategy_trades) == 0 or len(benchmark_trades) == 0:
+    if len(strategy_equity_curve) == 0 or len(benchmark_equity_curve) == 0:
         return {
             't_statistic': 0,
             'p_value': 1.0,
@@ -193,13 +193,9 @@ def calculate_statistical_significance(strategy_trades: List[Dict], benchmark_tr
             'power': 0
         }
     
-    # Extract trade returns for both strategy and benchmark
-    strategy_returns = np.array([trade['return'] for trade in strategy_trades])
-    benchmark_returns = np.array([trade['return'] for trade in benchmark_trades])
-    
-    # Ensure we have the same number of trades for comparison
-    min_trades = min(len(strategy_returns), len(benchmark_returns))
-    if min_trades == 0:
+    # Align the equity curves on the same dates
+    common_dates = strategy_equity_curve.index.intersection(benchmark_equity_curve.index)
+    if len(common_dates) < 10:  # Need at least 10 data points for meaningful test
         return {
             't_statistic': 0,
             'p_value': 1.0,
@@ -209,12 +205,26 @@ def calculate_statistical_significance(strategy_trades: List[Dict], benchmark_tr
             'power': 0
         }
     
-    # Use the minimum number of trades for comparison
-    strategy_returns = strategy_returns[:min_trades]
-    benchmark_returns = benchmark_returns[:min_trades]
+    strategy_aligned = strategy_equity_curve[common_dates]
+    benchmark_aligned = benchmark_equity_curve[common_dates]
     
-    # Perform t-test on trade returns
-    t_stat, p_value = stats.ttest_ind(strategy_returns, benchmark_returns)
+    # Calculate daily returns for both strategies
+    strategy_returns = strategy_aligned.pct_change().dropna()
+    benchmark_returns = benchmark_aligned.pct_change().dropna()
+    
+    # Ensure we have enough data points
+    if len(strategy_returns) < 10 or len(benchmark_returns) < 10:
+        return {
+            't_statistic': 0,
+            'p_value': 1.0,
+            'confidence_level': 0,
+            'significant': False,
+            'effect_size': 0,
+            'power': 0
+        }
+    
+    # Perform t-test on daily returns
+    t_stat, p_value = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
     
     # Calculate confidence level (1 - p_value)
     confidence_level = (1 - p_value) * 100
@@ -223,11 +233,11 @@ def calculate_statistical_significance(strategy_trades: List[Dict], benchmark_tr
     significant = p_value < 0.05
     
     # Calculate effect size (Cohen's d)
-    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns, ddof=1) + 
-                          (len(benchmark_returns) - 1) * np.var(benchmark_returns, ddof=1)) / 
+    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns.values, ddof=1) + 
+                          (len(benchmark_returns) - 1) * np.var(benchmark_returns.values, ddof=1)) / 
                          (len(strategy_returns) + len(benchmark_returns) - 2))
     
-    effect_size = (np.mean(strategy_returns) - np.mean(benchmark_returns)) / pooled_std if pooled_std > 0 else 0
+    effect_size = (np.mean(strategy_returns.values) - np.mean(benchmark_returns.values)) / pooled_std if pooled_std > 0 else 0
     
     # Calculate statistical power (simplified)
     power = 0.8 if len(strategy_returns) > 30 and abs(effect_size) > 0.5 else 0.5
@@ -285,7 +295,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
         # Calculate statistical significance
         strategy_equity_curve = analysis['equity_curve']
         if len(strategy_equity_curve) > 0:
-            # Create benchmark trades that follow the same RSI conditions
+            # Create benchmark equity curve that follows the same RSI conditions
             # This ensures we're comparing strategy vs SPY under the same conditions
             signal_rsi = calculate_rsi(signal_data, window=rsi_period)
             
@@ -295,11 +305,12 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             else:  # greater_than
                 benchmark_signals = (signal_rsi >= threshold).astype(int)
             
-            # Calculate benchmark trades using SPY prices (same logic as strategy)
-            benchmark_trades = []
+            # Calculate benchmark equity curve using SPY prices (same logic as strategy)
+            benchmark_equity_curve = pd.Series(1.0, index=benchmark_data.index)
+            current_equity = 1.0
             in_position = False
+            entry_equity = 1.0
             entry_price = None
-            entry_date = None
             
             for date in benchmark_data.index:
                 current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
@@ -308,45 +319,32 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
                 if current_signal == 1 and not in_position:
                     # Enter position
                     in_position = True
-                    entry_date = date
+                    entry_equity = current_equity
                     entry_price = current_price
                     
                 elif current_signal == 0 and in_position:
                     # Exit position
                     trade_return = (current_price - entry_price) / entry_price
-                    hold_days = (date - entry_date).days
-                    
-                    benchmark_trades.append({
-                        'entry_date': entry_date,
-                        'exit_date': date,
-                        'entry_price': entry_price,
-                        'exit_price': current_price,
-                        'return': trade_return,
-                        'hold_days': hold_days
-                    })
-                    
+                    current_equity = entry_equity * (1 + trade_return)
                     in_position = False
+                
+                # Update equity curve
+                if in_position:
+                    current_equity = entry_equity * (current_price / entry_price)
+                
+                benchmark_equity_curve[date] = current_equity
             
             # Handle case where we're still in position at the end
             if in_position:
                 final_price = benchmark_data.iloc[-1]
-                final_date = benchmark_data.index[-1]
                 trade_return = (final_price - entry_price) / entry_price
-                hold_days = (final_date - entry_date).days
-                
-                benchmark_trades.append({
-                    'entry_date': entry_date,
-                    'exit_date': final_date,
-                    'entry_price': entry_price,
-                    'exit_price': final_price,
-                    'return': trade_return,
-                    'hold_days': hold_days
-                })
+                current_equity = entry_equity * (1 + trade_return)
+                benchmark_equity_curve.iloc[-1] = current_equity
             
             benchmark_annualized = (benchmark.iloc[-1] - 1) * (365 / (benchmark.index[-1] - benchmark.index[0]).days)
             stats_result = calculate_statistical_significance(
-                analysis['trades'], # Pass the actual trades
-                benchmark_trades, # Pass the benchmark trades
+                strategy_equity_curve, 
+                benchmark_equity_curve,
                 analysis['annualized_return'],
                 benchmark_annualized
             )
