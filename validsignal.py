@@ -860,7 +860,9 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             xaxis_title="RSI Threshold",
             yaxis_title="Confidence Level (%)",
             hovermode='closest',
-            showlegend=True
+            showlegend=True,
+            xaxis=dict(range=[rsi_min, rsi_max]),  # Set x-axis range to match RSI range
+            yaxis=dict(range=[0, 100])  # Set y-axis range to show full confidence scale
         )
         
         st.plotly_chart(fig_confidence_rsi, use_container_width=True, key="confidence_rsi_chart")
