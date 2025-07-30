@@ -22,11 +22,17 @@ def calculate_rsi(prices, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def get_stock_data(ticker, period="2y"):
-    """Fetch stock data using yfinance"""
+def get_stock_data(ticker, start_date=None, end_date=None):
+    """Fetch stock data using yfinance with optional date range"""
     try:
         stock = yf.Ticker(ticker)
-        data = stock.history(period=period)
+        
+        if start_date and end_date:
+            data = stock.history(start=start_date, end=end_date)
+        else:
+            # Default to maximum available period
+            data = stock.history(period="max")
+        
         if data.empty:
             st.error(f"No data found for ticker: {ticker}")
             return None
@@ -41,87 +47,75 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
     
     # Generate buy signals based on RSI threshold and comparison
     if comparison == "less_than":
+        # RSI ≤ threshold: signal is ON when RSI is at or below threshold
         signals = (rsi <= rsi_threshold).astype(int)
     else:  # greater_than
+        # RSI ≥ threshold: signal is ON when RSI is at or above threshold
         signals = (rsi >= rsi_threshold).astype(int)
     
-    # Find entry and exit points
-    signal_changes = signals.diff()
-    entry_points = signal_changes == 1  # Signal turns on (buy at close)
-    exit_points = signal_changes == -1  # Signal turns off (sell at close)
-    
-    if not entry_points.any():
-        return {
-            'total_trades': 0,
-            'win_rate': 0,
-            'avg_return': 0,
-            'returns': [],
-            'avg_hold_days': 0,
-            'equity_curve': None,
-            'trades': []
-        }
-    
-    # Calculate returns for each complete trade and build equity curve
-    returns = []
-    hold_periods = []
-    trades = []
-    
-    # Initialize equity curve with cash (value = 1.0)
+    # Calculate equity curve day by day
     equity_curve = pd.Series(1.0, index=target_prices.index)
     current_equity = 1.0
     in_position = False
     entry_equity = 1.0
-    
-    entry_dates = signal_prices[entry_points].index
+    entry_date = None
+    entry_price = None
+    trades = []
     
     for i, date in enumerate(target_prices.index):
-        if date in entry_dates and not in_position:
+        current_signal = signals[date] if date in signals.index else 0
+        current_price = target_prices[date]
+        
+        if current_signal == 1 and not in_position:
             # Enter position - buy at close
             in_position = True
             entry_equity = current_equity
             entry_date = date
-            entry_price = target_prices[date]
+            entry_price = current_price
             
-        elif in_position:
-            # Check if we should exit
-            current_rsi = rsi[date] if date in rsi.index else None
-            should_exit = False
+        elif current_signal == 0 and in_position:
+            # Exit position - sell at close
+            trade_return = (current_price - entry_price) / entry_price
+            current_equity = entry_equity * (1 + trade_return)
             
-            if comparison == "less_than":
-                should_exit = current_rsi is not None and current_rsi > rsi_threshold
-            else:
-                should_exit = current_rsi is not None and current_rsi < rsi_threshold
+            hold_days = (date - entry_date).days
+            trades.append({
+                'entry_date': entry_date,
+                'exit_date': date,
+                'entry_price': entry_price,
+                'exit_price': current_price,
+                'return': trade_return,
+                'hold_days': hold_days
+            })
             
-            if should_exit or date == target_prices.index[-1]:  # Exit or end of data
-                # Exit position - sell at close
-                exit_price = target_prices[date]
-                trade_return = (exit_price - entry_price) / entry_price
-                current_equity = entry_equity * (1 + trade_return)
-                
-                returns.append(trade_return)
-                hold_days = (date - entry_date).days
-                hold_periods.append(hold_days)
-                
-                trades.append({
-                    'entry_date': entry_date,
-                    'exit_date': date,
-                    'entry_price': entry_price,
-                    'exit_price': exit_price,
-                    'return': trade_return,
-                    'hold_days': hold_days
-                })
-                
-                in_position = False
+            in_position = False
         
         # Update equity curve
         if in_position:
             # Mark-to-market the position
-            current_price = target_prices[date]
             current_equity = entry_equity * (current_price / entry_price)
         
         equity_curve[date] = current_equity
     
-    if not returns:
+    # Handle case where we're still in position at the end
+    if in_position:
+        final_price = target_prices.iloc[-1]
+        final_date = target_prices.index[-1]
+        trade_return = (final_price - entry_price) / entry_price
+        current_equity = entry_equity * (1 + trade_return)
+        
+        hold_days = (final_date - entry_date).days
+        trades.append({
+            'entry_date': entry_date,
+            'exit_date': final_date,
+            'entry_price': entry_price,
+            'exit_price': final_price,
+            'return': trade_return,
+            'hold_days': hold_days
+        })
+        equity_curve.iloc[-1] = current_equity
+    
+    if not trades:
         return {
             'total_trades': 0,
             'win_rate': 0,
@@ -132,10 +126,10 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
             'trades': []
         }
     
-    returns = np.array(returns)
+    returns = np.array([trade['return'] for trade in trades])
     win_rate = (returns > 0).mean()
     avg_return = returns.mean()
-    avg_hold_days = np.mean(hold_periods)
+    avg_hold_days = np.mean([trade['hold_days'] for trade in trades])
     
     return {
         'total_trades': len(returns),
@@ -147,15 +141,15 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
         'trades': trades
     }
 
-def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison):
+def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date=None, end_date=None):
     """Run comprehensive RSI analysis across the specified range"""
     
     # Fetch data
     with st.spinner(f"Fetching data for {signal_ticker}..."):
-        signal_data = get_stock_data(signal_ticker)
+        signal_data = get_stock_data(signal_ticker, start_date, end_date)
     
     with st.spinner(f"Fetching data for {target_ticker}..."):
-        target_data = get_stock_data(target_ticker)
+        target_data = get_stock_data(target_ticker, start_date, end_date)
     
     if signal_data is None or target_data is None:
         return None
@@ -202,6 +196,26 @@ st.sidebar.header("Configuration")
 signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="Ticker to generate RSI signals from")
 target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="Ticker to buy based on signals")
 
+# Date range selection
+st.sidebar.subheader("Date Range")
+use_date_range = st.sidebar.checkbox("Use custom date range", help="Check to specify start and end dates")
+
+if use_date_range:
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        start_date = st.date_input("Start Date", value=datetime(2020, 1, 1))
+    with col2:
+        end_date = st.date_input("End Date", value=datetime.now())
+    
+    if start_date >= end_date:
+        st.sidebar.error("Start date must be before end date")
+        start_date, end_date = None, None
+else:
+    start_date, end_date = None, None
+    st.sidebar.info("Using maximum available data range")
+
+# RSI Configuration
+st.sidebar.subheader("RSI Configuration")
 comparison = st.sidebar.selectbox("RSI Condition", 
                                  ["less_than", "greater_than"], 
                                  format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
@@ -229,6 +243,10 @@ with col1:
     st.write(f"**Target Ticker:** {target_ticker}")
     st.write(f"**RSI Condition:** RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
     st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
+    if use_date_range and start_date and end_date:
+        st.write(f"**Date Range:** {start_date} to {end_date}")
+    else:
+        st.write(f"**Date Range:** Maximum available data")
 
 with col2:
     st.subheader("Strategy Logic")
@@ -238,9 +256,9 @@ with col2:
         st.info("🔵 BUY at close when RSI ≥ threshold\n\n📈 SELL at close when RSI < threshold")
 
 if st.button("Run RSI Analysis", type="primary"):
-    if rsi_min < rsi_max:
+    if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
-            results_df = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison)
+            results_df = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date)
             
             if results_df is not None and not results_df.empty:
                 st.success("✓ Analysis completed successfully!")
@@ -378,18 +396,22 @@ if st.button("Run RSI Analysis", type="primary"):
                                 st.dataframe(trades_df, use_container_width=True)
                 
                 # Download results
-                csv = results_df.to_csv(index=False)
+                csv = results_df[display_cols].to_csv(index=False)
+                filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
                 st.download_button(
                     label="Download Results as CSV",
                     data=csv,
-                    file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv"
                 )
             
         except Exception as e:
             st.error(f"Error during analysis: {str(e)}")
     else:
-        st.error("Please ensure RSI Min is less than RSI Max")
+        if rsi_min >= rsi_max:
+            st.error("Please ensure RSI Min is less than RSI Max")
+        if use_date_range and (not start_date or not end_date or start_date >= end_date):
+            st.error("Please ensure start date is before end date")
 
 st.write("---")
 st.write("💡 **Tip:** Try different ticker combinations and RSI conditions to find optimal signal thresholds")
