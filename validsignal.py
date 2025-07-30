@@ -391,39 +391,39 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
 # Streamlit Interface
 st.sidebar.header("📊 Configuration")
 
-# Input fields
-signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="Ticker to generate RSI signals from")
-target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="Ticker to buy/sell based on signal RSI")
+# Input fields with help tooltips
+signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="The ticker that generates RSI signals. This is the stock/ETF whose RSI we'll use to decide when to buy/sell the target ticker.")
+target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="The ticker to buy/sell based on the signal ticker's RSI. This is what you'll actually be trading.")
 
 # Date range selection
 st.sidebar.subheader("📅 Date Range")
-use_date_range = st.sidebar.checkbox("Use custom date range", help="Check to specify start and end dates")
+use_date_range = st.sidebar.checkbox("Use custom date range", help="Check this to specify your own start and end dates. If unchecked, the app will use all available data.")
 
 if use_date_range:
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        start_date = st.date_input("Start Date", value=datetime(2020, 1, 1))
+        start_date = st.date_input("Start Date", value=datetime(2020, 1, 1), help="The first date to include in your analysis. Earlier dates give more data but may not reflect current market conditions.")
     with col2:
-        end_date = st.date_input("End Date", value=datetime.now())
+        end_date = st.date_input("End Date", value=datetime.now(), help="The last date to include in your analysis. More recent dates may be more relevant to current market conditions.")
     
     if start_date >= end_date:
         st.sidebar.error("Start date must be before end date")
         start_date, end_date = None, None
 else:
     start_date, end_date = None, None
-    st.sidebar.info("Using maximum available data range")
+    st.sidebar.info("Using maximum available data")
 
 # RSI Configuration
 st.sidebar.subheader("📈 RSI Configuration")
 
 # RSI Period selection
 rsi_period = st.sidebar.number_input("RSI Period (Days)", min_value=1, max_value=50, value=14, 
-                                    help="Number of days to calculate RSI (e.g., 14 for 14-day RSI)")
+                                    help="How many days to look back when calculating RSI. 14 is standard, but you can adjust. Lower numbers (like 7) make RSI more sensitive to recent changes. Higher numbers (like 21) make it smoother and less sensitive.")
 
 comparison = st.sidebar.selectbox("RSI Condition", 
                                ["less_than", "greater_than"], 
                                format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
-                               help="Buy when RSI is less than or greater than threshold")
+                               help="Choose when to buy: 'RSI ≤ threshold' means buy when RSI is low (oversold), 'RSI ≥ threshold' means buy when RSI is high (overbought).")
 
 if comparison == "less_than":
     default_min, default_max = 20, 40
@@ -432,8 +432,8 @@ else:
     default_min, default_max = 60, 80
     st.sidebar.write("Buy signals: Signal RSI ≥ threshold")
 
-rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5)
-rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5)
+rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5, help="The lowest RSI threshold to test. For 'RSI ≤ threshold', try 20-40. For 'RSI ≥ threshold', try 60-80.")
+rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5, help="The highest RSI threshold to test. The app will test every 0.5 between min and max.")
 
 if rsi_min >= rsi_max:
     st.sidebar.error("RSI Min must be less than RSI Max")
@@ -470,6 +470,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Display results table
                 st.subheader("📊 RSI Analysis Results")
+                st.info("💡 **What this shows:** This table displays all the RSI thresholds tested and their performance metrics. Each row represents a different RSI level and shows how well that strategy performed.")
                 
                 # Format the dataframe for display
                 display_df = results_df.copy()
@@ -520,6 +521,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Return Distribution Analysis
                 st.subheader("📊 Return Distribution Analysis")
+                st.info("💡 **What this shows:** This analyzes the best performing strategy's individual trade returns. The histogram shows how often different return levels occurred, helping you understand the risk and reward pattern of the strategy.")
                 
                 # Use the best annualized return strategy for distribution analysis
                 best_strategy_returns = results_df.loc[best_annualized_idx, 'returns']
@@ -555,6 +557,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Best Strategy Analysis
                 st.subheader("🏆 Best Strategy Analysis")
+                st.info("💡 **What this shows:** This section highlights the best strategies in different categories. Each tab shows the top performer for that specific metric, with detailed performance statistics and an equity curve showing how the strategy performed over time.")
                 
                 # Create tabs for different best strategies
                 tab1, tab2, tab3, tab4 = st.tabs(["📈 Best Annualized Return", "📊 Best Sortino Ratio", "🎯 Best Win Rate", "💰 Best Total Return"])
@@ -637,6 +640,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
 
                 # Statistical Significance Analysis
                 st.subheader("📊 Statistical Significance Analysis")
+                st.info("💡 **What this shows:** This section determines whether your strategy's performance is statistically significant - meaning the results are likely not due to chance. It compares your strategy against SPY under the same conditions to see if your target ticker choice is actually better.")
                 
                 # Filter strategies with trades
                 valid_strategies = results_df[results_df['Total_Trades'] > 0].copy()
@@ -689,6 +693,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     
                     # Download results
                     st.subheader("📥 Download Results")
+                    st.info("💡 **What this does:** Download your analysis results as a CSV file that you can open in Excel or other spreadsheet programs. This includes all the performance metrics for every RSI threshold tested.")
                     # Use the original column names from results_df for CSV download
                     download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
                                    'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
@@ -711,24 +716,41 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         
                         # Interactive Multiple Strategy Comparison
                         st.subheader("📊 Interactive Strategy Comparison")
+                        st.info("💡 **What this shows:** This interactive section lets you select which strategies to compare side-by-side. You can choose which statistically significant strategies to display on the same chart, making it easy to see which ones perform best over time.")
                         st.write("Select strategies to compare their equity curves:")
                         
-                        # Create checkboxes for each significant strategy
-                        selected_strategies = []
+                        # Create strategy options for multiselect
+                        strategy_options = []
+                        strategy_data = {}
+                        for idx, row in top_significant.iterrows():
+                            strategy_name = f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% confidence)"
+                            strategy_options.append(strategy_name)
+                            strategy_data[strategy_name] = (idx, row)
+                        
+                        # Use multiselect for strategy selection
+                        selected_strategy_names = st.multiselect(
+                            "Choose strategies to display:",
+                            options=strategy_options,
+                            default=strategy_options,  # All selected by default
+                            help="Select which strategies to show on the comparison chart. You can select multiple strategies or just one."
+                        )
+                        
+                        # Convert selected names back to strategy data
+                        selected_strategies = [strategy_data[name] for name in selected_strategy_names]
+                        
+                        # Strategy summary
                         col1, col2 = st.columns(2)
-                        
                         with col1:
-                            st.write("**Select Strategies to Display:**")
-                            for idx, row in top_significant.iterrows():
-                                strategy_name = f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% confidence)"
-                                if st.checkbox(strategy_name, value=True, key=f"strategy_{idx}"):
-                                    selected_strategies.append((idx, row))
-                        
-                        with col2:
                             st.write("**Strategy Summary:**")
                             st.write(f"**Total Significant Strategies:** {len(significant_strategies)}")
                             st.write(f"**Selected for Comparison:** {len(selected_strategies)}")
                         
+                        with col2:
+                            if selected_strategies:
+                                st.write("**Selected Strategies:**")
+                                for name in selected_strategy_names:
+                                    st.write(f"• {name}")
+
                         # Create interactive comparison chart
                         if selected_strategies:
                             fig_comparison = go.Figure()
@@ -786,6 +808,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         
                         # Individual strategy details
                         st.subheader("📈 Individual Strategy Details")
+                        st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
                         for idx, row in top_significant.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
                                 col1, col2, col3 = st.columns(3)
@@ -860,6 +883,30 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                       - Small: 0.2-0.5
                       - Medium: 0.5-0.8  
                       - Large: > 0.8
+                    
+                    **Key Metrics Explained:**
+                    
+                    **📊 Performance Metrics:**
+                    - **Total Return**: How much money you would have made (or lost) over the entire period
+                    - **Annualized Return**: The yearly return rate, useful for comparing strategies over different time periods
+                    - **Win Rate**: Percentage of trades that were profitable
+                    - **Total Trades**: Number of buy/sell transactions the strategy made
+                    - **Sortino Ratio**: Risk-adjusted return measure (higher is better, focuses on downside risk)
+                    - **Avg Hold Days**: Average number of days the strategy held each position
+                    
+                    **📈 Statistical Metrics:**
+                    - **Confidence Level**: How certain we are that the strategy beats SPY (higher % = more certain)
+                    - **P-value**: Probability the results happened by chance (lower = more significant)
+                    - **Effect Size**: How much better/worse the strategy is compared to SPY
+                    - **T-statistic**: Statistical measure of the difference between strategy and SPY
+                    - **Power**: How likely the test is to detect a real difference if one exists
+                    
+                    **🎯 What to Look For:**
+                    - **High Confidence (>95%)**: Very strong evidence the strategy works
+                    - **Low P-value (<0.05)**: Results are statistically significant
+                    - **Positive Effect Size**: Strategy outperforms SPY
+                    - **High Win Rate**: Strategy wins more often than it loses
+                    - **Good Sortino Ratio**: Strategy has good risk-adjusted returns
                     """)
             
         except Exception as e:
