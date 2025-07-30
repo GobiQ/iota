@@ -819,10 +819,6 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         st.subheader("📊 Statistical Significance Analysis")
         stored_benchmark_ticker = st.session_state.get('benchmark_ticker', 'SPY')
         benchmark_name = f"{stored_benchmark_ticker} ({'S&P 500' if stored_benchmark_ticker == 'SPY' else 'Cash Equivalent'})"
-        st.info(f"💡 **What this shows:** This section determines whether your signal's performance is statistically significant - meaning the results are likely not due to chance. It compares your signal against {benchmark_name} under the same conditions to see if your target ticker choice is actually better.")
-        
-        # Add note about confidence levels at extreme RSI values
-        st.warning("⚠️ **Note on Extreme RSI Values:** At the extreme ends of RSI thresholds (very low or very high values), there are often not enough historical events to generate statistically confident results. This is why confidence levels may drop off at these extremes - the sample size becomes too small for reliable statistical analysis.")
         
         # Use all signals for the chart (including those with 0 trades)
         valid_signals = filtered_df.copy()
@@ -929,42 +925,48 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
             st.plotly_chart(fig_confidence_rsi, use_container_width=True, key="confidence_rsi_chart")
             
-            # Add explanation for the new chart
-            with st.expander("📚 Understanding Confidence vs RSI Threshold"):
-                st.write("""
-                **What This Chart Tells You:**
-                
-                **📊 X-Axis (RSI Threshold):**
-                - Shows different RSI levels tested
-                - Helps identify which RSI ranges are most effective
-                
-                **📈 Y-Axis (Confidence Level):**
-                - Higher values = stronger statistical evidence
-                - Above 95% = highly significant
-                - 80-95% = borderline significant
-                - Below 80% = weak evidence
-                
-                **🔴 Point Size (Effect Size):**
-                - Larger points = stronger effects (bigger differences from the benchmark)
-                - Smaller points = weaker effects
-                - Size is proportional to the absolute effect size
-                
-                **🎯 Color Coding:**
-                - **Green points**: Statistically significant signals
-                - **Red points**: Non-significant signals
-                
-                **💡 What to Look For:**
-                - **Large green points high on the chart**: Best signals (high confidence + large effect)
-                - **Clusters of large points**: RSI ranges with consistent strong performance
-                - **Small red points low on the chart**: Weak signals to avoid
-                - **Patterns**: Look for RSI ranges where confidence and effect size are consistently high
-                
-                **🔍 Practical Insights:**
-                - Identify optimal RSI ranges for your signal
-                - Spot RSI levels that consistently produce significant results
-                - Avoid RSI ranges with low confidence or small effects
-                - Understand the relationship between RSI levels and statistical reliability
-                """)
+                    # Add explanation for the new chart
+        with st.expander("📚 Understanding Confidence vs RSI Threshold"):
+            st.write(f"""
+            **💡 What This Section Shows:**
+            This section determines whether your signal's performance is statistically significant - meaning the results are likely not due to chance. It compares your signal against {benchmark_name} under the same conditions to see if your target ticker choice is actually better.
+            
+            **⚠️ Note on Extreme RSI Values:**
+            At the extreme ends of RSI thresholds (very low or very high values), there are often not enough historical events to generate statistically confident results. This is why confidence levels may drop off at these extremes - the sample size becomes too small for reliable statistical analysis.
+            
+            **What This Chart Tells You:**
+            
+            **📊 X-Axis (RSI Threshold):**
+            - Shows different RSI levels tested
+            - Helps identify which RSI ranges are most effective
+            
+            **📈 Y-Axis (Confidence Level):**
+            - Higher values = stronger statistical evidence
+            - Above 95% = highly significant
+            - 80-95% = borderline significant
+            - Below 80% = weak evidence
+            
+            **🔴 Point Size (Effect Size):**
+            - Larger points = stronger effects (bigger differences from the benchmark)
+            - Smaller points = weaker effects
+            - Size is proportional to the absolute effect size
+            
+            **🎯 Color Coding:**
+            - **Green points**: Statistically significant signals
+            - **Red points**: Non-significant signals
+            
+            **💡 What to Look For:**
+            - **Large green points high on the chart**: Best signals (high confidence + large effect)
+            - **Clusters of large points**: RSI ranges with consistent strong performance
+            - **Small red points low on the chart**: Weak signals to avoid
+            - **Patterns**: Look for RSI ranges where confidence and effect size are consistently high
+            
+            **🔍 Practical Insights:**
+            - Identify optimal RSI ranges for your signal
+            - Spot RSI levels that consistently produce significant results
+            - Avoid RSI ranges with low confidence or small effects
+            - Understand the relationship between RSI levels and statistical reliability
+            """)
             
             # Total Return vs Confidence Level Analysis
             with st.expander("📊 Total Return vs Confidence Level Analysis", expanded=False):
