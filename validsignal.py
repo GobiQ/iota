@@ -686,12 +686,39 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         st.plotly_chart(fig_comparison, use_container_width=True)
                         
                         # Individual strategy details
-                        st.subheader("📈 Individual Strategy Details")
-                        st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
+                        st.subheader("📈 Individual Strategy Details (95%+ Confidence)")
+                        st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy with 95% or above confidence level, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
                         
-                        # Sort significant strategies by RSI threshold from lowest to highest
-                        sorted_significant = significant_strategies.sort_values('RSI_Threshold')
+                        # Sort options for significant strategies
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            significant_sort_by = st.selectbox(
+                                "Sort by:",
+                                ["RSI_Threshold", "confidence_level", "Sortino_Ratio", "Win_Rate", "annualized_return", "Total_Return"],
+                                format_func=lambda x: {
+                                    "RSI_Threshold": "RSI Threshold",
+                                    "confidence_level": "Confidence Level", 
+                                    "Sortino_Ratio": "Sortino Ratio",
+                                    "Win_Rate": "Win Rate",
+                                    "annualized_return": "Annualized Return",
+                                    "Total_Return": "Total Return"
+                                }[x],
+                                key="significant_sort"
+                            )
+                        with col2:
+                            significant_sort_order = st.radio(
+                                "Order:",
+                                ["ascending", "descending"],
+                                horizontal=True,
+                                key="significant_order"
+                            )
                         
+                        # Sort significant strategies
+                        if significant_sort_order == "ascending":
+                            sorted_significant = significant_strategies.sort_values(significant_sort_by)
+                        else:
+                            sorted_significant = significant_strategies.sort_values(significant_sort_by, ascending=False)
+
                         for idx, row in sorted_significant.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
                                 # Performance metrics - comprehensive display
@@ -850,9 +877,36 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         st.subheader("📊 Borderline Significant Strategies (80-95% Confidence)")
                         st.info("💡 **What this shows:** These strategies show promising results but don't quite reach the 95% confidence threshold. They may still be worth considering, especially if they have good performance metrics.")
                         
-                        # Sort by RSI threshold from lowest to highest
-                        sorted_borderline = borderline_strategies.sort_values('RSI_Threshold')
+                        # Sort options for borderline strategies
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            borderline_sort_by = st.selectbox(
+                                "Sort by:",
+                                ["RSI_Threshold", "confidence_level", "Sortino_Ratio", "Win_Rate", "annualized_return", "Total_Return"],
+                                format_func=lambda x: {
+                                    "RSI_Threshold": "RSI Threshold",
+                                    "confidence_level": "Confidence Level", 
+                                    "Sortino_Ratio": "Sortino Ratio",
+                                    "Win_Rate": "Win Rate",
+                                    "annualized_return": "Annualized Return",
+                                    "Total_Return": "Total Return"
+                                }[x],
+                                key="borderline_sort"
+                            )
+                        with col2:
+                            borderline_sort_order = st.radio(
+                                "Order:",
+                                ["ascending", "descending"],
+                                horizontal=True,
+                                key="borderline_order"
+                            )
                         
+                        # Sort borderline strategies
+                        if borderline_sort_order == "ascending":
+                            sorted_borderline = borderline_strategies.sort_values(borderline_sort_by)
+                        else:
+                            sorted_borderline = borderline_strategies.sort_values(borderline_sort_by, ascending=False)
+
                         for idx, row in sorted_borderline.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
                                 # Performance metrics with hover tooltips
