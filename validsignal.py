@@ -556,11 +556,66 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     
     st.dataframe(display_df[display_cols], use_container_width=True)
     
+    # Add filter options for the results table
+    st.subheader("🔍 Filter Results")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Filter by significance
+        significance_filter = st.selectbox(
+            "Filter by Significance:",
+            ["All Signals", "Significant Only", "Non-Significant Only"],
+            help="Filter the results table to show only signals with specific significance levels."
+        )
+    
+    with col2:
+        # Filter by confidence level
+        confidence_filter = st.selectbox(
+            "Filter by Confidence Level:",
+            ["All Levels", "95%+", "80-95%", "Below 80%"],
+            help="Filter the results table to show only signals with specific confidence levels."
+        )
+    
+    with col3:
+        # Filter by minimum trades
+        min_trades = st.number_input(
+            "Minimum Trades:",
+            min_value=0,
+            value=0,
+            help="Filter to show only signals with at least this many trades."
+        )
+    
+    # Apply filters to the display dataframe
+    filtered_df = display_df.copy()
+    
+    # Apply significance filter
+    if significance_filter == "Significant Only":
+        filtered_df = filtered_df[filtered_df['Significant'] == "✓"]
+    elif significance_filter == "Non-Significant Only":
+        filtered_df = filtered_df[filtered_df['Significant'] == "✗"]
+    
+    # Apply confidence level filter
+    if confidence_filter == "95%+":
+        filtered_df = filtered_df[filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= 95]
+    elif confidence_filter == "80-95%":
+        filtered_df = filtered_df[(filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= 80) & 
+                                 (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) < 95)]
+    elif confidence_filter == "Below 80%":
+        filtered_df = filtered_df[filtered_df['Confidence_Level'].str.replace('%', '').astype(float) < 80]
+    
+    # Apply minimum trades filter
+    if min_trades > 0:
+        filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades]
+    
+    # Display filtered results
+    st.subheader(f"📊 Filtered Results ({len(filtered_df)} signals)")
+    st.dataframe(filtered_df[display_cols], use_container_width=True)
+    
     # Find best strategies (needed for subsequent sections)
-    best_sortino_idx = display_df['Sortino_Ratio'].idxmax()
-    best_annualized_idx = display_df['annualized_return'].idxmax()
-    best_winrate_idx = display_df['Win_Rate'].idxmax()
-    best_total_return_idx = display_df['Total_Return'].idxmax()
+    best_sortino_idx = filtered_df['Sortino_Ratio'].idxmax()
+    best_annualized_idx = filtered_df['annualized_return'].idxmax()
+    best_winrate_idx = filtered_df['Win_Rate'].idxmax()
+    best_total_return_idx = filtered_df['Total_Return'].idxmax()
     
     # Statistical Significance Analysis
     st.subheader("📊 Statistical Significance Analysis")
@@ -569,7 +624,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     st.info(f"💡 **What this shows:** This section determines whether your signal's performance is statistically significant - meaning the results are likely not due to chance. It compares your signal against {benchmark_name} under the same conditions to see if your target ticker choice is actually better.")
     
     # Filter signals with trades
-    valid_signals = display_df[display_df['Total_Trades'] > 0].copy()
+    valid_signals = filtered_df[filtered_df['Total_Trades'] > 0].copy()
     
     if not valid_signals.empty:
         # Create significance summary
@@ -993,389 +1048,10 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 - Remember that past performance doesn't guarantee future results
                 """)
             
-            # Individual signal details
-            st.subheader("📈 Individual Signal Details (95%+ Confidence)")
-            st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific signal with 95% or above confidence level, including performance metrics, statistical significance, and an individual equity curve comparing that signal to the benchmark.")
+            # Statistical interpretation guide
             
-            # Sort options for significant signals
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                significant_sort_by = st.selectbox(
-                    "Sort by:",
-                    ["RSI_Threshold", "confidence_level", "Sortino_Ratio", "Win_Rate", "annualized_return", "Total_Return"],
-                    format_func=lambda x: {
-                        "RSI_Threshold": "RSI Threshold",
-                        "confidence_level": "Confidence Level", 
-                        "Sortino_Ratio": "Sortino Ratio",
-                        "Win_Rate": "Win Rate",
-                        "annualized_return": "Annualized Return",
-                        "Total_Return": "Total Return"
-                    }[x],
-                    key="significant_sort"
-                )
-            with col2:
-                significant_sort_order = st.radio(
-                    "Order:",
-                    ["ascending", "descending"],
-                    horizontal=True,
-                    key="significant_order"
-                )
-            
-            # Sort significant signals
-            if significant_sort_order == "ascending":
-                sorted_significant = significant_signals.sort_values(significant_sort_by)
-            else:
-                sorted_significant = significant_signals.sort_values(significant_sort_by, ascending=False)
-
-            for idx, row in sorted_significant.iterrows():
-                with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
-                    # Performance metrics - comprehensive display
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Total Trades", row['Total_Trades'], 
-                                 help="The number of buy/sell transactions the signal made. More trades can mean more opportunities but also more transaction costs.")
-                        # Calculate trades won from original win rate data
-                        original_row = results_df.loc[idx] if 'analysis_completed' in st.session_state else row
-                        win_rate_decimal = original_row['Win_Rate']  # This is already a decimal (0.0 to 1.0)
-                        trades_won = int(row['Total_Trades'] * win_rate_decimal)
-                        st.metric("Trades Won", trades_won, 
-                                 help="The number of profitable trades out of all trades made. Shows how many times the signal was successful.")
-                    
-                    with col2:
-                        st.metric("P-value", f"{row['p_value']:.4f}", 
-                                 help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
-                        st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
-                                 help="How certain we are that the signal outperforms the benchmark. Higher percentage means stronger evidence the signal works.")
-                    
-                    with col3:
-                        st.metric("Total Return", f"{row['Total_Return']:.3%}", 
-                                 help="The total percentage gain or loss over the entire period. Shows how much money you would have made (or lost) if you invested $100.")
-                        st.metric("Annualized Return", f"{row['annualized_return']:.3%}", 
-                                 help="The yearly return rate, useful for comparing signals over different time periods. Shows how much you'd earn per year on average.")
-                    
-                    with col4:
-                        st.metric("Win Rate", f"{row['Win_Rate']:.1%}", 
-                                 help="Percentage of trades that were profitable. A higher win rate means the signal wins more often than it loses.")
-                        st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞", 
-                                 help="Risk-adjusted return measure that focuses on downside risk. Higher is better - it shows good returns with less risk of big losses.")
-                    
-                    # Additional metrics
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
-                                 help="Average number of days the signal held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
-                        st.metric("Effect Size", f"{row['effect_size']:.2f}", 
-                                 help="How much better/worse the signal is compared to the benchmark. Positive means it beats the benchmark, negative means it underperforms.")
-                    
-                    with col2:
-                        st.metric("Best Return", f"{row['Best_Return']:.3%}", 
-                                 help="The best single trade return achieved by this signal. Shows the signal's potential upside.")
-                        st.metric("Worst Return", f"{row['Worst_Return']:.3%}", 
-                                 help="The worst single trade return achieved by this signal. Shows the signal's potential downside risk.")
-                    
-                    with col3:
-                        st.metric("Return Std Dev", f"{row['Return_Std']:.3%}", 
-                                 help="Standard deviation of trade returns. Lower values mean more consistent performance, higher values mean more volatile results.")
-                        st.metric("Final Equity", f"{row['Final_Equity']:.3f}", 
-                                 help="The final value of a $1 investment. Shows how much your money would have grown (or shrunk) over the period.")
-                    
-                    with col4:
-                        st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
-                                 help="Statistical measure of how different the signal is from the benchmark. Examples: 2.0 = moderate difference, 3.0 = strong difference, 4.0+ = very strong difference. Higher absolute values mean stronger evidence of a real difference.")
-                        st.metric("Power", f"{row['power']:.2f}", 
-                                 help="How likely the test is to detect a real difference if one exists. Higher power means more reliable statistical results.")
-                    
-                    # Final row
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Significant", "✓" if row['significant'] else "✗", 
-                                 help="Whether the signal reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
-                    
-                    # Show equity curve for this signal
-                    if 'equity_curve' in row and row['equity_curve'] is not None:
-                        st.subheader("📈 Equity Curve Comparison")
-                        
-                        # Create benchmark equity curve that follows the same RSI conditions
-                        signal_rsi = calculate_rsi(st.session_state['signal_data'], window=st.session_state['rsi_period'])
-                        
-                        # Generate buy signals for benchmark (same as signal)
-                        if st.session_state['comparison'] == "less_than":
-                            benchmark_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
-                        else:  # greater_than
-                            benchmark_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
-                        
-                        # Calculate benchmark equity curve using benchmark prices (same logic as signal)
-                        benchmark_equity_curve = pd.Series(1.0, index=st.session_state['benchmark_data'].index)
-                        current_equity = 1.0
-                        in_position = False
-                        entry_equity = 1.0
-                        entry_price = None
-                        
-                        for date in st.session_state['benchmark_data'].index:
-                            current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
-                            current_price = st.session_state['benchmark_data'][date]
-                            
-                            if current_signal == 1 and not in_position:
-                                # Enter position
-                                in_position = True
-                                entry_equity = current_equity
-                                entry_price = current_price
-                                
-                            elif current_signal == 0 and in_position:
-                                # Exit position
-                                trade_return = (current_price - entry_price) / entry_price
-                                current_equity = entry_equity * (1 + trade_return)
-                                in_position = False
-                            
-                            # Update equity curve
-                            if in_position:
-                                current_equity = entry_equity * (current_price / entry_price)
-                            
-                            benchmark_equity_curve[date] = current_equity
-                        
-                        # Handle case where we're still in position at the end
-                        if in_position:
-                            final_price = st.session_state['benchmark_data'].iloc[-1]
-                            trade_return = (final_price - entry_price) / entry_price
-                            current_equity = entry_equity * (1 + trade_return)
-                            benchmark_equity_curve.iloc[-1] = current_equity
-                        
-                        fig_sig = go.Figure()
-                        
-                        fig_sig.add_trace(go.Scatter(
-                            x=row['equity_curve'].index,
-                            y=row['equity_curve'].values,
-                            mode='lines',
-                            name=f'Signal (RSI {row["RSI_Threshold"]})',
-                            line=dict(color='green', width=2)
-                        ))
-                        
-                        fig_sig.add_trace(go.Scatter(
-                            x=benchmark_equity_curve.index,
-                            y=benchmark_equity_curve.values,
-                            mode='lines',
-                            name=f'{benchmark_name} (Same RSI {row["RSI_Threshold"]} Conditions)',
-                            line=dict(color='blue', width=2)
-                        ))
-                        
-                        fig_sig.add_trace(go.Scatter(
-                            x=benchmark.index,
-                            y=benchmark.values,
-                            mode='lines',
-                            name=f'{benchmark_name} Buy & Hold',
-                            line=dict(color='red', width=2, dash='dash')
-                        ))
-                        
-                        fig_sig.update_layout(
-                            title=f"Equity Curve - RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% Confidence)",
-                            xaxis_title="Date",
-                            yaxis_title="Equity Value",
-                            hovermode='x unified'
-                        )
-                        
-                        st.plotly_chart(fig_sig, use_container_width=True)
-                        
-                        # Add explanation
-                        st.info(f"💡 **What this shows:** The green line shows your signal performance. The blue line shows {benchmark_name} performance under the same RSI conditions. The red dashed line shows {benchmark_name} buy-and-hold. This helps you see if your target ticker choice beats {benchmark_name} when the same RSI signals are applied.")
-                        
-                        st.plotly_chart(fig_sig, use_container_width=True, key=f"signal_equity_{row['RSI_Threshold']}_significant")
         else:
             st.warning("No signals reached statistical significance (p < 0.05)")
-        
-        # Signals with 80-95% confidence (borderline significant)
-        borderline_signals = valid_signals[(valid_signals['confidence_level'] >= 80) & 
-                                           (valid_signals['confidence_level'] < 95)].copy()
-        
-        if not borderline_signals.empty:
-            st.subheader("📊 Borderline Significant Signals (80-95% Confidence)")
-            st.info("💡 **What this shows:** These signals show promising results but don't quite reach the 95% confidence threshold. They may still be worth considering, especially if they have good performance metrics.")
-            
-            # Sort options for borderline signals
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                borderline_sort_by = st.selectbox(
-                    "Sort by:",
-                    ["RSI_Threshold", "confidence_level", "Sortino_Ratio", "Win_Rate", "annualized_return", "Total_Return"],
-                    format_func=lambda x: {
-                        "RSI_Threshold": "RSI Threshold",
-                        "confidence_level": "Confidence Level", 
-                        "Sortino_Ratio": "Sortino Ratio",
-                        "Win_Rate": "Win Rate",
-                        "annualized_return": "Annualized Return",
-                        "Total_Return": "Total Return"
-                    }[x],
-                    key="borderline_sort"
-                )
-            with col2:
-                borderline_sort_order = st.radio(
-                    "Order:",
-                    ["ascending", "descending"],
-                    horizontal=True,
-                    key="borderline_order"
-                )
-            
-            # Sort borderline signals
-            if borderline_sort_order == "ascending":
-                sorted_borderline = borderline_signals.sort_values(borderline_sort_by)
-            else:
-                sorted_borderline = borderline_signals.sort_values(borderline_sort_by, ascending=False)
-
-            for idx, row in sorted_borderline.iterrows():
-                with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
-                    # Performance metrics with hover tooltips
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Total Trades", row['Total_Trades'], 
-                                 help="The number of buy/sell transactions the signal made. More trades can mean more opportunities but also more transaction costs.")
-                        # Calculate trades won from original win rate data
-                        original_row = results_df.loc[idx] if 'analysis_completed' in st.session_state else row
-                        win_rate_decimal = original_row['Win_Rate']  # This is already a decimal (0.0 to 1.0)
-                        trades_won = int(row['Total_Trades'] * win_rate_decimal)
-                        st.metric("Trades Won", trades_won, 
-                                 help="The number of profitable trades out of all trades made. Shows how many times the signal was successful.")
-                    
-                    with col2:
-                        st.metric("P-value", f"{row['p_value']:.4f}", 
-                                 help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
-                        st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
-                                 help="How certain we are that the signal outperforms the benchmark. Higher percentage means stronger evidence the signal works.")
-                    
-                    with col3:
-                        st.metric("Total Return", f"{row['Total_Return']:.3%}", 
-                                 help="The total percentage gain or loss over the entire period. Shows how much money you would have made (or lost) if you invested $100.")
-                        st.metric("Annualized Return", f"{row['annualized_return']:.3%}", 
-                                 help="The yearly return rate, useful for comparing signals over different time periods. Shows how much you'd earn per year on average.")
-                    
-                    with col4:
-                        st.metric("Win Rate", f"{row['Win_Rate']:.1%}", 
-                                 help="Percentage of trades that were profitable. A higher win rate means the signal wins more often than it loses.")
-                        st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞", 
-                                 help="Risk-adjusted return measure that focuses on downside risk. Higher is better - it shows good returns with less risk of big losses.")
-                    
-                    # Additional metrics with hover tooltips
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
-                                 help="Average number of days the signal held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
-                        st.metric("Effect Size", f"{row['effect_size']:.2f}", 
-                                 help="How much better/worse the signal is compared to the benchmark. Positive means it beats the benchmark, negative means it underperforms.")
-                    
-                    with col2:
-                        st.metric("Best Return", f"{row['Best_Return']:.3%}", 
-                                 help="The best single trade return achieved by this signal. Shows the signal's potential upside.")
-                        st.metric("Worst Return", f"{row['Worst_Return']:.3%}", 
-                                 help="The worst single trade return achieved by this signal. Shows the signal's potential downside risk.")
-                    
-                    with col3:
-                        st.metric("Return Std Dev", f"{row['Return_Std']:.3%}", 
-                                 help="Standard deviation of trade returns. Lower values mean more consistent performance, higher values mean more volatile results.")
-                        st.metric("Final Equity", f"{row['Final_Equity']:.3f}", 
-                                 help="The final value of a $1 investment. Shows how much your money would have grown (or shrunk) over the period.")
-                    
-                    with col4:
-                        st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
-                                 help="Statistical measure of how different the signal is from the benchmark. Examples: 2.0 = moderate difference, 3.0 = strong difference, 4.0+ = very strong difference. Higher absolute values mean stronger evidence of a real difference.")
-                        st.metric("Power", f"{row['power']:.2f}", 
-                                 help="How likely the test is to detect a real difference if one exists. Higher power means more reliable statistical results.")
-                    
-                    # Final row
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Significant", "✓" if row['significant'] else "✗", 
-                                 help="Whether the signal reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
-                    
-                    # Show equity curve for this borderline signal
-                    if 'equity_curve' in row and row['equity_curve'] is not None:
-                        st.subheader("📈 Equity Curve Comparison")
-                        
-                        # Create benchmark equity curve that follows the same RSI conditions
-                        signal_rsi = calculate_rsi(st.session_state['signal_data'], window=st.session_state['rsi_period'])
-                        
-                        # Generate buy signals for benchmark (same as signal)
-                        if st.session_state['comparison'] == "less_than":
-                            benchmark_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
-                        else:  # greater_than
-                            benchmark_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
-                        
-                        # Calculate benchmark equity curve using benchmark prices (same logic as signal)
-                        benchmark_equity_curve = pd.Series(1.0, index=st.session_state['benchmark_data'].index)
-                        current_equity = 1.0
-                        in_position = False
-                        entry_equity = 1.0
-                        entry_price = None
-                        
-                        for date in st.session_state['benchmark_data'].index:
-                            current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
-                            current_price = st.session_state['benchmark_data'][date]
-                            
-                            if current_signal == 1 and not in_position:
-                                # Enter position
-                                in_position = True
-                                entry_equity = current_equity
-                                entry_price = current_price
-                                
-                            elif current_signal == 0 and in_position:
-                                # Exit position
-                                trade_return = (current_price - entry_price) / entry_price
-                                current_equity = entry_equity * (1 + trade_return)
-                                in_position = False
-                            
-                            # Update equity curve
-                            if in_position:
-                                current_equity = entry_equity * (current_price / entry_price)
-                            
-                            benchmark_equity_curve[date] = current_equity
-                        
-                        # Handle case where we're still in position at the end
-                        if in_position:
-                            final_price = st.session_state['benchmark_data'].iloc[-1]
-                            trade_return = (final_price - entry_price) / entry_price
-                            current_equity = entry_equity * (1 + trade_return)
-                            benchmark_equity_curve.iloc[-1] = current_equity
-                        
-                        fig_sig = go.Figure()
-                        
-                        fig_sig.add_trace(go.Scatter(
-                            x=row['equity_curve'].index,
-                            y=row['equity_curve'].values,
-                            mode='lines',
-                            name=f'Signal (RSI {row["RSI_Threshold"]})',
-                            line=dict(color='green', width=2)
-                        ))
-                        
-                        fig_sig.add_trace(go.Scatter(
-                            x=benchmark_equity_curve.index,
-                            y=benchmark_equity_curve.values,
-                            mode='lines',
-                            name=f'{benchmark_name} (Same RSI {row["RSI_Threshold"]} Conditions)',
-                            line=dict(color='blue', width=2)
-                        ))
-                        
-                        fig_sig.add_trace(go.Scatter(
-                            x=benchmark.index,
-                            y=benchmark.values,
-                            mode='lines',
-                            name=f'{benchmark_name} Buy & Hold',
-                            line=dict(color='red', width=2, dash='dash')
-                        ))
-                        
-                        fig_sig.update_layout(
-                            title=f"Equity Curve - RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% Confidence)",
-                            xaxis_title="Date",
-                            yaxis_title="Equity Value",
-                            hovermode='x unified'
-                        )
-                        
-                        st.plotly_chart(fig_sig, use_container_width=True)
-                        
-                        # Add explanation
-                        st.info(f"💡 **What this shows:** The green line shows your signal performance. The blue line shows {benchmark_name} performance under the same RSI conditions. The red dashed line shows {benchmark_name} buy-and-hold. This helps you see if your target ticker choice beats {benchmark_name} when the same RSI signals are applied.")
-                        
-                        st.plotly_chart(fig_sig, use_container_width=True, key=f"signal_equity_{row['RSI_Threshold']}_borderline")
-        else:
-            st.info("No signals found with 80-95% confidence level.")
 
     # Statistical interpretation guide
     with st.expander("📚 Statistical Significance Guide"):
