@@ -418,6 +418,12 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size']
                 st.dataframe(display_df[display_cols], use_container_width=True)
                 
+                # Find best strategies (needed for subsequent sections)
+                best_sortino_idx = results_df['Sortino_Ratio'].idxmax()
+                best_annualized_idx = results_df['annualized_return'].idxmax()
+                best_winrate_idx = results_df['Win_Rate'].idxmax()
+                best_total_return_idx = results_df['Total_Return'].idxmax()
+                
                 # Return Distribution Analysis
                 st.subheader("📊 Return Distribution Analysis")
                 
