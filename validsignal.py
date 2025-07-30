@@ -891,7 +891,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
             # Confidence Level vs RSI Threshold Analysis
             st.subheader("📊 Confidence Level vs RSI Threshold Analysis")
-            st.info("💡 **What this shows:** This scatter plot shows how confidence levels vary across different RSI thresholds. The size of each point indicates the effect size - larger points mean stronger effects. This helps you identify which RSI levels are most reliable and impactful.")
+            st.info("💡 **What This Section Shows:** This section determines whether your signal's performance is statistically significant - meaning the results are likely not due to chance. It compares your signal against SPY (S&P 500) under the same conditions to see if your target ticker choice is actually better.")
             
             # Create scatter plot for confidence vs RSI threshold
             fig_confidence_rsi = go.Figure()
@@ -980,8 +980,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                     # Add explanation for the new chart
         with st.expander("📚 Understanding Confidence vs RSI Threshold"):
             st.write(f"""
-            **💡 What This Section Shows:**
-            This section determines whether your signal's performance is statistically significant - meaning the results are likely not due to chance. It compares your signal against {benchmark_name} under the same conditions to see if your target ticker choice is actually better.
+
             
             **⚠️ Note on Extreme RSI Values:**
             At the extreme ends of RSI thresholds (very low or very high values), there are often not enough historical events to generate statistically confident results. This is why confidence levels may drop off at these extremes - the sample size becomes too small for reliable statistical analysis.
