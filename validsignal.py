@@ -1,7 +1,11 @@
 import numpy as np
 import pandas as pd
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 
-print("RSI Backtest Engine Loading...")
+st.title("RSI Backtest Engine")
+st.write("Interactive RSI Trading Strategy Backtester")
 
 def calculate_rsi_simple(prices, window=10):
     """Simple RSI calculation"""
@@ -32,11 +36,11 @@ def generate_test_data():
 
 def simple_backtest():
     """Run a simple backtest"""
-    print("Generating test data...")
-    prices = generate_test_data()
+    with st.spinner("Generating test data..."):
+        prices = generate_test_data()
     
-    print("Calculating RSI...")
-    rsi = calculate_rsi_simple(prices)
+    with st.spinner("Calculating RSI..."):
+        rsi = calculate_rsi_simple(prices)
     
     # Simple strategy: buy when RSI < 30, sell when RSI > 70
     signals = pd.Series(0, index=prices.index)
@@ -49,13 +53,86 @@ def simple_backtest():
     
     total_return = strategy_returns.sum()
     
-    print(f"\nSimple RSI Strategy Results:")
-    print(f"Data period: {prices.index[0].strftime('%Y-%m-%d')} to {prices.index[-1].strftime('%Y-%m-%d')}")
-    print(f"Total trading days: {len(prices)}")
-    print(f"Final RSI: {rsi.iloc[-1]:.1f}")
-    print(f"Strategy return: {total_return:.2%}")
-    print(f"Buy signals: {(signals == 1).sum()}")
-    print(f"Sell signals: {(signals == -1).sum()}")
+    # Display results
+    st.subheader("RSI Strategy Results")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Data Period", f"{prices.index[0].strftime('%Y-%m-%d')} to {prices.index[-1].strftime('%Y-%m-%d')}")
+        st.metric("Trading Days", len(prices))
+    
+    with col2:
+        st.metric("Final RSI", f"{rsi.iloc[-1]:.1f}")
+        st.metric("Strategy Return", f"{total_return:.2%}")
+    
+    with col3:
+        st.metric("Buy Signals", (signals == 1).sum())
+        st.metric("Sell Signals", (signals == -1).sum())
+    
+    # Create charts
+    st.subheader("Price Chart with RSI Signals")
+    
+    # Price chart with buy/sell signals
+    fig = go.Figure()
+    
+    # Add price line
+    fig.add_trace(go.Scatter(
+        x=prices.index,
+        y=prices.values,
+        mode='lines',
+        name='Price',
+        line=dict(color='blue')
+    ))
+    
+    # Add buy signals
+    buy_signals = prices[signals == 1]
+    if not buy_signals.empty:
+        fig.add_trace(go.Scatter(
+            x=buy_signals.index,
+            y=buy_signals.values,
+            mode='markers',
+            name='Buy Signal',
+            marker=dict(color='green', size=10, symbol='triangle-up')
+        ))
+    
+    # Add sell signals
+    sell_signals = prices[signals == -1]
+    if not sell_signals.empty:
+        fig.add_trace(go.Scatter(
+            x=sell_signals.index,
+            y=sell_signals.values,
+            mode='markers',
+            name='Sell Signal',
+            marker=dict(color='red', size=10, symbol='triangle-down')
+        ))
+    
+    fig.update_layout(title="Price Chart with Trading Signals", xaxis_title="Date", yaxis_title="Price")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # RSI chart
+    st.subheader("RSI Indicator")
+    fig_rsi = go.Figure()
+    
+    fig_rsi.add_trace(go.Scatter(
+        x=rsi.index,
+        y=rsi.values,
+        mode='lines',
+        name='RSI',
+        line=dict(color='purple')
+    ))
+    
+    # Add RSI levels
+    fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
+    fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
+    fig_rsi.add_hline(y=50, line_dash="dot", line_color="gray", annotation_text="Neutral (50)")
+    
+    fig_rsi.update_layout(
+        title="RSI Indicator",
+        xaxis_title="Date",
+        yaxis_title="RSI",
+        yaxis=dict(range=[0, 100])
+    )
+    st.plotly_chart(fig_rsi, use_container_width=True)
     
     return {
         'prices': prices,
@@ -64,12 +141,26 @@ def simple_backtest():
         'total_return': total_return
     }
 
-# Test execution
-try:
-    print("Starting simple backtest...")
-    results = simple_backtest()
-    print("✓ Backtest completed successfully!")
-except Exception as e:
-    print(f"Error: {e}")
+# Main app execution
+st.write("Click the button below to run the RSI backtest:")
 
-print("RSI Backtest Engine loaded successfully.")
+if st.button("Run Backtest", type="primary"):
+    try:
+        st.write("Starting backtest...")
+        results = simple_backtest()
+        st.success("✓ Backtest completed successfully!")
+        
+        # Additional analysis
+        with st.expander("View Raw Data"):
+            df = pd.DataFrame({
+                'Price': results['prices'],
+                'RSI': results['rsi'],
+                'Signal': results['signals']
+            })
+            st.dataframe(df)
+            
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+st.write("---")
+st.write("RSI Backtest Engine loaded and ready!")
