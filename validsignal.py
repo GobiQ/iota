@@ -56,41 +56,70 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
             'win_rate': 0,
             'avg_return': 0,
             'returns': [],
-            'avg_hold_days': 0
+            'avg_hold_days': 0,
+            'equity_curve': None,
+            'trades': []
         }
     
-    # Calculate returns for each complete trade (entry close to exit close)
+    # Calculate returns for each complete trade and build equity curve
     returns = []
     hold_periods = []
+    trades = []
+    
+    # Initialize equity curve with cash (value = 1.0)
+    equity_curve = pd.Series(1.0, index=target_prices.index)
+    current_equity = 1.0
+    in_position = False
+    entry_equity = 1.0
     
     entry_dates = signal_prices[entry_points].index
     
-    for entry_date in entry_dates:
-        try:
-            entry_idx = target_prices.index.get_loc(entry_date)
+    for i, date in enumerate(target_prices.index):
+        if date in entry_dates and not in_position:
+            # Enter position - buy at close
+            in_position = True
+            entry_equity = current_equity
+            entry_date = date
+            entry_price = target_prices[date]
             
-            # Find the next exit point after this entry
-            future_exits = exit_points[exit_points.index > entry_date]
+        elif in_position:
+            # Check if we should exit
+            current_rsi = rsi[date] if date in rsi.index else None
+            should_exit = False
             
-            if future_exits.any():
-                exit_date = future_exits.index[0]
-                exit_idx = target_prices.index.get_loc(exit_date)
+            if comparison == "less_than":
+                should_exit = current_rsi is not None and current_rsi > rsi_threshold
             else:
-                # If no exit signal, hold until end of data
-                exit_idx = len(target_prices) - 1
-                exit_date = target_prices.index[exit_idx]
+                should_exit = current_rsi is not None and current_rsi < rsi_threshold
             
-            # Buy at close on entry_date, sell at close on exit_date
-            entry_price = target_prices.iloc[entry_idx]  # Close price on signal day
-            exit_price = target_prices.iloc[exit_idx]    # Close price on exit day
-            ret = (exit_price - entry_price) / entry_price
-            hold_days = (exit_date - entry_date).days
-            
-            returns.append(ret)
-            hold_periods.append(hold_days)
-            
-        except (KeyError, IndexError):
-            continue
+            if should_exit or date == target_prices.index[-1]:  # Exit or end of data
+                # Exit position - sell at close
+                exit_price = target_prices[date]
+                trade_return = (exit_price - entry_price) / entry_price
+                current_equity = entry_equity * (1 + trade_return)
+                
+                returns.append(trade_return)
+                hold_days = (date - entry_date).days
+                hold_periods.append(hold_days)
+                
+                trades.append({
+                    'entry_date': entry_date,
+                    'exit_date': date,
+                    'entry_price': entry_price,
+                    'exit_price': exit_price,
+                    'return': trade_return,
+                    'hold_days': hold_days
+                })
+                
+                in_position = False
+        
+        # Update equity curve
+        if in_position:
+            # Mark-to-market the position
+            current_price = target_prices[date]
+            current_equity = entry_equity * (current_price / entry_price)
+        
+        equity_curve[date] = current_equity
     
     if not returns:
         return {
@@ -98,7 +127,9 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
             'win_rate': 0,
             'avg_return': 0,
             'returns': [],
-            'avg_hold_days': 0
+            'avg_hold_days': 0,
+            'equity_curve': equity_curve,
+            'trades': []
         }
     
     returns = np.array(returns)
@@ -111,7 +142,9 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
         'win_rate': win_rate,
         'avg_return': avg_return,
         'returns': returns,
-        'avg_hold_days': avg_hold_days
+        'avg_hold_days': avg_hold_days,
+        'equity_curve': equity_curve,
+        'trades': trades
     }
 
 def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison):
@@ -151,7 +184,11 @@ def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison)
             'Avg_Hold_Days': analysis['avg_hold_days'],
             'Return_Std': np.std(analysis['returns']) if len(analysis['returns']) > 0 else 0,
             'Best_Return': np.max(analysis['returns']) if len(analysis['returns']) > 0 else 0,
-            'Worst_Return': np.min(analysis['returns']) if len(analysis['returns']) > 0 else 0
+            'Worst_Return': np.min(analysis['returns']) if len(analysis['returns']) > 0 else 0,
+            'Final_Equity': analysis['equity_curve'].iloc[-1] if analysis['equity_curve'] is not None else 1.0,
+            'Total_Return': (analysis['equity_curve'].iloc[-1] - 1) if analysis['equity_curve'] is not None else 0,
+            'equity_curve': analysis['equity_curve'],
+            'trades': analysis['trades']
         })
         
         progress_bar.progress((i + 1) / total_thresholds)
@@ -215,12 +252,18 @@ if st.button("Run RSI Analysis", type="primary"):
                 display_df = results_df.copy()
                 display_df['Win_Rate'] = display_df['Win_Rate'].apply(lambda x: f"{x:.1%}")
                 display_df['Avg_Return'] = display_df['Avg_Return'].apply(lambda x: f"{x:.2%}")
+                display_df['Total_Return'] = display_df['Total_Return'].apply(lambda x: f"{x:.2%}")
                 display_df['Avg_Hold_Days'] = display_df['Avg_Hold_Days'].apply(lambda x: f"{x:.1f}")
                 display_df['Return_Std'] = display_df['Return_Std'].apply(lambda x: f"{x:.2%}")
                 display_df['Best_Return'] = display_df['Best_Return'].apply(lambda x: f"{x:.2%}")
                 display_df['Worst_Return'] = display_df['Worst_Return'].apply(lambda x: f"{x:.2%}")
+                display_df['Final_Equity'] = display_df['Final_Equity'].apply(lambda x: f"{x:.3f}")
                 
-                st.dataframe(display_df, use_container_width=True)
+                # Drop the equity_curve and trades columns for display
+                display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
+                               'Total_Return', 'Final_Equity', 'Avg_Hold_Days', 'Return_Std', 
+                               'Best_Return', 'Worst_Return']
+                st.dataframe(display_df[display_cols], use_container_width=True)
                 
                 # Summary statistics
                 st.subheader("Summary Statistics")
@@ -231,12 +274,12 @@ if st.button("Run RSI Analysis", type="primary"):
                     st.metric("Total Signals Generated", total_trades)
                 
                 with col2:
-                    avg_win_rate = results_df[results_df['Total_Trades'] > 0]['Win_Rate'].mean()
-                    st.metric("Average Win Rate", f"{avg_win_rate:.1%}" if not np.isnan(avg_win_rate) else "N/A")
+                    best_total_return = results_df['Total_Return'].max()
+                    st.metric("Best Total Return", f"{best_total_return:.2%}")
                 
                 with col3:
-                    avg_return = results_df[results_df['Total_Trades'] > 0]['Avg_Return'].mean()
-                    st.metric("Average Return", f"{avg_return:.2%}" if not np.isnan(avg_return) else "N/A")
+                    best_threshold = results_df.loc[results_df['Total_Return'].idxmax(), 'RSI_Threshold']
+                    st.metric("Best RSI Threshold", best_threshold)
                 
                 with col4:
                     avg_hold = results_df[results_df['Total_Trades'] > 0]['Avg_Hold_Days'].mean()
@@ -252,16 +295,16 @@ if st.button("Run RSI Analysis", type="primary"):
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        fig1 = px.line(chart_data, x='RSI_Threshold', y='Win_Rate', 
-                                      title='Win Rate by RSI Threshold',
-                                      labels={'Win_Rate': 'Win Rate', 'RSI_Threshold': 'RSI Threshold'})
+                        fig1 = px.line(chart_data, x='RSI_Threshold', y='Total_Return', 
+                                      title='Total Return by RSI Threshold',
+                                      labels={'Total_Return': 'Total Return', 'RSI_Threshold': 'RSI Threshold'})
                         fig1.update_traces(line=dict(color='green'))
                         st.plotly_chart(fig1, use_container_width=True)
                     
                     with col2:
-                        fig2 = px.line(chart_data, x='RSI_Threshold', y='Avg_Return',
-                                      title='Average Return by RSI Threshold',
-                                      labels={'Avg_Return': 'Average Return', 'RSI_Threshold': 'RSI Threshold'})
+                        fig2 = px.line(chart_data, x='RSI_Threshold', y='Win_Rate',
+                                      title='Win Rate by RSI Threshold',
+                                      labels={'Win_Rate': 'Win Rate', 'RSI_Threshold': 'RSI Threshold'})
                         fig2.update_traces(line=dict(color='blue'))
                         st.plotly_chart(fig2, use_container_width=True)
                     
@@ -270,6 +313,69 @@ if st.button("Run RSI Analysis", type="primary"):
                                  title='Number of Trades by RSI Threshold',
                                  labels={'Total_Trades': 'Number of Trades', 'RSI_Threshold': 'RSI Threshold'})
                     st.plotly_chart(fig3, use_container_width=True)
+                    
+                    # EQUITY CURVE FOR BEST STRATEGY
+                    st.subheader("Equity Curve - Best Strategy")
+                    best_idx = results_df['Total_Return'].idxmax()
+                    best_threshold = results_df.loc[best_idx, 'RSI_Threshold']
+                    best_equity_curve = results_df.loc[best_idx, 'equity_curve']
+                    best_trades = results_df.loc[best_idx, 'trades']
+                    best_total_return = results_df.loc[best_idx, 'Total_Return']
+                    
+                    st.info(f"📊 **Best Strategy:** RSI {comparison.replace('_', ' ').title()} {best_threshold} | **Total Return:** {best_total_return:.2%}")
+                    
+                    if best_equity_curve is not None:
+                        # Create equity curve chart
+                        fig_equity = go.Figure()
+                        
+                        fig_equity.add_trace(go.Scatter(
+                            x=best_equity_curve.index,
+                            y=best_equity_curve.values,
+                            mode='lines',
+                            name='Equity Curve',
+                            line=dict(color='darkgreen', width=2)
+                        ))
+                        
+                        # Add trade markers
+                        if best_trades:
+                            entry_dates = [trade['entry_date'] for trade in best_trades]
+                            entry_values = [best_equity_curve[trade['entry_date']] for trade in best_trades]
+                            exit_dates = [trade['exit_date'] for trade in best_trades]
+                            exit_values = [best_equity_curve[trade['exit_date']] for trade in best_trades]
+                            
+                            fig_equity.add_trace(go.Scatter(
+                                x=entry_dates,
+                                y=entry_values,
+                                mode='markers',
+                                name='Buy',
+                                marker=dict(color='green', size=8, symbol='triangle-up')
+                            ))
+                            
+                            fig_equity.add_trace(go.Scatter(
+                                x=exit_dates,
+                                y=exit_values,
+                                mode='markers',
+                                name='Sell',
+                                marker=dict(color='red', size=8, symbol='triangle-down')
+                            ))
+                        
+                        fig_equity.update_layout(
+                            title=f"Equity Curve - RSI {comparison.replace('_', ' ').title()} {best_threshold}",
+                            xaxis_title="Date",
+                            yaxis_title="Equity Value",
+                            hovermode='x unified'
+                        )
+                        
+                        st.plotly_chart(fig_equity, use_container_width=True)
+                        
+                        # Trade details for best strategy
+                        if best_trades:
+                            with st.expander(f"Trade Details - Best Strategy (RSI {best_threshold})"):
+                                trades_df = pd.DataFrame(best_trades)
+                                trades_df['return'] = trades_df['return'].apply(lambda x: f"{x:.2%}")
+                                trades_df['entry_price'] = trades_df['entry_price'].apply(lambda x: f"${x:.2f}")
+                                trades_df['exit_price'] = trades_df['exit_price'].apply(lambda x: f"${x:.2f}")
+                                st.dataframe(trades_df, use_container_width=True)
                 
                 # Download results
                 csv = results_df.to_csv(index=False)
