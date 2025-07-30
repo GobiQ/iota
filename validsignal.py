@@ -638,7 +638,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             showlegend=True
         )
         
-        st.plotly_chart(fig_confidence_rsi, use_container_width=True)
+        st.plotly_chart(fig_confidence_rsi, use_container_width=True, key="confidence_rsi_chart")
         
         # Add explanation for the new chart
         with st.expander("📚 Understanding Confidence vs RSI Threshold"):
@@ -729,7 +729,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             hovermode='closest'
         )
         
-        st.plotly_chart(fig_total_return, use_container_width=True)
+        st.plotly_chart(fig_total_return, use_container_width=True, key="total_return_chart")
         
         # Sortino Ratio vs Confidence Level Analysis
         st.subheader("📊 Sortino Ratio vs Confidence Level Analysis")
@@ -783,109 +783,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             hovermode='closest'
         )
         
-        st.plotly_chart(fig_sortino, use_container_width=True)
-        
-        # Confidence Level vs RSI Threshold Analysis
-        st.subheader("📊 Confidence Level vs RSI Threshold Analysis")
-        st.info("💡 **What this shows:** This scatter plot shows how confidence levels vary across different RSI thresholds. The size of each point indicates the effect size - larger points mean stronger effects. This helps you identify which RSI levels are most reliable and impactful.")
-        
-        # Create scatter plot for confidence vs RSI threshold
-        fig_confidence_rsi = go.Figure()
-        
-        # Add points for significant signals (green)
-        significant_data = valid_signals[valid_signals['significant'] == True]
-        if not significant_data.empty:
-            fig_confidence_rsi.add_trace(go.Scatter(
-                x=significant_data['RSI_Threshold'],
-                y=significant_data['confidence_level'],
-                mode='markers',
-                name='Significant Signals',
-                marker=dict(
-                    color='green',
-                    size=abs(significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
-                    sizemin=5,
-                    sizemode='area',
-                    opacity=0.7
-                ),
-                hovertemplate='<b>RSI %{x}</b><br>' +
-                            'Confidence: %{y:.1f}%<br>' +
-                            'Effect Size: %{marker.size:.1f}<br>' +
-                            'Significant: ✓<extra></extra>'
-            ))
-        
-        # Add points for non-significant signals (red)
-        non_significant_data = valid_signals[valid_signals['significant'] == False]
-        if not non_significant_data.empty:
-            fig_confidence_rsi.add_trace(go.Scatter(
-                x=non_significant_data['RSI_Threshold'],
-                y=non_significant_data['confidence_level'],
-                mode='markers',
-                name='Non-Significant Signals',
-                marker=dict(
-                    color='red',
-                    size=abs(non_significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
-                    sizemin=5,
-                    sizemode='area',
-                    opacity=0.7
-                ),
-                hovertemplate='<b>RSI %{x}</b><br>' +
-                            'Confidence: %{y:.1f}%<br>' +
-                            'Effect Size: %{marker.size:.1f}<br>' +
-                            'Significant: ✗<extra></extra>'
-            ))
-        
-        # Add reference lines
-        fig_confidence_rsi.add_hline(y=95, line_dash="dash", line_color="red", 
-                                   annotation_text="95% Confidence")
-        fig_confidence_rsi.add_hline(y=80, line_dash="dash", line_color="orange", 
-                                   annotation_text="80% Confidence")
-        
-        fig_confidence_rsi.update_layout(
-            title="Confidence Level vs RSI Threshold (Point Size = Effect Size)",
-            xaxis_title="RSI Threshold",
-            yaxis_title="Confidence Level (%)",
-            hovermode='closest',
-            showlegend=True
-        )
-        
-        st.plotly_chart(fig_confidence_rsi, use_container_width=True)
-        
-        # Add explanation for the new chart
-        with st.expander("📚 Understanding Confidence vs RSI Threshold"):
-            st.write("""
-            **What This Chart Tells You:**
-            
-            **📊 X-Axis (RSI Threshold):**
-            - Shows different RSI levels tested
-            - Helps identify which RSI ranges are most effective
-            
-            **📈 Y-Axis (Confidence Level):**
-            - Higher values = stronger statistical evidence
-            - Above 95% = highly significant
-            - 80-95% = borderline significant
-            - Below 80% = weak evidence
-            
-            **🔴 Point Size (Effect Size):**
-            - Larger points = stronger effects (bigger differences from the benchmark)
-            - Smaller points = weaker effects
-            - Size is proportional to the absolute effect size
-            
-            **🎯 Color Coding:**
-            - **Green points**: Statistically significant signals
-            - **Red points**: Non-significant signals
-            
-            **💡 What to Look For:**
-            - **Large green points high on the chart**: Best signals (high confidence + large effect)
-            - **Clusters of large points**: RSI ranges with consistent strong performance
-            - **Small red points low on the chart**: Weak signals to avoid
-            - **Patterns**: Look for RSI ranges where confidence and effect size are consistently high
-            
-            **🔍 Practical Insights:**
-            - Identify optimal RSI ranges for your signal
-            - Spot RSI levels that consistently produce significant results
-            - Avoid RSI ranges with low confidence or small effects
-            - Understand the relationship between RSI levels and statistical reliability
-            """)
+        st.plotly_chart(fig_sortino, use_container_width=True, key="sortino_chart")
         
         # Download results
         st.subheader("📥 Download Results")
@@ -909,8 +807,14 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
             # Sort by annualized return (most profitable) instead of confidence level
             # Use the original results_df for sorting since it has numerical values
-            original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True]
+            original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True].copy()
             top_significant = original_significant_signals.nlargest(5, 'annualized_return')
+            
+            # Debug: Check what columns are available
+            st.write(f"Available columns in results_df: {list(st.session_state['results_df'].columns)}")
+            st.write(f"Number of significant signals: {len(original_significant_signals)}")
+            if len(original_significant_signals) > 0:
+                st.write(f"Sample row keys: {list(original_significant_signals.iloc[0].keys())}")
             
             # Multiple Signal Comparison for Significant Signals
             st.subheader("📊 Most Profitable Significant Signals Comparison")
@@ -931,7 +835,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             # Add significant signals
             colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
             for i, (idx, row) in enumerate(top_significant.iterrows()):
-                if row['equity_curve'] is not None:
+                # Debug: Check if equity curve exists
+                if 'equity_curve' in row and row['equity_curve'] is not None:
                     color = colors[i % len(colors)]
                     fig_comparison.add_trace(go.Scatter(
                         x=row['equity_curve'].index,
@@ -940,6 +845,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                         name=f"RSI {row['RSI_Threshold']} ({row['annualized_return']:.3%} annualized)",
                         line=dict(color=color, width=2)
                     ))
+                else:
+                    st.warning(f"No equity curve found for RSI {row['RSI_Threshold']}")
             
             fig_comparison.update_layout(
                 title=f"Most Profitable Significant Signals Comparison vs {benchmark_name}",
@@ -948,7 +855,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 hovermode='x unified',
                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
             )
-            st.plotly_chart(fig_comparison, use_container_width=True)
+            st.plotly_chart(fig_comparison, use_container_width=True, key="most_profitable_comparison")
             
             # Highest Sortino Significant Signals Comparison
             st.subheader("📊 Highest Sortino Significant Signals Comparison")
@@ -956,7 +863,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
             # Sort by Sortino ratio (best risk-adjusted returns) instead of annualized return
             # Use the original results_df for sorting since it has numerical values
-            original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True]
+            original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True].copy()
             top_sortino_significant = original_significant_signals.nlargest(5, 'Sortino_Ratio')
             
             # Create comparison chart with highest Sortino signals
@@ -974,7 +881,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             # Add significant signals with highest Sortino ratios
             colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
             for i, (idx, row) in enumerate(top_sortino_significant.iterrows()):
-                if row['equity_curve'] is not None:
+                # Debug: Check if equity curve exists
+                if 'equity_curve' in row and row['equity_curve'] is not None:
                     color = colors[i % len(colors)]
                     fig_sortino_comparison.add_trace(go.Scatter(
                         x=row['equity_curve'].index,
@@ -983,6 +891,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                         name=f"RSI {row['RSI_Threshold']} (Sortino: {row['Sortino_Ratio']:.2f}, {row['annualized_return']:.3%} annualized)",
                         line=dict(color=color, width=2)
                     ))
+                else:
+                    st.warning(f"No equity curve found for RSI {row['RSI_Threshold']}")
             
             fig_sortino_comparison.update_layout(
                 title=f"Highest Sortino Significant Signals Comparison vs {benchmark_name}",
@@ -991,7 +901,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 hovermode='x unified',
                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
             )
-            st.plotly_chart(fig_sortino_comparison, use_container_width=True)
+            st.plotly_chart(fig_sortino_comparison, use_container_width=True, key="highest_sortino_comparison")
             
             # Effect size vs confidence level
             st.subheader("📊 Effect size vs Confidence Level Analysis")
@@ -1045,7 +955,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 hovermode='closest'
             )
             
-            st.plotly_chart(fig_effect, use_container_width=True)
+            st.plotly_chart(fig_effect, use_container_width=True, key="effect_size_chart")
             
             # Detailed explanation
             with st.expander("📚 Understanding Effect Size vs Confidence Level"):
@@ -1183,7 +1093,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                                  help="Whether the signal reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
                     
                     # Show equity curve for this signal
-                    if row['equity_curve'] is not None:
+                    if 'equity_curve' in row and row['equity_curve'] is not None:
                         st.subheader("📈 Equity Curve Comparison")
                         
                         # Create benchmark equity curve that follows the same RSI conditions
@@ -1268,6 +1178,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                         
                         # Add explanation
                         st.info(f"💡 **What this shows:** The green line shows your signal performance. The blue line shows {benchmark_name} performance under the same RSI conditions. The red dashed line shows {benchmark_name} buy-and-hold. This helps you see if your target ticker choice beats {benchmark_name} when the same RSI signals are applied.")
+                        
+                        st.plotly_chart(fig_sig, use_container_width=True, key=f"signal_equity_{row['RSI_Threshold']}_significant")
         else:
             st.warning("No signals reached statistical significance (p < 0.05)")
         
@@ -1375,7 +1287,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                                  help="Whether the signal reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
                     
                     # Show equity curve for this borderline signal
-                    if row['equity_curve'] is not None:
+                    if 'equity_curve' in row and row['equity_curve'] is not None:
                         st.subheader("📈 Equity Curve Comparison")
                         
                         # Create benchmark equity curve that follows the same RSI conditions
@@ -1460,6 +1372,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                         
                         # Add explanation
                         st.info(f"💡 **What this shows:** The green line shows your signal performance. The blue line shows {benchmark_name} performance under the same RSI conditions. The red dashed line shows {benchmark_name} buy-and-hold. This helps you see if your target ticker choice beats {benchmark_name} when the same RSI signals are applied.")
+                        
+                        st.plotly_chart(fig_sig, use_container_width=True, key=f"signal_equity_{row['RSI_Threshold']}_borderline")
         else:
             st.info("No signals found with 80-95% confidence level.")
 
