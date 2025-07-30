@@ -1225,7 +1225,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 marker=dict(color='green', size=8),
                 line=dict(width=0),  # Explicitly disable lines
                 hovertemplate='<b>RSI %{x}</b><br>' +
-                            'Cumulative Return: %{y:.3%}<br>' +
+                            'Cumulative Return: %{y:.1f}<br>' +
                             'Significant: ✓<extra></extra>'
             ))
         
@@ -1239,7 +1239,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 marker=dict(color='red', size=8),
                 line=dict(width=0),  # Explicitly disable lines
                 hovertemplate='<b>RSI %{x}</b><br>' +
-                            'Cumulative Return: %{y:.3%}<br>' +
+                            'Cumulative Return: %{y:.1f}<br>' +
                             'Significant: ✗<extra></extra>'
             ))
         
@@ -1274,7 +1274,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 marker=dict(color='green', size=8),
                 line=dict(width=0),  # Explicitly disable lines
                 hovertemplate='<b>RSI %{x}</b><br>' +
-                            'Max Drawdown: %{y:.3%}<br>' +
+                            'Max Drawdown: %{y:.1f}<br>' +
                             'Significant: ✓<extra></extra>'
             ))
         
@@ -1288,7 +1288,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 marker=dict(color='red', size=8),
                 line=dict(width=0),  # Explicitly disable lines
                 hovertemplate='<b>RSI %{x}</b><br>' +
-                            'Max Drawdown: %{y:.3%}<br>' +
+                            'Max Drawdown: %{y:.1f}<br>' +
                             'Significant: ✗<extra></extra>'
             ))
         
