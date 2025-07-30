@@ -395,8 +395,21 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
 st.sidebar.header("📊 Configuration")
 
 # Input fields with help tooltips
-signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="The ticker that generates RSI signals. This is the stock/ETF whose RSI we'll use to decide when to buy/sell the target ticker.")
-target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="The ticker to buy/sell based on the signal ticker's RSI. This is what you'll actually be trading.")
+signal_ticker = st.sidebar.text_input("Signal Ticker", value="QQQ", help="The ticker that generates RSI signals. This is the stock/ETF whose RSI we'll use to decide when to buy/sell the target ticker.")
+
+# Conditional target ticker default based on RSI condition
+comparison = st.sidebar.selectbox("RSI Condition", 
+                               ["less_than", "greater_than"], 
+                               format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
+                               help="Choose when to buy: 'RSI ≤ threshold' means buy when RSI is low (oversold), 'RSI ≥ threshold' means buy when RSI is high (overbought).")
+
+# Set default target ticker based on RSI condition
+if comparison == "less_than":
+    default_target = "TQQQ"
+else:
+    default_target = "VIXY"
+
+target_ticker = st.sidebar.text_input("Target Ticker", value=default_target, help="The ticker to buy/sell based on the signal ticker's RSI. This is what you'll actually be trading.")
 
 # Date range selection
 st.sidebar.subheader("📅 Date Range")
@@ -420,19 +433,14 @@ else:
 st.sidebar.subheader("📈 RSI Configuration")
 
 # RSI Period selection
-rsi_period = st.sidebar.number_input("RSI Period (Days)", min_value=1, max_value=50, value=14, 
-                                    help="How many days to look back when calculating RSI. 14 is standard, but you can adjust. Lower numbers (like 7) make RSI more sensitive to recent changes. Higher numbers (like 21) make it smoother and less sensitive.")
-
-comparison = st.sidebar.selectbox("RSI Condition", 
-                               ["less_than", "greater_than"], 
-                               format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
-                               help="Choose when to buy: 'RSI ≤ threshold' means buy when RSI is low (oversold), 'RSI ≥ threshold' means buy when RSI is high (overbought).")
+rsi_period = st.sidebar.number_input("RSI Period (Days)", min_value=1, max_value=50, value=10, 
+                                    help="How many days to look back when calculating RSI. 10 is more sensitive to recent changes than the standard 14. Lower numbers make RSI more responsive to recent market movements.")
 
 if comparison == "less_than":
-    default_min, default_max = 20, 40
+    default_min, default_max = 0, 40
     st.sidebar.write("Buy signals: Signal RSI ≤ threshold")
 else:
-    default_min, default_max = 60, 80
+    default_min, default_max = 70, 100
     st.sidebar.write("Buy signals: Signal RSI ≥ threshold")
 
 rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5, help="The lowest RSI threshold to test. For 'RSI ≤ threshold', try 20-40. For 'RSI ≥ threshold', try 60-80.")
@@ -745,12 +753,12 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         if len(significant_strategies) > 0:
             st.subheader("🏆 Top Statistically Significant Strategies")
             
-            # Sort by confidence level
-            top_significant = significant_strategies.nlargest(5, 'confidence_level')
+            # Sort by annualized return (most profitable) instead of confidence level
+            top_significant = significant_strategies.nlargest(5, 'annualized_return')
             
             # Multiple Strategy Comparison for Significant Strategies
-            st.subheader("📊 Significant Strategies Comparison")
-            st.info("💡 **What this shows:** This chart compares the top 5 most confident statistically significant strategies against SPY buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The strategies are ranked by confidence level, showing the most statistically reliable strategies first.")
+            st.subheader("📊 Most Profitable Significant Strategies Comparison")
+            st.info("💡 **What this shows:** This chart compares the top 5 most profitable statistically significant strategies against SPY buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The strategies are ranked by annualized return, showing the most profitable strategies first.")
             
             # Create comparison chart with all significant strategies
             fig_comparison = go.Figure()
@@ -773,12 +781,12 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                         x=row['equity_curve'].index,
                         y=row['equity_curve'].values,
                         mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% conf)",
+                        name=f"RSI {row['RSI_Threshold']} ({row['annualized_return']:.1f}% return)",
                         line=dict(color=color, width=2)
                     ))
             
             fig_comparison.update_layout(
-                title="Significant Strategies Comparison vs SPY",
+                title="Most Profitable Significant Strategies Comparison vs SPY",
                 xaxis_title="Date",
                 yaxis_title="Equity Value",
                 hovermode='x unified',
@@ -1511,12 +1519,12 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     if len(significant_strategies) > 0:
                         st.subheader("🏆 Top Statistically Significant Strategies")
                         
-                        # Sort by confidence level
-                        top_significant = significant_strategies.nlargest(5, 'confidence_level')
+                        # Sort by annualized return (most profitable) instead of confidence level
+                        top_significant = significant_strategies.nlargest(5, 'annualized_return')
                         
                         # Multiple Strategy Comparison for Significant Strategies
-                        st.subheader("📊 Significant Strategies Comparison")
-                        st.info("💡 **What this shows:** This chart compares the top 5 most confident statistically significant strategies against SPY buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The strategies are ranked by confidence level, showing the most statistically reliable strategies first.")
+                        st.subheader("📊 Most Profitable Significant Strategies Comparison")
+                        st.info("💡 **What this shows:** This chart compares the top 5 most profitable statistically significant strategies against SPY buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The strategies are ranked by annualized return, showing the most profitable strategies first.")
                         
                         # Create comparison chart with all significant strategies
                         fig_comparison = go.Figure()
@@ -1539,12 +1547,12 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                     x=row['equity_curve'].index,
                                     y=row['equity_curve'].values,
                                     mode='lines',
-                                    name=f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% conf)",
+                                    name=f"RSI {row['RSI_Threshold']} ({row['annualized_return']:.1f}% return)",
                                     line=dict(color=color, width=2)
                                 ))
                         
                         fig_comparison.update_layout(
-                            title="Significant Strategies Comparison vs SPY",
+                            title="Most Profitable Significant Strategies Comparison vs SPY",
                             xaxis_title="Date",
                             yaxis_title="Equity Value",
                             hovermode='x unified',
