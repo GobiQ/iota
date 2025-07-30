@@ -437,8 +437,8 @@ def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison,
 st.sidebar.header("Configuration")
 
 # Input fields
-signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="Ticker to generate RSI signals from (currently not used - RSI calculated on target)")
-target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="Ticker to buy based on its own RSI signals")
+signal_ticker = st.sidebar.text_input("Signal Ticker", value="QQQ", help="Ticker whose RSI generates buy/sell signals")
+target_ticker = st.sidebar.text_input("Target Ticker", value="SPY", help="Ticker to actually buy/sell based on signal ticker's RSI")
 
 # Date range selection
 st.sidebar.subheader("Date Range")
@@ -467,10 +467,10 @@ comparison = st.sidebar.selectbox("RSI Condition",
 
 if comparison == "less_than":
     default_min, default_max = 20, 40
-    st.sidebar.write("Buy signals: Target RSI ≤ threshold")
+    st.sidebar.write("Buy TARGET when SIGNAL RSI ≤ threshold")
 else:
     default_min, default_max = 60, 80
-    st.sidebar.write("Buy signals: Target RSI ≥ threshold")
+    st.sidebar.write("Buy TARGET when SIGNAL RSI ≥ threshold")
 
 rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5)
 rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5)
@@ -483,9 +483,9 @@ col1, col2 = st.columns([2, 1])
 
 with col1:
     st.subheader("Analysis Configuration")
-    st.write(f"**Signal Ticker:** {signal_ticker} (not currently used)")
+    st.write(f"**Signal Ticker:** {signal_ticker}")
     st.write(f"**Target Ticker:** {target_ticker}")
-    st.write(f"**RSI Condition:** {target_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
+    st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
     st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
     if use_date_range and start_date and end_date:
         st.write(f"**Date Range:** {start_date} to {end_date}")
@@ -495,9 +495,9 @@ with col1:
 with col2:
     st.subheader("Strategy Logic")
     if comparison == "less_than":
-        st.info(f"🔵 BUY {target_ticker} at close when {target_ticker} RSI ≤ threshold\n\n📈 SELL {target_ticker} at close when {target_ticker} RSI > threshold")
+        st.info(f"🔵 BUY {target_ticker} at close when {signal_ticker} RSI ≤ threshold\n\n📈 SELL {target_ticker} at close when {signal_ticker} RSI > threshold")
     else:
-        st.info(f"🔵 BUY {target_ticker} at close when {target_ticker} RSI ≥ threshold\n\n📈 SELL {target_ticker} at close when {target_ticker} RSI < threshold")
+        st.info(f"🔵 BUY {target_ticker} at close when {signal_ticker} RSI ≥ threshold\n\n📈 SELL {target_ticker} at close when {signal_ticker} RSI < threshold")
 
 if st.button("Run RSI Analysis", type="primary"):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
