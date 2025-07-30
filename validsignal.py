@@ -165,6 +165,7 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
             'total_trades': 0,
             'win_rate': 0,
             'avg_return': 0,
+            'median_return': 0,
             'returns': [],
             'avg_hold_days': 0,
             'sortino_ratio': 0,
@@ -176,6 +177,7 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
     returns = np.array([trade['return'] for trade in trades])
     win_rate = (returns > 0).mean()
     avg_return = returns.mean()
+    median_return = np.median(returns)
     avg_hold_days = np.mean([trade['hold_days'] for trade in trades])
     sortino_ratio = calculate_sortino_ratio(returns)
     
@@ -188,6 +190,7 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
         'total_trades': len(returns),
         'win_rate': win_rate,
         'avg_return': avg_return,
+        'median_return': median_return,
         'returns': returns,
         'avg_hold_days': avg_hold_days,
         'sortino_ratio': sortino_ratio,
@@ -452,8 +455,9 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
                 benchmark_trades.append(trade_return)
                 benchmark_equity_curve.iloc[-1] = current_equity
             
-            # Calculate benchmark average return
+            # Calculate benchmark average and median returns
             benchmark_avg_return = np.mean(benchmark_trades) if benchmark_trades else 0
+            benchmark_median_return = np.median(benchmark_trades) if benchmark_trades else 0
             benchmark_annualized = (benchmark.iloc[-1] - 1) * (365 / (benchmark.index[-1] - benchmark.index[0]).days)
             stats_result = calculate_statistical_significance(
                 strategy_equity_curve, 
@@ -465,7 +469,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             # Calculate additional risk metrics
             risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'])
         else:
-            # Calculate benchmark average return even when strategy has no trades
+            # Calculate benchmark average and median returns even when strategy has no trades
             signal_rsi = calculate_rsi(signal_data, window=rsi_period, method=rsi_method)
             
             # Generate buy signals for benchmark (same as strategy)
@@ -513,8 +517,9 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
                 benchmark_trades.append(trade_return)
                 benchmark_equity_curve.iloc[-1] = current_equity
             
-            # Calculate benchmark average return
+            # Calculate benchmark average and median returns
             benchmark_avg_return = np.mean(benchmark_trades) if benchmark_trades else 0
+            benchmark_median_return = np.median(benchmark_trades) if benchmark_trades else 0
             
             stats_result = {
                 't_statistic': 0,
@@ -533,7 +538,9 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             'Total_Trades': analysis['total_trades'],
             'Win_Rate': analysis['win_rate'],
             'Avg_Return': analysis['avg_return'],
+            'Median_Return': analysis.get('median_return', 0),  # Use get() with default value
             'Benchmark_Avg_Return': benchmark_avg_return,
+            'Benchmark_Median_Return': benchmark_median_return,
             'Avg_Hold_Days': analysis['avg_hold_days'],
             'Sortino_Ratio': analysis['sortino_ratio'],
             'Return_Std': np.std(analysis['returns']) if len(analysis['returns']) > 0 else 0,
@@ -697,7 +704,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     display_df = results_df.copy()
     
     # Check if required columns exist before formatting
-    required_columns = ['Win_Rate', 'Avg_Return', 'Total_Return', 'annualized_return', 
+    required_columns = ['Win_Rate', 'Avg_Return', 'Median_Return', 'Benchmark_Avg_Return', 'Benchmark_Median_Return', 'Total_Return', 'annualized_return', 
                       'Sortino_Ratio', 'Avg_Hold_Days', 'Return_Std', 'Best_Return', 
                       'Worst_Return', 'Final_Equity', 'confidence_level', 'significant', 'effect_size']
     
@@ -709,7 +716,9 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     # Format the columns for display
     display_df['Win_Rate'] = display_df['Win_Rate'].apply(lambda x: f"{x:.1%}" if isinstance(x, (int, float)) else x)
     display_df['Avg_Return'] = display_df['Avg_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
+    display_df['Median_Return'] = display_df['Median_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Benchmark_Avg_Return'] = display_df['Benchmark_Avg_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
+    display_df['Benchmark_Median_Return'] = display_df['Benchmark_Median_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Total_Return'] = display_df['Total_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Annualized_Return'] = display_df['annualized_return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Sortino_Ratio'] = display_df['Sortino_Ratio'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) and not np.isinf(x) else "∞" if isinstance(x, (int, float)) and np.isinf(x) else x)
@@ -726,7 +735,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     display_df['P_Value'] = display_df['p_value'].apply(lambda x: f"{x:.4f}" if isinstance(x, (int, float)) else x)
     
     # Drop the equity_curve and trades columns for display
-    display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Benchmark_Avg_Return',
+    display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Median_Return', 'Benchmark_Avg_Return', 'Benchmark_Median_Return',
                    'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
                    'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size', 'P_Value']
     
@@ -1137,7 +1146,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         st.subheader("📥 Download Results")
         st.info("💡 **What this does:** Download your analysis results as a CSV file that you can open in Excel or other spreadsheet programs. This includes all the performance metrics for every RSI threshold tested.")
         # Use the original column names from results_df for CSV download
-        download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Benchmark_Avg_Return',
+        download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Median_Return', 'Benchmark_Avg_Return', 'Benchmark_Median_Return',
                        'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
                        'Return_Std', 'Best_Return', 'Worst_Return', 'confidence_level', 'significant', 'effect_size']
         csv = st.session_state['results_df'][download_cols].to_csv(index=False)
@@ -1148,6 +1157,106 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
+        
+        # RSI vs Sortino Ratio Chart
+        st.subheader("📊 RSI Threshold vs Sortino Ratio")
+        st.info("💡 **What this shows:** This chart displays how the Sortino ratio (risk-adjusted return) varies across different RSI thresholds. Higher Sortino ratios indicate better risk-adjusted performance. Look for peaks in the chart to identify optimal RSI thresholds.")
+        
+        fig_sortino_rsi = go.Figure()
+        
+        # Add points for significant signals (green)
+        significant_data = valid_signals[valid_signals['significant'] == True]
+        if not significant_data.empty:
+            fig_sortino_rsi.add_trace(go.Scatter(
+                x=significant_data['RSI_Threshold'],
+                y=significant_data['Sortino_Ratio'],
+                mode='markers',
+                name='Significant Signals',
+                marker=dict(color='green', size=8),
+                line=dict(width=0),  # Explicitly disable lines
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Sortino Ratio: %{y:.2f}<br>' +
+                            'Significant: ✓<extra></extra>'
+            ))
+        
+        # Add points for non-significant signals (red)
+        non_significant_data = valid_signals[valid_signals['significant'] == False]
+        if not non_significant_data.empty:
+            fig_sortino_rsi.add_trace(go.Scatter(
+                x=non_significant_data['RSI_Threshold'],
+                y=non_significant_data['Sortino_Ratio'],
+                mode='markers',
+                name='Non-Significant Signals',
+                marker=dict(color='red', size=8),
+                line=dict(width=0),  # Explicitly disable lines
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Sortino Ratio: %{y:.2f}<br>' +
+                            'Significant: ✗<extra></extra>'
+            ))
+        
+        # Add reference line at y=0
+        fig_sortino_rsi.add_hline(y=0, line_dash="dash", line_color="gray", 
+                                 annotation_text="No Risk-Adjusted Return")
+        
+        fig_sortino_rsi.update_layout(
+            title="Sortino Ratio vs RSI Threshold",
+            xaxis_title="RSI Threshold",
+            yaxis_title="Sortino Ratio",
+            hovermode='closest',
+            xaxis=dict(range=[rsi_min, rsi_max]),
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_sortino_rsi, use_container_width=True, key="sortino_rsi_chart")
+        
+        # RSI vs Cumulative Return Chart
+        st.subheader("📊 RSI Threshold vs Cumulative Return")
+        st.info("💡 **What this shows:** This chart displays how the total cumulative return varies across different RSI thresholds. Higher cumulative returns indicate better overall performance. Look for peaks in the chart to identify optimal RSI thresholds.")
+        
+        fig_return_rsi = go.Figure()
+        
+        # Add points for significant signals (green)
+        if not significant_data.empty:
+            fig_return_rsi.add_trace(go.Scatter(
+                x=significant_data['RSI_Threshold'],
+                y=significant_data['Total_Return'],
+                mode='markers',
+                name='Significant Signals',
+                marker=dict(color='green', size=8),
+                line=dict(width=0),  # Explicitly disable lines
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Cumulative Return: %{y:.3%}<br>' +
+                            'Significant: ✓<extra></extra>'
+            ))
+        
+        # Add points for non-significant signals (red)
+        if not non_significant_data.empty:
+            fig_return_rsi.add_trace(go.Scatter(
+                x=non_significant_data['RSI_Threshold'],
+                y=non_significant_data['Total_Return'],
+                mode='markers',
+                name='Non-Significant Signals',
+                marker=dict(color='red', size=8),
+                line=dict(width=0),  # Explicitly disable lines
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Cumulative Return: %{y:.3%}<br>' +
+                            'Significant: ✗<extra></extra>'
+            ))
+        
+        # Add reference line at y=0
+        fig_return_rsi.add_hline(y=0, line_dash="dash", line_color="gray", 
+                                annotation_text="No Return")
+        
+        fig_return_rsi.update_layout(
+            title="Cumulative Return vs RSI Threshold",
+            xaxis_title="RSI Threshold",
+            yaxis_title="Cumulative Return (%)",
+            hovermode='closest',
+            xaxis=dict(range=[rsi_min, rsi_max]),
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_return_rsi, use_container_width=True, key="return_rsi_chart")
         
         # Top significant signals
         if len(significant_signals) > 0:
