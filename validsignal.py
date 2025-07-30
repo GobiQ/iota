@@ -543,10 +543,13 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     display_df['Significant'] = display_df['significant'].apply(lambda x: "✓" if x else "✗")
     display_df['Effect_Size'] = display_df['effect_size'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
     
+    # Add p-value to display columns
+    display_df['P_Value'] = display_df['p_value'].apply(lambda x: f"{x:.4f}" if isinstance(x, (int, float)) else x)
+    
     # Drop the equity_curve and trades columns for display
     display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
                    'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
-                   'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size']
+                   'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size', 'P_Value']
     
     # Check if all display columns exist
     missing_display_cols = [col for col in display_cols if col not in display_df.columns]
@@ -554,39 +557,182 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         st.error(f"Missing display columns: {missing_display_cols}")
         st.stop()
     
-    st.dataframe(display_df[display_cols], use_container_width=True)
-    
     # Add filter options for the results table
     st.subheader("🔍 Filter Results")
-    col1, col2, col3 = st.columns(3)
+    
+    # Create filter columns
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        # Filter by significance
-        significance_filter = st.selectbox(
-            "Filter by Significance:",
-            ["All Signals", "Significant Only", "Non-Significant Only"],
-            help="Filter the results table to show only signals with specific significance levels."
+        # RSI Threshold filter
+        rsi_min_filter = st.number_input(
+            "Min RSI Threshold:",
+            min_value=float(display_df['RSI_Threshold'].min()),
+            max_value=float(display_df['RSI_Threshold'].max()),
+            value=float(display_df['RSI_Threshold'].min()),
+            step=0.5,
+            help="Minimum RSI threshold to include in results."
+        )
+        
+        rsi_max_filter = st.number_input(
+            "Max RSI Threshold:",
+            min_value=float(display_df['RSI_Threshold'].min()),
+            max_value=float(display_df['RSI_Threshold'].max()),
+            value=float(display_df['RSI_Threshold'].max()),
+            step=0.5,
+            help="Maximum RSI threshold to include in results."
         )
     
     with col2:
-        # Filter by confidence level
-        confidence_filter = st.selectbox(
-            "Filter by Confidence Level:",
-            ["All Levels", "95%+", "80-95%", "Below 80%"],
-            help="Filter the results table to show only signals with specific confidence levels."
+        # Confidence Level filter
+        confidence_min_filter = st.number_input(
+            "Min Confidence Level (%):",
+            min_value=0.0,
+            max_value=100.0,
+            value=0.0,
+            step=1.0,
+            help="Minimum confidence level to include in results."
+        )
+        
+        confidence_max_filter = st.number_input(
+            "Max Confidence Level (%):",
+            min_value=0.0,
+            max_value=100.0,
+            value=100.0,
+            step=1.0,
+            help="Maximum confidence level to include in results."
         )
     
     with col3:
-        # Filter by minimum trades
-        min_trades = st.number_input(
-            "Minimum Trades:",
+        # Total Trades filter
+        min_trades_filter = st.number_input(
+            "Min Total Trades:",
             min_value=0,
             value=0,
-            help="Filter to show only signals with at least this many trades."
+            help="Minimum number of trades to include in results."
         )
+        
+        # Win Rate filter
+        min_win_rate_filter = st.number_input(
+            "Min Win Rate (%):",
+            min_value=0.0,
+            max_value=100.0,
+            value=0.0,
+            step=1.0,
+            help="Minimum win rate percentage to include in results."
+        )
+    
+    with col4:
+        # Average Return filter
+        min_avg_return_filter = st.number_input(
+            "Min Avg Return (%):",
+            min_value=-100.0,
+            max_value=100.0,
+            value=-100.0,
+            step=0.1,
+            help="Minimum average return percentage to include in results."
+        )
+        
+        # Total Return filter
+        min_total_return_filter = st.number_input(
+            "Min Total Return (%):",
+            min_value=-100.0,
+            max_value=100.0,
+            value=-100.0,
+            step=0.1,
+            help="Minimum total return percentage to include in results."
+        )
+    
+    # Additional filters
+    col5, col6, col7, col8 = st.columns(4)
+    
+    with col5:
+        # Annualized Return filter
+        min_annualized_return_filter = st.number_input(
+            "Min Annualized Return (%):",
+            min_value=-100.0,
+            max_value=100.0,
+            value=-100.0,
+            step=0.1,
+            help="Minimum annualized return percentage to include in results."
+        )
+    
+    with col6:
+        # Sortino Ratio filter
+        min_sortino_filter = st.number_input(
+            "Min Sortino Ratio:",
+            min_value=-10.0,
+            max_value=10.0,
+            value=-10.0,
+            step=0.1,
+            help="Minimum Sortino ratio to include in results."
+        )
+    
+    with col7:
+        # Significance filter
+        significance_filter = st.selectbox(
+            "Significance:",
+            ["All", "Significant Only", "Non-Significant Only"],
+            help="Filter by statistical significance."
+        )
+        
+        # P-Value filter
+        max_p_value_filter = st.number_input(
+            "Max P-Value:",
+            min_value=0.0,
+            max_value=1.0,
+            value=1.0,
+            step=0.001,
+            help="Maximum p-value to include in results (lower = more significant)."
+        )
+    
+    with col8:
+        # Clear filters button
+        if st.button("Clear All Filters", type="secondary"):
+            st.rerun()
     
     # Apply filters to the display dataframe
     filtered_df = display_df.copy()
+    
+    # Apply RSI threshold filter
+    filtered_df = filtered_df[
+        (filtered_df['RSI_Threshold'] >= rsi_min_filter) & 
+        (filtered_df['RSI_Threshold'] <= rsi_max_filter)
+    ]
+    
+    # Apply confidence level filter
+    filtered_df = filtered_df[
+        (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= confidence_min_filter) & 
+        (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) <= confidence_max_filter)
+    ]
+    
+    # Apply total trades filter
+    filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades_filter]
+    
+    # Apply win rate filter
+    filtered_df = filtered_df[
+        filtered_df['Win_Rate'].str.replace('%', '').astype(float) >= min_win_rate_filter
+    ]
+    
+    # Apply average return filter
+    filtered_df = filtered_df[
+        filtered_df['Avg_Return'].str.replace('%', '').astype(float) >= min_avg_return_filter
+    ]
+    
+    # Apply total return filter
+    filtered_df = filtered_df[
+        filtered_df['Total_Return'].str.replace('%', '').astype(float) >= min_total_return_filter
+    ]
+    
+    # Apply annualized return filter
+    filtered_df = filtered_df[
+        filtered_df['Annualized_Return'].str.replace('%', '').astype(float) >= min_annualized_return_filter
+    ]
+    
+    # Apply Sortino ratio filter
+    filtered_df = filtered_df[
+        filtered_df['Sortino_Ratio'].apply(lambda x: float(x) if x != "∞" else 999) >= min_sortino_filter
+    ]
     
     # Apply significance filter
     if significance_filter == "Significant Only":
@@ -594,21 +740,13 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     elif significance_filter == "Non-Significant Only":
         filtered_df = filtered_df[filtered_df['Significant'] == "✗"]
     
-    # Apply confidence level filter
-    if confidence_filter == "95%+":
-        filtered_df = filtered_df[filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= 95]
-    elif confidence_filter == "80-95%":
-        filtered_df = filtered_df[(filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= 80) & 
-                                 (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) < 95)]
-    elif confidence_filter == "Below 80%":
-        filtered_df = filtered_df[filtered_df['Confidence_Level'].str.replace('%', '').astype(float) < 80]
-    
-    # Apply minimum trades filter
-    if min_trades > 0:
-        filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades]
+    # Apply p-value filter
+    filtered_df = filtered_df[
+        filtered_df['P_Value'].astype(float) <= max_p_value_filter
+    ]
     
     # Display filtered results
-    st.subheader(f"📊 Filtered Results ({len(filtered_df)} signals)")
+    st.subheader(f"📊 RSI Analysis Results ({len(filtered_df)} signals)")
     st.dataframe(filtered_df[display_cols], use_container_width=True)
     
     # Find best strategies (needed for subsequent sections)
@@ -644,7 +782,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 x=significant_data['RSI_Threshold'],
                 y=significant_data['confidence_level'],
                 mode='markers',
-                name='Significant Signals',
+                name='Significant Signals (≥95%)',
                 marker=dict(
                     color='green',
                     size=abs(significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
@@ -658,14 +796,35 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                             'Significant: ✓<extra></extra>'
             ))
         
+        # Add points for borderline significant signals (yellow)
+        borderline_data = valid_signals[(valid_signals['confidence_level'] >= 85) & (valid_signals['confidence_level'] < 95)]
+        if not borderline_data.empty:
+            fig_confidence_rsi.add_trace(go.Scatter(
+                x=borderline_data['RSI_Threshold'],
+                y=borderline_data['confidence_level'],
+                mode='markers',
+                name='Borderline Signals (85-95%)',
+                marker=dict(
+                    color='yellow',
+                    size=abs(borderline_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
+                    sizemin=5,
+                    sizemode='area',
+                    opacity=0.7
+                ),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Confidence: %{y:.1f}%<br>' +
+                            'Effect Size: %{marker.size:.1f}<br>' +
+                            'Borderline: ⚠<extra></extra>'
+            ))
+        
         # Add points for non-significant signals (red)
-        non_significant_data = valid_signals[valid_signals['significant'] == False]
+        non_significant_data = valid_signals[valid_signals['confidence_level'] < 85]
         if not non_significant_data.empty:
             fig_confidence_rsi.add_trace(go.Scatter(
                 x=non_significant_data['RSI_Threshold'],
                 y=non_significant_data['confidence_level'],
                 mode='markers',
-                name='Non-Significant Signals',
+                name='Non-Significant Signals (<85%)',
                 marker=dict(
                     color='red',
                     size=abs(non_significant_data['effect_size']) * 20 + 5,  # Scale effect size for visibility
@@ -682,6 +841,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         # Add reference lines
         fig_confidence_rsi.add_hline(y=95, line_dash="dash", line_color="red", 
                                    annotation_text="95% Confidence")
+        fig_confidence_rsi.add_hline(y=85, line_dash="dash", line_color="yellow", 
+                                   annotation_text="85% Confidence")
         fig_confidence_rsi.add_hline(y=80, line_dash="dash", line_color="orange", 
                                    annotation_text="80% Confidence")
         
@@ -972,7 +1133,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                     x=significant_data['effect_size'],
                     y=significant_data['confidence_level'],
                     mode='markers',
-                    name='Significant Signals',
+                    name='Significant Signals (≥95%)',
                     marker=dict(color='green', size=8),
                     hovertemplate='<b>RSI %{text}</b><br>' +
                                 'Effect Size: %{x:.3f}<br>' +
@@ -981,14 +1142,30 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                     text=[f"{row['RSI_Threshold']}" for _, row in significant_data.iterrows()]
                 ))
             
+            # Add points for borderline significant signals (yellow)
+            borderline_data = valid_signals[(valid_signals['confidence_level'] >= 85) & (valid_signals['confidence_level'] < 95)]
+            if not borderline_data.empty:
+                fig_effect.add_trace(go.Scatter(
+                    x=borderline_data['effect_size'],
+                    y=borderline_data['confidence_level'],
+                    mode='markers',
+                    name='Borderline Signals (85-95%)',
+                    marker=dict(color='yellow', size=8),
+                    hovertemplate='<b>RSI %{text}</b><br>' +
+                                'Effect Size: %{x:.3f}<br>' +
+                                'Confidence: %{y:.1f}%<br>' +
+                                'Borderline: ⚠<extra></extra>',
+                    text=[f"{row['RSI_Threshold']}" for _, row in borderline_data.iterrows()]
+                ))
+            
             # Add points for non-significant signals (red)
-            non_significant_data = valid_signals[valid_signals['significant'] == False]
+            non_significant_data = valid_signals[valid_signals['confidence_level'] < 85]
             if not non_significant_data.empty:
                 fig_effect.add_trace(go.Scatter(
                     x=non_significant_data['effect_size'],
                     y=non_significant_data['confidence_level'],
                     mode='markers',
-                    name='Non-Significant Signals',
+                    name='Non-Significant Signals (<85%)',
                     marker=dict(color='red', size=8),
                     hovertemplate='<b>RSI %{text}</b><br>' +
                                 'Effect Size: %{x:.3f}<br>' +
@@ -1000,6 +1177,10 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             # Add reference lines
             fig_effect.add_hline(y=95, line_dash="dash", line_color="red", 
                                annotation_text="95% Confidence")
+            fig_effect.add_hline(y=85, line_dash="dash", line_color="yellow", 
+                               annotation_text="85% Confidence")
+            fig_effect.add_hline(y=80, line_dash="dash", line_color="orange", 
+                               annotation_text="80% Confidence")
             fig_effect.add_vline(x=0, line_dash="dash", line_color="gray", 
                                annotation_text="No Effect")
             
