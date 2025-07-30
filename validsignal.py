@@ -425,6 +425,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 best_sortino_idx = results_df['Sortino_Ratio'].idxmax()
                 best_annualized_idx = results_df['annualized_return'].idxmax()
                 best_winrate_idx = results_df['Win_Rate'].idxmax()
+                best_total_return_idx = results_df['Total_Return'].idxmax()
                 
                 col1, col2, col3, col4 = st.columns(4)
                 
@@ -444,7 +445,10 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                              f"RSI {results_df.loc[best_winrate_idx, 'RSI_Threshold']}")
                 
                 with col4:
-                    spy_annualized = (benchmark.iloc[-1] - 1) * (365 / (benchmark.index[-1] - benchmark.index[0]).days)
+                    # Fix SPY annualized return calculation
+                    total_days = (benchmark.index[-1] - benchmark.index[0]).days
+                    spy_total_return = benchmark.iloc[-1] - 1
+                    spy_annualized = (1 + spy_total_return) ** (365 / total_days) - 1 if total_days > 0 else 0
                     st.metric("SPY Annualized Return", f"{spy_annualized:.2%}")
                 
                 # Return Distribution Analysis
@@ -486,7 +490,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 st.subheader("🏆 Best Strategy Analysis")
                 
                 # Create tabs for different best strategies
-                tab1, tab2, tab3 = st.tabs(["📈 Best Annualized Return", "📊 Best Sortino Ratio", "🎯 Best Win Rate"])
+                tab1, tab2, tab3, tab4 = st.tabs(["📈 Best Annualized Return", "📊 Best Sortino Ratio", "🎯 Best Win Rate", "💰 Best Total Return"])
                 
                 with tab1:
                     best_annualized_strategy = results_df.loc[best_annualized_idx]
@@ -664,6 +668,193 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         )
                         st.plotly_chart(fig, use_container_width=True)
                 
+                with tab4:
+                    best_total_return_strategy = results_df.loc[best_total_return_idx]
+                    st.write(f"**Strategy:** RSI {best_total_return_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_total_return_strategy['RSI_Threshold']})")
+                    
+                    # Performance metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Return", f"{best_total_return_strategy['Total_Return']:.2%}")
+                        st.metric("Annualized Return", f"{best_total_return_strategy['annualized_return']:.2%}")
+                    with col2:
+                        st.metric("Win Rate", f"{best_total_return_strategy['Win_Rate']:.1%}")
+                        st.metric("Total Trades", best_total_return_strategy['Total_Trades'])
+                    with col3:
+                        st.metric("Sortino Ratio", f"{best_total_return_strategy['Sortino_Ratio']:.2f}")
+                        st.metric("Avg Hold Days", f"{best_total_return_strategy['Avg_Hold_Days']:.1f}")
+                    with col4:
+                        st.metric("Confidence Level", f"{best_total_return_strategy['confidence_level']:.1f}%")
+                        st.metric("Significant", "✓" if best_total_return_strategy['significant'] else "✗")
+                    
+                    # Equity curve for best total return
+                    if best_total_return_strategy['equity_curve'] is not None:
+                        fig = go.Figure()
+                        
+                        fig.add_trace(go.Scatter(
+                            x=best_total_return_strategy['equity_curve'].index,
+                            y=best_total_return_strategy['equity_curve'].values,
+                            mode='lines',
+                            name=f"RSI {best_total_return_strategy['RSI_Threshold']} Strategy",
+                            line=dict(color='blue', width=2)
+                        ))
+                        
+                        fig.add_trace(go.Scatter(
+                            x=benchmark.index,
+                            y=benchmark.values,
+                            mode='lines',
+                            name="SPY Buy & Hold",
+                            line=dict(color='red', width=2, dash='dash')
+                        ))
+                        
+                        fig.update_layout(
+                            title=f"Equity Curve: Best Total Return Strategy (RSI {best_total_return_strategy['RSI_Threshold']})",
+                            xaxis_title="Date",
+                            yaxis_title="Equity",
+                            hovermode='x unified'
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                # Multiple Strategy Comparison
+                st.subheader("📊 Multiple Strategy Comparison")
+                
+                # Create comparison chart with all best strategies
+                fig_comparison = go.Figure()
+                
+                # Add benchmark
+                fig_comparison.add_trace(go.Scatter(
+                    x=benchmark.index,
+                    y=benchmark.values,
+                    mode='lines',
+                    name="SPY Buy & Hold",
+                    line=dict(color='red', width=2, dash='dash')
+                ))
+                
+                # Add best strategies
+                colors = ['blue', 'green', 'purple', 'orange']
+                strategies = [
+                    (best_annualized_idx, "Best Annualized Return"),
+                    (best_sortino_idx, "Best Sortino Ratio"),
+                    (best_winrate_idx, "Best Win Rate"),
+                    (best_total_return_idx, "Best Total Return")
+                ]
+                
+                for i, (idx, name) in enumerate(strategies):
+                    strategy = results_df.loc[idx]
+                    if strategy['equity_curve'] is not None:
+                        fig_comparison.add_trace(go.Scatter(
+                            x=strategy['equity_curve'].index,
+                            y=strategy['equity_curve'].values,
+                            mode='lines',
+                            name=f"{name} (RSI {strategy['RSI_Threshold']})",
+                            line=dict(color=colors[i], width=2)
+                        ))
+                
+                fig_comparison.update_layout(
+                    title="Multiple Strategy Comparison vs SPY",
+                    xaxis_title="Date",
+                    yaxis_title="Equity",
+                    hovermode='x unified',
+                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                )
+                st.plotly_chart(fig_comparison, use_container_width=True)
+                
+                # Individual Threshold Analysis
+                st.subheader("🎯 Individual Threshold Analysis")
+                
+                # Create a selectbox for individual threshold analysis
+                available_thresholds = results_df[results_df['Total_Trades'] > 0]['RSI_Threshold'].tolist()
+                
+                if available_thresholds:
+                    selected_threshold = st.selectbox(
+                        "Select RSI Threshold to analyze:",
+                        options=available_thresholds,
+                        index=0,
+                        format_func=lambda x: f"RSI {x} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {x})"
+                    )
+                    
+                    # Get data for selected threshold
+                    selected_idx = results_df[results_df['RSI_Threshold'] == selected_threshold].index[0]
+                    selected_data = results_df.loc[selected_idx]
+                    
+                    # Display metrics for selected threshold
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Return", f"{selected_data['Total_Return']:.2%}")
+                        st.metric("Annualized Return", f"{selected_data['annualized_return']:.2%}")
+                    with col2:
+                        st.metric("Win Rate", f"{selected_data['Win_Rate']:.1%}")
+                        st.metric("Total Trades", selected_data['Total_Trades'])
+                    with col3:
+                        st.metric("Sortino Ratio", f"{selected_data['Sortino_Ratio']:.2f}")
+                        st.metric("Avg Hold Days", f"{selected_data['Avg_Hold_Days']:.1f}")
+                    with col4:
+                        st.metric("Confidence Level", f"{selected_data['confidence_level']:.1f}%")
+                        st.metric("Significant", "✓" if selected_data['significant'] else "✗")
+                    
+                    # Equity curve for selected threshold
+                    if selected_data['equity_curve'] is not None:
+                        fig_selected = go.Figure()
+                        
+                        fig_selected.add_trace(go.Scatter(
+                            x=selected_data['equity_curve'].index,
+                            y=selected_data['equity_curve'].values,
+                            mode='lines',
+                            name=f"RSI {selected_threshold} Strategy",
+                            line=dict(color='blue', width=2)
+                        ))
+                        
+                        fig_selected.add_trace(go.Scatter(
+                            x=benchmark.index,
+                            y=benchmark.values,
+                            mode='lines',
+                            name="SPY Buy & Hold",
+                            line=dict(color='red', width=2, dash='dash')
+                        ))
+                        
+                        # Add trade markers
+                        if selected_data['trades']:
+                            entry_dates = [trade['entry_date'] for trade in selected_data['trades']]
+                            exit_dates = [trade['exit_date'] for trade in selected_data['trades']]
+                            entry_equity = [selected_data['equity_curve'].loc[date] for date in entry_dates if date in selected_data['equity_curve'].index]
+                            exit_equity = [selected_data['equity_curve'].loc[date] for date in exit_dates if date in selected_data['equity_curve'].index]
+                            
+                            fig_selected.add_trace(go.Scatter(
+                                x=entry_dates,
+                                y=entry_equity,
+                                mode='markers',
+                                name='Buy Signals',
+                                marker=dict(color='green', size=8, symbol='triangle-up')
+                            ))
+                            
+                            fig_selected.add_trace(go.Scatter(
+                                x=exit_dates,
+                                y=exit_equity,
+                                mode='markers',
+                                name='Sell Signals',
+                                marker=dict(color='red', size=8, symbol='triangle-down')
+                            ))
+                        
+                        fig_selected.update_layout(
+                            title=f"Equity Curve: RSI {selected_threshold} Strategy vs SPY",
+                            xaxis_title="Date",
+                            yaxis_title="Equity",
+                            hovermode='x unified'
+                        )
+                        st.plotly_chart(fig_selected, use_container_width=True)
+                        
+                        # Trade details for selected threshold
+                        with st.expander(f"📋 Trade Details - RSI {selected_threshold}"):
+                            if selected_data['trades']:
+                                trade_df = pd.DataFrame(selected_data['trades'])
+                                trade_df['return'] = trade_df['return'].apply(lambda x: f"{x:.2%}")
+                                trade_df['hold_days'] = trade_df['hold_days'].apply(lambda x: f"{x:.0f}")
+                                st.dataframe(trade_df, use_container_width=True)
+                            else:
+                                st.write("No trades executed.")
+                else:
+                    st.warning("No strategies with trades available for individual analysis")
+
                 # Download results
                 csv = results_df[display_cols].to_csv(index=False)
                 filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
