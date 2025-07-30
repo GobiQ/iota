@@ -649,7 +649,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         
                         # Multiple Strategy Comparison for Significant Strategies
                         st.subheader("📊 Significant Strategies Comparison")
-                        st.info("💡 **What this shows:** This chart compares all statistically significant strategies against SPY. Each line represents a different RSI threshold that showed significant outperformance.")
+                        st.info("💡 **What this shows:** This chart compares the top 5 most confident statistically significant strategies against SPY buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The strategies are ranked by confidence level, showing the most statistically reliable strategies first.")
                         
                         # Create comparison chart with all significant strategies
                         fig_comparison = go.Figure()
@@ -698,52 +698,58 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                 col1, col2, col3, col4 = st.columns(4)
                                 
                                 with col1:
+                                    st.metric("Total Trades", row['Total_Trades'], 
+                                             help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
+                                    st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                                             help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
+                                
+                                with col2:
+                                    st.metric("P-value", f"{row['p_value']:.4f}", 
+                                             help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
+                                    st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
+                                             help="How certain we are that the strategy outperforms SPY. Higher percentage means stronger evidence the strategy works.")
+                                
+                                with col3:
                                     st.metric("Total Return", f"{row['Total_Return']:.2%}", 
                                              help="The total percentage gain or loss over the entire period. Shows how much money you would have made (or lost) if you invested $100.")
                                     st.metric("Annualized Return", f"{row['annualized_return']:.2%}", 
                                              help="The yearly return rate, useful for comparing strategies over different time periods. Shows how much you'd earn per year on average.")
                                 
-                                with col2:
+                                with col4:
                                     st.metric("Win Rate", f"{row['Win_Rate']:.1%}", 
                                              help="Percentage of trades that were profitable. A higher win rate means the strategy wins more often than it loses.")
-                                    st.metric("Total Trades", row['Total_Trades'], 
-                                             help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
-                                
-                                with col3:
                                     st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞", 
                                              help="Risk-adjusted return measure that focuses on downside risk. Higher is better - it shows good returns with less risk of big losses.")
-                                    st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
-                                             help="Average number of days the strategy held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
-                                
-                                with col4:
-                                    st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
-                                             help="How certain we are that the strategy outperforms SPY. Higher percentage means stronger evidence the strategy works.")
-                                    st.metric("Effect Size", f"{row['effect_size']:.2f}", 
-                                             help="How much better/worse the strategy is compared to SPY. Positive means it beats SPY, negative means it underperforms.")
                                 
                                 # Additional metrics
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
+                                    st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
+                                             help="Average number of days the strategy held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
+                                    st.metric("Effect Size", f"{row['effect_size']:.2f}", 
+                                             help="How much better/worse the strategy is compared to SPY. Positive means it beats SPY, negative means it underperforms.")
+                                
+                                with col2:
                                     st.metric("Best Return", f"{row['Best_Return']:.2%}", 
                                              help="The best single trade return achieved by this strategy. Shows the strategy's potential upside.")
                                     st.metric("Worst Return", f"{row['Worst_Return']:.2%}", 
                                              help="The worst single trade return achieved by this strategy. Shows the strategy's potential downside risk.")
                                 
-                                with col2:
+                                with col3:
                                     st.metric("Return Std Dev", f"{row['Return_Std']:.2%}", 
                                              help="Standard deviation of trade returns. Lower values mean more consistent performance, higher values mean more volatile results.")
                                     st.metric("Final Equity", f"{row['Final_Equity']:.3f}", 
                                              help="The final value of a $1 investment. Shows how much your money would have grown (or shrunk) over the period.")
                                 
-                                with col3:
-                                    st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
-                                             help="Statistical measure of how different the strategy is from SPY. Higher absolute values mean stronger evidence of a real difference.")
-                                    st.metric("P-value", f"{row['p_value']:.4f}", 
-                                             help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
-                                
                                 with col4:
+                                    st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
+                                             help="Statistical measure of how different the strategy is from SPY. Examples: 2.0 = moderate difference, 3.0 = strong difference, 4.0+ = very strong difference. Higher absolute values mean stronger evidence of a real difference.")
                                     st.metric("Power", f"{row['power']:.2f}", 
                                              help="How likely the test is to detect a real difference if one exists. Higher power means more reliable statistical results.")
+                                
+                                # Final row
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
                                     st.metric("Significant", "✓" if row['significant'] else "✗", 
                                              help="Whether the strategy reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
                                 
@@ -853,52 +859,58 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                 col1, col2, col3, col4 = st.columns(4)
                                 
                                 with col1:
+                                    st.metric("Total Trades", row['Total_Trades'], 
+                                             help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
+                                    st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                                             help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
+                                
+                                with col2:
+                                    st.metric("P-value", f"{row['p_value']:.4f}", 
+                                             help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
+                                    st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
+                                             help="How certain we are that the strategy outperforms SPY. Higher percentage means stronger evidence the strategy works.")
+                                
+                                with col3:
                                     st.metric("Total Return", f"{row['Total_Return']:.2%}", 
                                              help="The total percentage gain or loss over the entire period. Shows how much money you would have made (or lost) if you invested $100.")
                                     st.metric("Annualized Return", f"{row['annualized_return']:.2%}", 
                                              help="The yearly return rate, useful for comparing strategies over different time periods. Shows how much you'd earn per year on average.")
                                 
-                                with col2:
+                                with col4:
                                     st.metric("Win Rate", f"{row['Win_Rate']:.1%}", 
                                              help="Percentage of trades that were profitable. A higher win rate means the strategy wins more often than it loses.")
-                                    st.metric("Total Trades", row['Total_Trades'], 
-                                             help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
-                                
-                                with col3:
                                     st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞", 
                                              help="Risk-adjusted return measure that focuses on downside risk. Higher is better - it shows good returns with less risk of big losses.")
-                                    st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
-                                             help="Average number of days the strategy held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
-                                
-                                with col4:
-                                    st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
-                                             help="How certain we are that the strategy outperforms SPY. Higher percentage means stronger evidence the strategy works.")
-                                    st.metric("Effect Size", f"{row['effect_size']:.2f}", 
-                                             help="How much better/worse the strategy is compared to SPY. Positive means it beats SPY, negative means it underperforms.")
                                 
                                 # Additional metrics with hover tooltips
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
+                                    st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
+                                             help="Average number of days the strategy held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
+                                    st.metric("Effect Size", f"{row['effect_size']:.2f}", 
+                                             help="How much better/worse the strategy is compared to SPY. Positive means it beats SPY, negative means it underperforms.")
+                                
+                                with col2:
                                     st.metric("Best Return", f"{row['Best_Return']:.2%}", 
                                              help="The best single trade return achieved by this strategy. Shows the strategy's potential upside.")
                                     st.metric("Worst Return", f"{row['Worst_Return']:.2%}", 
                                              help="The worst single trade return achieved by this strategy. Shows the strategy's potential downside risk.")
                                 
-                                with col2:
+                                with col3:
                                     st.metric("Return Std Dev", f"{row['Return_Std']:.2%}", 
                                              help="Standard deviation of trade returns. Lower values mean more consistent performance, higher values mean more volatile results.")
                                     st.metric("Final Equity", f"{row['Final_Equity']:.3f}", 
                                              help="The final value of a $1 investment. Shows how much your money would have grown (or shrunk) over the period.")
                                 
-                                with col3:
-                                    st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
-                                             help="Statistical measure of how different the strategy is from SPY. Higher absolute values mean stronger evidence of a real difference.")
-                                    st.metric("P-value", f"{row['p_value']:.4f}", 
-                                             help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
-                                
                                 with col4:
+                                    st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
+                                             help="Statistical measure of how different the strategy is from SPY. Examples: 2.0 = moderate difference, 3.0 = strong difference, 4.0+ = very strong difference. Higher absolute values mean stronger evidence of a real difference.")
                                     st.metric("Power", f"{row['power']:.2f}", 
                                              help="How likely the test is to detect a real difference if one exists. Higher power means more reliable statistical results.")
+                                
+                                # Final row
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
                                     st.metric("Significant", "✓" if row['significant'] else "✗", 
                                              help="Whether the strategy reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
                                 
