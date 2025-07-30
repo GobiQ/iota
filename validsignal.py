@@ -179,11 +179,11 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
         'annualized_return': annualized_return
     }
 
-def calculate_statistical_significance(strategy_returns: np.ndarray, benchmark_returns: np.ndarray, 
+def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchmark_equity_curve: pd.Series, 
                                     strategy_annualized: float, benchmark_annualized: float) -> Dict:
-    """Calculate statistical significance of strategy vs benchmark"""
+    """Calculate statistical significance of strategy vs benchmark under same conditions"""
     
-    if len(strategy_returns) == 0:
+    if len(strategy_equity_curve) == 0 or len(benchmark_equity_curve) == 0:
         return {
             't_statistic': 0,
             'p_value': 1.0,
@@ -193,8 +193,27 @@ def calculate_statistical_significance(strategy_returns: np.ndarray, benchmark_r
             'power': 0
         }
     
-    # Perform t-test on returns
-    t_stat, p_value = stats.ttest_ind(strategy_returns, benchmark_returns)
+    # Calculate daily returns for both strategy and benchmark
+    strategy_returns = strategy_equity_curve.pct_change().dropna()
+    benchmark_returns = benchmark_equity_curve.pct_change().dropna()
+    
+    # Align the returns on the same dates
+    common_dates = strategy_returns.index.intersection(benchmark_returns.index)
+    if len(common_dates) == 0:
+        return {
+            't_statistic': 0,
+            'p_value': 1.0,
+            'confidence_level': 0,
+            'significant': False,
+            'effect_size': 0,
+            'power': 0
+        }
+    
+    strategy_returns = strategy_returns[common_dates]
+    benchmark_returns = benchmark_returns[common_dates]
+    
+    # Perform t-test on daily returns
+    t_stat, p_value = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
     
     # Calculate confidence level (1 - p_value)
     confidence_level = (1 - p_value) * 100
@@ -203,11 +222,11 @@ def calculate_statistical_significance(strategy_returns: np.ndarray, benchmark_r
     significant = p_value < 0.05
     
     # Calculate effect size (Cohen's d)
-    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns, ddof=1) + 
-                          (len(benchmark_returns) - 1) * np.var(benchmark_returns, ddof=1)) / 
+    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns.values, ddof=1) + 
+                          (len(benchmark_returns) - 1) * np.var(benchmark_returns.values, ddof=1)) / 
                          (len(strategy_returns) + len(benchmark_returns) - 2))
     
-    effect_size = (np.mean(strategy_returns) - np.mean(benchmark_returns)) / pooled_std if pooled_std > 0 else 0
+    effect_size = (np.mean(strategy_returns.values) - np.mean(benchmark_returns.values)) / pooled_std if pooled_std > 0 else 0
     
     # Calculate statistical power (simplified)
     # For small sample sizes, power calculation is complex, so we'll use a simplified approach
@@ -264,14 +283,58 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
         analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period)
         
         # Calculate statistical significance
-        strategy_returns = analysis['returns']
-        if len(strategy_returns) > 0:
-            # For statistical testing, we need to compare strategy returns vs benchmark returns
-            # We'll use the strategy's trade returns vs random benchmark returns of same frequency
+        strategy_equity_curve = analysis['equity_curve']
+        if len(strategy_equity_curve) > 0:
+            # Create benchmark equity curve that follows the same RSI conditions
+            # This ensures we're comparing strategy vs SPY under the same conditions
+            signal_rsi = calculate_rsi(signal_data, window=rsi_period)
+            
+            # Generate buy signals for benchmark (same as strategy)
+            if comparison == "less_than":
+                benchmark_signals = (signal_rsi <= threshold).astype(int)
+            else:  # greater_than
+                benchmark_signals = (signal_rsi >= threshold).astype(int)
+            
+            # Calculate benchmark equity curve using SPY prices
+            benchmark_equity_curve = pd.Series(1.0, index=benchmark_data.index)
+            current_equity = 1.0
+            in_position = False
+            entry_equity = 1.0
+            entry_price = None
+            
+            for date in benchmark_data.index:
+                current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
+                current_price = benchmark_data[date]
+                
+                if current_signal == 1 and not in_position:
+                    # Enter position
+                    in_position = True
+                    entry_equity = current_equity
+                    entry_price = current_price
+                    
+                elif current_signal == 0 and in_position:
+                    # Exit position
+                    trade_return = (current_price - entry_price) / entry_price
+                    current_equity = entry_equity * (1 + trade_return)
+                    in_position = False
+                
+                # Update equity curve
+                if in_position:
+                    current_equity = entry_equity * (current_price / entry_price)
+                
+                benchmark_equity_curve[date] = current_equity
+            
+            # Handle case where we're still in position at the end
+            if in_position:
+                final_price = benchmark_data.iloc[-1]
+                trade_return = (final_price - entry_price) / entry_price
+                current_equity = entry_equity * (1 + trade_return)
+                benchmark_equity_curve.iloc[-1] = current_equity
+            
             benchmark_annualized = (benchmark.iloc[-1] - 1) * (365 / (benchmark.index[-1] - benchmark.index[0]).days)
             stats_result = calculate_statistical_significance(
-                strategy_returns, 
-                benchmark_returns.sample(n=min(len(strategy_returns), len(benchmark_returns))).values,
+                strategy_equity_curve, 
+                benchmark_equity_curve,
                 analysis['annualized_return'],
                 benchmark_annualized
             )
@@ -734,13 +797,18 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     st.write("""
                     **Understanding Statistical Significance:**
                     
-                    - **Confidence Level**: Percentage confidence that the strategy outperforms SPY
+                    - **Confidence Level**: Percentage confidence that the strategy outperforms SPY **under the same RSI conditions**
                     - **P-value**: Probability of getting these results by chance (lower is better)
                     - **Effect Size**: Magnitude of the difference (Cohen's d)
                     - **Significant**: P-value < 0.05 (95% confidence level)
                     
+                    **What This Measures:**
+                    The confidence level compares your strategy (buying/selling the target ticker based on signal RSI) 
+                    vs. buying/selling SPY based on the **same signal RSI conditions**. This ensures a fair comparison 
+                    of whether your target ticker choice is better than SPY when the same RSI signals are applied.
+                    
                     **Interpretation:**
-                    - ✓ **Significant**: Strong evidence the strategy beats SPY
+                    - ✓ **Significant**: Strong evidence your target ticker beats SPY under these RSI conditions
                     - ✗ **Not Significant**: Results could be due to chance
                     - **Effect Size**: 
                       - Small: 0.2-0.5
