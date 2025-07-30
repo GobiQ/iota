@@ -764,16 +764,18 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     # Add note about confidence levels at extreme RSI values
     st.warning("⚠️ **Note on Extreme RSI Values:** At the extreme ends of RSI thresholds (very low or very high values), there are often not enough historical events to generate statistically confident results. This is why confidence levels may drop off at these extremes - the sample size becomes too small for reliable statistical analysis.")
     
-    # Filter signals with trades
-    valid_signals = filtered_df[filtered_df['Total_Trades'] > 0].copy()
+    # Use all signals for the chart (including those with 0 trades)
+    valid_signals = filtered_df.copy()
     
     # Add summary of statistical analysis
     if not valid_signals.empty:
+        signals_with_trades = valid_signals[valid_signals['Total_Trades'] > 0]
         significant_count = len(valid_signals[valid_signals['significant'] == True])
         total_signals = len(valid_signals)
-        st.success(f"📊 **Analysis Summary:** Found {significant_count} statistically significant signals out of {total_signals} signals with trades.")
+        signals_with_trades_count = len(signals_with_trades)
+        st.success(f"📊 **Analysis Summary:** Found {significant_count} statistically significant signals out of {total_signals} total signals ({signals_with_trades_count} with trades).")
     else:
-        st.warning("⚠️ **No signals with trades found.** This means none of the RSI thresholds generated any buy/sell signals during the analysis period.")
+        st.warning("⚠️ **No signals found.** This means none of the RSI thresholds generated any results during the analysis period.")
     
     if not valid_signals.empty:
         # Create significance summary
