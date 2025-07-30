@@ -488,8 +488,15 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Interactive RSI Analysis Results
                 st.subheader("📊 Interactive RSI Analysis Results")
-                st.write("�� **Results Table**: Click on any row to analyze that strategy")
-                st.write("🎯 **Individual Analysis**: Selected strategy details appear below")
+                st.write("📋 **Results Table**: View all strategies below")
+                st.write("🎯 **Individual Analysis**: Select any strategy to see detailed analysis")
+                
+                # Display the results table first
+                st.dataframe(
+                    display_df[display_cols], 
+                    use_container_width=True,
+                    hide_index=True
+                )
                 
                 # Store results in session state to persist across interactions
                 if 'rsi_results' not in st.session_state:
@@ -501,152 +508,146 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 st.session_state.rsi_results = results_df
                 st.session_state.benchmark = benchmark
                 
-                # Create interactive table with clickable rows
+                # Create a more compact selection method
                 available_thresholds = results_df[results_df['Total_Trades'] > 0]['RSI_Threshold'].tolist()
                 available_thresholds.sort()
                 
-                # Create a more interactive selection method
-                st.write("**Select a strategy to analyze:**")
-                
-                # Use radio buttons for better interaction
                 if available_thresholds:
-                    selected_threshold = st.radio(
+                    st.write("**💡 Select a strategy to analyze (choose from dropdown):**")
+                    
+                    # Use a simple selectbox with a unique key to prevent conflicts
+                    selected_threshold = st.selectbox(
                         "Choose RSI Threshold:",
                         options=available_thresholds,
                         format_func=lambda x: f"RSI {x} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {x}) - {results_df[results_df['RSI_Threshold'] == x]['Total_Return'].iloc[0]:.2%} return",
-                        key="strategy_selector"
+                        key="strategy_selector_unique"
                     )
                     
-                    # Store selected threshold in session state
-                    st.session_state.selected_threshold = selected_threshold
-                    
-                    # Display the results table
-                    st.dataframe(
-                        display_df[display_cols], 
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                    
-                    # Get data for selected threshold from existing results
-                    selected_idx = results_df[results_df['RSI_Threshold'] == selected_threshold].index[0]
-                    selected_data = results_df.loc[selected_idx]
-                    
-                    # Display detailed analysis for selected threshold
-                    st.subheader(f"🎯 Detailed Analysis: RSI {selected_threshold}")
-                    
-                    # Show which strategy was selected
-                    st.info(f"**Selected Strategy**: {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {selected_threshold} (Target: {target_ticker})")
-                    
-                    # Display metrics for selected threshold
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total Return", f"{selected_data['Total_Return']:.2%}")
-                        st.metric("Annualized Return", f"{selected_data['annualized_return']:.2%}")
-                    with col2:
-                        st.metric("Win Rate", f"{selected_data['Win_Rate']:.1%}")
-                        st.metric("Total Trades", selected_data['Total_Trades'])
-                    with col3:
-                        st.metric("Sortino Ratio", f"{selected_data['Sortino_Ratio']:.2f}")
-                        st.metric("Avg Hold Days", f"{selected_data['Avg_Hold_Days']:.1f}")
-                    with col4:
-                        st.metric("Confidence Level", f"{selected_data['confidence_level']:.1f}%")
-                        st.metric("Significant", "✓" if selected_data['significant'] else "✗")
-                    
-                    # Return distribution for selected strategy
-                    selected_returns = selected_data['returns']
-                    if len(selected_returns) > 0:
-                        st.subheader(f"📊 Return Distribution: RSI {selected_threshold}")
+                    # Only show analysis if a threshold is selected and we have results
+                    if selected_threshold and 'rsi_results' in st.session_state:
+                        # Get data for selected threshold from session state results
+                        session_results = st.session_state.rsi_results
+                        selected_idx = session_results[session_results['RSI_Threshold'] == selected_threshold].index[0]
+                        selected_data = session_results.loc[selected_idx]
                         
-                        fig_dist = px.histogram(
-                            x=selected_returns,
-                            nbins=20,
-                            title=f"Distribution of Trade Returns (RSI {selected_threshold})",
-                            labels={'x': 'Trade Return', 'y': 'Frequency'}
-                        )
-                        fig_dist.update_layout(showlegend=False)
-                        st.plotly_chart(fig_dist, use_container_width=True)
+                        # Display detailed analysis for selected threshold
+                        st.subheader(f"🎯 Detailed Analysis: RSI {selected_threshold}")
                         
-                        # Return statistics for selected strategy
+                        # Show which strategy was selected
+                        st.info(f"**Selected Strategy**: {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {selected_threshold} (Target: {target_ticker})")
+                        
+                        # Display metrics for selected threshold
                         col1, col2, col3, col4 = st.columns(4)
-                        
                         with col1:
-                            st.metric("Total Trades", len(selected_returns))
-                            st.metric("Win Rate", f"{(selected_returns > 0).mean():.1%}")
-                        
+                            st.metric("Total Return", f"{selected_data['Total_Return']:.2%}")
+                            st.metric("Annualized Return", f"{selected_data['annualized_return']:.2%}")
                         with col2:
-                            st.metric("Average Return", f"{np.mean(selected_returns):.2%}")
-                            st.metric("Best Return", f"{np.max(selected_returns):.2%}")
-                        
+                            st.metric("Win Rate", f"{selected_data['Win_Rate']:.1%}")
+                            st.metric("Total Trades", selected_data['Total_Trades'])
                         with col3:
-                            st.metric("Worst Return", f"{np.min(selected_returns):.2%}")
-                            st.metric("Return Std Dev", f"{np.std(selected_returns):.2%}")
-                        
+                            st.metric("Sortino Ratio", f"{selected_data['Sortino_Ratio']:.2f}")
+                            st.metric("Avg Hold Days", f"{selected_data['Avg_Hold_Days']:.1f}")
                         with col4:
-                            st.metric("Skewness", f"{stats.skew(selected_returns):.2f}")
-                            st.metric("Kurtosis", f"{stats.kurtosis(selected_returns):.2f}")
-                    
-                    # Equity curve for selected threshold using existing data
-                    if selected_data['equity_curve'] is not None:
-                        st.subheader(f"📈 Equity Curve: RSI {selected_threshold}")
+                            st.metric("Confidence Level", f"{selected_data['confidence_level']:.1f}%")
+                            st.metric("Significant", "✓" if selected_data['significant'] else "✗")
                         
-                        fig_selected = go.Figure()
+                        # Return distribution for selected strategy
+                        selected_returns = selected_data['returns']
+                        if len(selected_returns) > 0:
+                            st.subheader(f"📊 Return Distribution: RSI {selected_threshold}")
+                            
+                            fig_dist = px.histogram(
+                                x=selected_returns,
+                                nbins=20,
+                                title=f"Distribution of Trade Returns (RSI {selected_threshold})",
+                                labels={'x': 'Trade Return', 'y': 'Frequency'}
+                            )
+                            fig_dist.update_layout(showlegend=False)
+                            st.plotly_chart(fig_dist, use_container_width=True)
+                            
+                            # Return statistics for selected strategy
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                st.metric("Total Trades", len(selected_returns))
+                                st.metric("Win Rate", f"{(selected_returns > 0).mean():.1%}")
+                            
+                            with col2:
+                                st.metric("Average Return", f"{np.mean(selected_returns):.2%}")
+                                st.metric("Best Return", f"{np.max(selected_returns):.2%}")
+                            
+                            with col3:
+                                st.metric("Worst Return", f"{np.min(selected_returns):.2%}")
+                                st.metric("Return Std Dev", f"{np.std(selected_returns):.2%}")
+                            
+                            with col4:
+                                st.metric("Skewness", f"{stats.skew(selected_returns):.2f}")
+                                st.metric("Kurtosis", f"{stats.kurtosis(selected_returns):.2f}")
                         
-                        fig_selected.add_trace(go.Scatter(
-                            x=selected_data['equity_curve'].index,
-                            y=selected_data['equity_curve'].values,
-                            mode='lines',
-                            name=f"RSI {selected_threshold} Strategy",
-                            line=dict(color='blue', width=2)
-                        ))
-                        
-                        fig_selected.add_trace(go.Scatter(
-                            x=benchmark.index,
-                            y=benchmark.values,
-                            mode='lines',
-                            name="SPY Buy & Hold",
-                            line=dict(color='red', width=2, dash='dash')
-                        ))
-                        
-                        # Add trade markers using existing trade data
-                        if selected_data['trades']:
-                            entry_dates = [trade['entry_date'] for trade in selected_data['trades']]
-                            exit_dates = [trade['exit_date'] for trade in selected_data['trades']]
-                            entry_equity = [selected_data['equity_curve'].loc[date] for date in entry_dates if date in selected_data['equity_curve'].index]
-                            exit_equity = [selected_data['equity_curve'].loc[date] for date in exit_dates if date in selected_data['equity_curve'].index]
+                        # Equity curve for selected threshold using existing data
+                        if selected_data['equity_curve'] is not None:
+                            st.subheader(f"📈 Equity Curve: RSI {selected_threshold}")
+                            
+                            fig_selected = go.Figure()
                             
                             fig_selected.add_trace(go.Scatter(
-                                x=entry_dates,
-                                y=entry_equity,
-                                mode='markers',
-                                name='Buy Signals',
-                                marker=dict(color='green', size=8, symbol='triangle-up')
+                                x=selected_data['equity_curve'].index,
+                                y=selected_data['equity_curve'].values,
+                                mode='lines',
+                                name=f"RSI {selected_threshold} Strategy",
+                                line=dict(color='blue', width=2)
                             ))
                             
+                            # Use session state benchmark
+                            session_benchmark = st.session_state.benchmark
                             fig_selected.add_trace(go.Scatter(
-                                x=exit_dates,
-                                y=exit_equity,
-                                mode='markers',
-                                name='Sell Signals',
-                                marker=dict(color='red', size=8, symbol='triangle-down')
+                                x=session_benchmark.index,
+                                y=session_benchmark.values,
+                                mode='lines',
+                                name="SPY Buy & Hold",
+                                line=dict(color='red', width=2, dash='dash')
                             ))
-                        
-                        fig_selected.update_layout(
-                            title=f"Equity Curve: RSI {selected_threshold} Strategy vs SPY",
-                            xaxis_title="Date",
-                            yaxis_title="Equity",
-                            hovermode='x unified'
-                        )
-                        st.plotly_chart(fig_selected, use_container_width=True)
-                        
-                        # Trade details for selected threshold using existing data
-                        with st.expander(f"📋 Trade Details - RSI {selected_threshold}"):
+                            
+                            # Add trade markers using existing trade data
                             if selected_data['trades']:
-                                trade_df = pd.DataFrame(selected_data['trades'])
-                                trade_df['return'] = trade_df['return'].apply(lambda x: f"{x:.2%}")
-                                trade_df['hold_days'] = trade_df['hold_days'].apply(lambda x: f"{x:.0f}")
-                                st.dataframe(trade_df, use_container_width=True)
-                            else:
-                                st.write("No trades executed.")
+                                entry_dates = [trade['entry_date'] for trade in selected_data['trades']]
+                                exit_dates = [trade['exit_date'] for trade in selected_data['trades']]
+                                entry_equity = [selected_data['equity_curve'].loc[date] for date in entry_dates if date in selected_data['equity_curve'].index]
+                                exit_equity = [selected_data['equity_curve'].loc[date] for date in exit_dates if date in selected_data['equity_curve'].index]
+                                
+                                fig_selected.add_trace(go.Scatter(
+                                    x=entry_dates,
+                                    y=entry_equity,
+                                    mode='markers',
+                                    name='Buy Signals',
+                                    marker=dict(color='green', size=8, symbol='triangle-up')
+                                ))
+                                
+                                fig_selected.add_trace(go.Scatter(
+                                    x=exit_dates,
+                                    y=exit_equity,
+                                    mode='markers',
+                                    name='Sell Signals',
+                                    marker=dict(color='red', size=8, symbol='triangle-down')
+                                ))
+                            
+                            fig_selected.update_layout(
+                                title=f"Equity Curve: RSI {selected_threshold} Strategy vs SPY",
+                                xaxis_title="Date",
+                                yaxis_title="Equity",
+                                hovermode='x unified'
+                            )
+                            st.plotly_chart(fig_selected, use_container_width=True)
+                            
+                            # Trade details for selected threshold using existing data
+                            with st.expander(f"📋 Trade Details - RSI {selected_threshold}"):
+                                if selected_data['trades']:
+                                    trade_df = pd.DataFrame(selected_data['trades'])
+                                    trade_df['return'] = trade_df['return'].apply(lambda x: f"{x:.2%}")
+                                    trade_df['hold_days'] = trade_df['hold_days'].apply(lambda x: f"{x:.0f}")
+                                    st.dataframe(trade_df, use_container_width=True)
+                                else:
+                                    st.write("No trades executed.")
                 else:
                     st.warning("No strategies with trades available for individual analysis")
                 
