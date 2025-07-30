@@ -10,10 +10,10 @@ import warnings
 from scipy import stats
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="Signal Statistics", layout="wide")
+st.set_page_config(page_title="Signal Check", layout="wide")
 
-st.title("Signal Statistics")
-st.write("RSI Threshold Analysis")
+st.title("Signal Check")
+st.write("RSI Threshold Statistics")
 
 def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     """Calculate RSI with standard 14-period window"""
@@ -998,26 +998,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             - 80-95% = borderline significant
             - Below 80% = weak evidence
             
-            **🔴 Point Size (Effect Size):**
-            - Larger points = stronger effects (bigger differences from the benchmark)
-            - Smaller points = weaker effects
-            - Size is proportional to the absolute effect size
-            
-            **🎯 Color Coding:**
-            - **Green points**: Statistically significant signals
-            - **Red points**: Non-significant signals
-            
-            **💡 What to Look For:**
-            - **Large green points high on the chart**: Best signals (high confidence + large effect)
-            - **Clusters of large points**: RSI ranges with consistent strong performance
-            - **Small red points low on the chart**: Weak signals to avoid
-            - **Patterns**: Look for RSI ranges where confidence and effect size are consistently high
-            
-            **🔍 Practical Insights:**
-            - Identify optimal RSI ranges for your signal
-            - Spot RSI levels that consistently produce significant results
-            - Avoid RSI ranges with low confidence or small effects
-            - Understand the relationship between RSI levels and statistical reliability
+
             """)
         
         # Total Return vs Confidence Level Analysis
