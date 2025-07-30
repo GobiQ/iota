@@ -1057,12 +1057,6 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True].copy()
             top_significant = original_significant_signals.nlargest(5, 'Total_Return')
             
-            # Debug: Check what columns are available
-            st.write(f"Available columns in results_df: {list(st.session_state['results_df'].columns)}")
-            st.write(f"Number of significant signals: {len(original_significant_signals)}")
-            if len(original_significant_signals) > 0:
-                st.write(f"Sample row keys: {list(original_significant_signals.iloc[0].keys())}")
-            
             # Multiple Signal Comparison for Significant Signals
             st.subheader("📊 Highest Cumulative Return Significant Signals Comparison")
             st.info(f"💡 **What this shows:** This chart compares the top 5 signals with the highest cumulative returns among statistically significant signals against {benchmark_name} buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The signals are ranked by total return, showing the highest cumulative return signals first.")
