@@ -47,8 +47,8 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
     
     # Find entry and exit points
     signal_changes = signals.diff()
-    entry_points = signal_changes == 1  # Signal turns on
-    exit_points = signal_changes == -1  # Signal turns off
+    entry_points = signal_changes == 1  # Signal turns on (buy at close)
+    exit_points = signal_changes == -1  # Signal turns off (sell at close)
     
     if not entry_points.any():
         return {
@@ -59,7 +59,7 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
             'avg_hold_days': 0
         }
     
-    # Calculate returns for each complete trade (entry to exit)
+    # Calculate returns for each complete trade (entry close to exit close)
     returns = []
     hold_periods = []
     
@@ -80,9 +80,9 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison=
                 exit_idx = len(target_prices) - 1
                 exit_date = target_prices.index[exit_idx]
             
-            # Calculate return and hold period
-            entry_price = target_prices.iloc[entry_idx]
-            exit_price = target_prices.iloc[exit_idx]
+            # Buy at close on entry_date, sell at close on exit_date
+            entry_price = target_prices.iloc[entry_idx]  # Close price on signal day
+            exit_price = target_prices.iloc[exit_idx]    # Close price on exit day
             ret = (exit_price - entry_price) / entry_price
             hold_days = (exit_date - entry_date).days
             
@@ -196,9 +196,9 @@ with col1:
 with col2:
     st.subheader("Strategy Logic")
     if comparison == "less_than":
-        st.info("🔵 Generate BUY signals when RSI ≤ threshold\n\n📈 Hold target ticker until RSI > threshold")
+        st.info("🔵 BUY at close when RSI ≤ threshold\n\n📈 SELL at close when RSI > threshold")
     else:
-        st.info("🔵 Generate BUY signals when RSI ≥ threshold\n\n📈 Hold target ticker until RSI < threshold")
+        st.info("🔵 BUY at close when RSI ≥ threshold\n\n📈 SELL at close when RSI < threshold")
 
 if st.button("Run RSI Analysis", type="primary"):
     if rsi_min < rsi_max:
@@ -286,4 +286,4 @@ if st.button("Run RSI Analysis", type="primary"):
         st.error("Please ensure RSI Min is less than RSI Max")
 
 st.write("---")
-st.write("💡 **Tip:** Try different ticker combinations and RSI ranges to find optimal signal thresholds")
+st.write("💡 **Tip:** Try different ticker combinations and RSI conditions to find optimal signal thresholds")
