@@ -896,7 +896,9 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             st.subheader("🏆 Top Statistically Significant Signals")
             
             # Sort by annualized return (most profitable) instead of confidence level
-            top_significant = significant_signals.nlargest(5, 'annualized_return')
+            # Use the original results_df for sorting since it has numerical values
+            original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True]
+            top_significant = original_significant_signals.nlargest(5, 'annualized_return')
             
             # Multiple Signal Comparison for Significant Signals
             st.subheader("📊 Most Profitable Significant Signals Comparison")
@@ -919,13 +921,11 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             for i, (idx, row) in enumerate(top_significant.iterrows()):
                 if row['equity_curve'] is not None:
                     color = colors[i % len(colors)]
-                    # Get the original numerical value from results_df
-                    original_row = st.session_state['results_df'].loc[idx]
                     fig_comparison.add_trace(go.Scatter(
                         x=row['equity_curve'].index,
                         y=row['equity_curve'].values,
                         mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} ({original_row['annualized_return']:.3%} return)",
+                        name=f"RSI {row['RSI_Threshold']} ({row['annualized_return']:.3%} annualized)",
                         line=dict(color=color, width=2)
                     ))
             
@@ -943,7 +943,9 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             st.info(f"💡 **What this shows:** This chart compares the top 5 signals with the highest Sortino ratios (best risk-adjusted returns) among statistically significant signals against {benchmark_name} buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance with excellent risk-adjusted performance. The signals are ranked by Sortino ratio, showing the best risk-adjusted returns first.")
             
             # Sort by Sortino ratio (best risk-adjusted returns) instead of annualized return
-            top_sortino_significant = significant_signals.nlargest(5, 'Sortino_Ratio')
+            # Use the original results_df for sorting since it has numerical values
+            original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True]
+            top_sortino_significant = original_significant_signals.nlargest(5, 'Sortino_Ratio')
             
             # Create comparison chart with highest Sortino signals
             fig_sortino_comparison = go.Figure()
@@ -962,13 +964,11 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             for i, (idx, row) in enumerate(top_sortino_significant.iterrows()):
                 if row['equity_curve'] is not None:
                     color = colors[i % len(colors)]
-                    # Get the original numerical value from results_df
-                    original_row = st.session_state['results_df'].loc[idx]
                     fig_sortino_comparison.add_trace(go.Scatter(
                         x=row['equity_curve'].index,
                         y=row['equity_curve'].values,
                         mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} (Sortino: {original_row['Sortino_Ratio']:.2f})",
+                        name=f"RSI {row['RSI_Threshold']} (Sortino: {row['Sortino_Ratio']:.2f}, {row['annualized_return']:.3%} annualized)",
                         line=dict(color=color, width=2)
                     ))
             
