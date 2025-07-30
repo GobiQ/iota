@@ -179,11 +179,11 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
         'annualized_return': annualized_return
     }
 
-def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchmark_equity_curve: pd.Series, 
+def calculate_statistical_significance(strategy_trades: List[Dict], benchmark_trades: List[Dict], 
                                     strategy_annualized: float, benchmark_annualized: float) -> Dict:
-    """Calculate statistical significance of strategy vs benchmark under same conditions"""
+    """Calculate statistical significance by comparing actual trade returns vs SPY trade returns under same conditions"""
     
-    if len(strategy_equity_curve) == 0 or len(benchmark_equity_curve) == 0:
+    if len(strategy_trades) == 0 or len(benchmark_trades) == 0:
         return {
             't_statistic': 0,
             'p_value': 1.0,
@@ -193,13 +193,13 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
             'power': 0
         }
     
-    # Calculate daily returns for both strategy and benchmark
-    strategy_returns = strategy_equity_curve.pct_change().dropna()
-    benchmark_returns = benchmark_equity_curve.pct_change().dropna()
+    # Extract trade returns for both strategy and benchmark
+    strategy_returns = np.array([trade['return'] for trade in strategy_trades])
+    benchmark_returns = np.array([trade['return'] for trade in benchmark_trades])
     
-    # Align the returns on the same dates
-    common_dates = strategy_returns.index.intersection(benchmark_returns.index)
-    if len(common_dates) == 0:
+    # Ensure we have the same number of trades for comparison
+    min_trades = min(len(strategy_returns), len(benchmark_returns))
+    if min_trades == 0:
         return {
             't_statistic': 0,
             'p_value': 1.0,
@@ -209,11 +209,12 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
             'power': 0
         }
     
-    strategy_returns = strategy_returns[common_dates]
-    benchmark_returns = benchmark_returns[common_dates]
+    # Use the minimum number of trades for comparison
+    strategy_returns = strategy_returns[:min_trades]
+    benchmark_returns = benchmark_returns[:min_trades]
     
-    # Perform t-test on daily returns
-    t_stat, p_value = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
+    # Perform t-test on trade returns
+    t_stat, p_value = stats.ttest_ind(strategy_returns, benchmark_returns)
     
     # Calculate confidence level (1 - p_value)
     confidence_level = (1 - p_value) * 100
@@ -222,14 +223,13 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
     significant = p_value < 0.05
     
     # Calculate effect size (Cohen's d)
-    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns.values, ddof=1) + 
-                          (len(benchmark_returns) - 1) * np.var(benchmark_returns.values, ddof=1)) / 
+    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns, ddof=1) + 
+                          (len(benchmark_returns) - 1) * np.var(benchmark_returns, ddof=1)) / 
                          (len(strategy_returns) + len(benchmark_returns) - 2))
     
-    effect_size = (np.mean(strategy_returns.values) - np.mean(benchmark_returns.values)) / pooled_std if pooled_std > 0 else 0
+    effect_size = (np.mean(strategy_returns) - np.mean(benchmark_returns)) / pooled_std if pooled_std > 0 else 0
     
     # Calculate statistical power (simplified)
-    # For small sample sizes, power calculation is complex, so we'll use a simplified approach
     power = 0.8 if len(strategy_returns) > 30 and abs(effect_size) > 0.5 else 0.5
     
     return {
@@ -285,7 +285,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
         # Calculate statistical significance
         strategy_equity_curve = analysis['equity_curve']
         if len(strategy_equity_curve) > 0:
-            # Create benchmark equity curve that follows the same RSI conditions
+            # Create benchmark trades that follow the same RSI conditions
             # This ensures we're comparing strategy vs SPY under the same conditions
             signal_rsi = calculate_rsi(signal_data, window=rsi_period)
             
@@ -295,12 +295,11 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             else:  # greater_than
                 benchmark_signals = (signal_rsi >= threshold).astype(int)
             
-            # Calculate benchmark equity curve using SPY prices
-            benchmark_equity_curve = pd.Series(1.0, index=benchmark_data.index)
-            current_equity = 1.0
+            # Calculate benchmark trades using SPY prices (same logic as strategy)
+            benchmark_trades = []
             in_position = False
-            entry_equity = 1.0
             entry_price = None
+            entry_date = None
             
             for date in benchmark_data.index:
                 current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
@@ -309,32 +308,45 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
                 if current_signal == 1 and not in_position:
                     # Enter position
                     in_position = True
-                    entry_equity = current_equity
+                    entry_date = date
                     entry_price = current_price
                     
                 elif current_signal == 0 and in_position:
                     # Exit position
                     trade_return = (current_price - entry_price) / entry_price
-                    current_equity = entry_equity * (1 + trade_return)
+                    hold_days = (date - entry_date).days
+                    
+                    benchmark_trades.append({
+                        'entry_date': entry_date,
+                        'exit_date': date,
+                        'entry_price': entry_price,
+                        'exit_price': current_price,
+                        'return': trade_return,
+                        'hold_days': hold_days
+                    })
+                    
                     in_position = False
-                
-                # Update equity curve
-                if in_position:
-                    current_equity = entry_equity * (current_price / entry_price)
-                
-                benchmark_equity_curve[date] = current_equity
             
             # Handle case where we're still in position at the end
             if in_position:
                 final_price = benchmark_data.iloc[-1]
+                final_date = benchmark_data.index[-1]
                 trade_return = (final_price - entry_price) / entry_price
-                current_equity = entry_equity * (1 + trade_return)
-                benchmark_equity_curve.iloc[-1] = current_equity
+                hold_days = (final_date - entry_date).days
+                
+                benchmark_trades.append({
+                    'entry_date': entry_date,
+                    'exit_date': final_date,
+                    'entry_price': entry_price,
+                    'exit_price': final_price,
+                    'return': trade_return,
+                    'hold_days': hold_days
+                })
             
             benchmark_annualized = (benchmark.iloc[-1] - 1) * (365 / (benchmark.index[-1] - benchmark.index[0]).days)
             stats_result = calculate_statistical_significance(
-                strategy_equity_curve, 
-                benchmark_equity_curve,
+                analysis['trades'], # Pass the actual trades
+                benchmark_trades, # Pass the benchmark trades
                 analysis['annualized_return'],
                 benchmark_annualized
             )
@@ -622,64 +634,6 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     with col4:
                         st.metric("Confidence Level", f"{best_total_return_strategy['confidence_level']:.1f}%")
                         st.metric("Significant", "✓" if best_total_return_strategy['significant'] else "✗")
-                
-                # Multiple Strategy Comparison
-                st.subheader("📊 Multiple Strategy Comparison")
-                
-                # Create comparison chart with all best strategies
-                fig_comparison = go.Figure()
-                
-                # Add benchmark
-                fig_comparison.add_trace(go.Scatter(
-                    x=benchmark.index,
-                    y=benchmark.values,
-                    mode='lines',
-                    name="SPY Buy & Hold",
-                    line=dict(color='red', width=2, dash='dash')
-                ))
-                
-                # Add best strategies
-                colors = ['blue', 'green', 'purple', 'orange']
-                strategies = [
-                    (best_annualized_idx, "Best Annualized Return"),
-                    (best_sortino_idx, "Best Sortino Ratio"),
-                    (best_winrate_idx, "Best Win Rate"),
-                    (best_total_return_idx, "Best Total Return")
-                ]
-                
-                for i, (idx, name) in enumerate(strategies):
-                    strategy = results_df.loc[idx]
-                    if strategy['equity_curve'] is not None:
-                        fig_comparison.add_trace(go.Scatter(
-                            x=strategy['equity_curve'].index,
-                            y=strategy['equity_curve'].values,
-                            mode='lines',
-                            name=f"{name} (RSI {strategy['RSI_Threshold']})",
-                            line=dict(color=colors[i], width=2)
-                        ))
-                
-                fig_comparison.update_layout(
-                    title="Multiple Strategy Comparison vs SPY",
-                    xaxis_title="Date",
-                    yaxis_title="Equity",
-                    hovermode='x unified',
-                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-                )
-                st.plotly_chart(fig_comparison, use_container_width=True)
-
-                # Download results
-                # Use the original column names from results_df for CSV download
-                download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
-                               'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
-                               'Return_Std', 'Best_Return', 'Worst_Return', 'confidence_level', 'significant', 'effect_size']
-                csv = results_df[download_cols].to_csv(index=False)
-                filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
-                st.download_button(
-                    label="📥 Download Results as CSV",
-                    data=csv,
-                    file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
 
                 # Statistical Significance Analysis
                 st.subheader("📊 Statistical Significance Analysis")
@@ -733,6 +687,21 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                                annotation_text="95% Confidence")
                     st.plotly_chart(fig_effect, use_container_width=True)
                     
+                    # Download results
+                    st.subheader("📥 Download Results")
+                    # Use the original column names from results_df for CSV download
+                    download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
+                                   'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
+                                   'Return_Std', 'Best_Return', 'Worst_Return', 'confidence_level', 'significant', 'effect_size']
+                    csv = results_df[download_cols].to_csv(index=False)
+                    filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
+                    st.download_button(
+                        label="📥 Download Results as CSV",
+                        data=csv,
+                        file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                    
                     # Top significant strategies
                     if len(significant_strategies) > 0:
                         st.subheader("🏆 Top Statistically Significant Strategies")
@@ -740,6 +709,83 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         # Sort by confidence level
                         top_significant = significant_strategies.nlargest(5, 'confidence_level')
                         
+                        # Interactive Multiple Strategy Comparison
+                        st.subheader("📊 Interactive Strategy Comparison")
+                        st.write("Select strategies to compare their equity curves:")
+                        
+                        # Create checkboxes for each significant strategy
+                        selected_strategies = []
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Select Strategies to Display:**")
+                            for idx, row in top_significant.iterrows():
+                                strategy_name = f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% confidence)"
+                                if st.checkbox(strategy_name, value=True, key=f"strategy_{idx}"):
+                                    selected_strategies.append((idx, row))
+                        
+                        with col2:
+                            st.write("**Strategy Summary:**")
+                            st.write(f"**Total Significant Strategies:** {len(significant_strategies)}")
+                            st.write(f"**Selected for Comparison:** {len(selected_strategies)}")
+                        
+                        # Create interactive comparison chart
+                        if selected_strategies:
+                            fig_comparison = go.Figure()
+                            
+                            # Add benchmark
+                            fig_comparison.add_trace(go.Scatter(
+                                x=benchmark.index,
+                                y=benchmark.values,
+                                mode='lines',
+                                name="SPY Buy & Hold",
+                                line=dict(color='red', width=2, dash='dash')
+                            ))
+                            
+                            # Add selected strategies
+                            colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
+                            for i, (idx, row) in enumerate(selected_strategies):
+                                if row['equity_curve'] is not None:
+                                    color = colors[i % len(colors)]
+                                    fig_comparison.add_trace(go.Scatter(
+                                        x=row['equity_curve'].index,
+                                        y=row['equity_curve'].values,
+                                        mode='lines',
+                                        name=f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% conf)",
+                                        line=dict(color=color, width=2)
+                                    ))
+                            
+                            fig_comparison.update_layout(
+                                title="Interactive Strategy Comparison vs SPY",
+                                xaxis_title="Date",
+                                yaxis_title="Equity Value",
+                                hovermode='x unified',
+                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                            )
+                            st.plotly_chart(fig_comparison, use_container_width=True)
+                            
+                            # Strategy comparison table
+                            st.subheader("📋 Selected Strategies Comparison")
+                            comparison_data = []
+                            for idx, row in selected_strategies:
+                                comparison_data.append({
+                                    'RSI Threshold': row['RSI_Threshold'],
+                                    'Confidence Level': f"{row['confidence_level']:.1f}%",
+                                    'Total Return': f"{row['Total_Return']:.2%}",
+                                    'Annualized Return': f"{row['annualized_return']:.2%}",
+                                    'Win Rate': f"{row['Win_Rate']:.1%}",
+                                    'Sortino Ratio': f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞",
+                                    'Total Trades': row['Total_Trades'],
+                                    'Effect Size': f"{row['effect_size']:.2f}"
+                                })
+                            
+                            comparison_df = pd.DataFrame(comparison_data)
+                            st.dataframe(comparison_df, use_container_width=True)
+                        else:
+                            st.info("Select at least one strategy to see the comparison chart.")
+                        
+                        # Individual strategy details
+                        st.subheader("📈 Individual Strategy Details")
                         for idx, row in top_significant.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
                                 col1, col2, col3 = st.columns(3)
@@ -791,7 +837,7 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                     st.plotly_chart(fig_sig, use_container_width=True)
                     else:
                         st.warning("No strategies reached statistical significance (p < 0.05)")
-                
+
                 # Statistical interpretation guide
                 with st.expander("📚 Statistical Significance Guide"):
                     st.write("""
