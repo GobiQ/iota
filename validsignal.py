@@ -688,7 +688,11 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         # Individual strategy details
                         st.subheader("📈 Individual Strategy Details")
                         st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
-                        for idx, row in significant_strategies.iterrows():
+                        
+                        # Sort significant strategies by RSI threshold from lowest to highest
+                        sorted_significant = significant_strategies.sort_values('RSI_Threshold')
+                        
+                        for idx, row in sorted_significant.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
                                 # Performance metrics - comprehensive display
                                 col1, col2, col3, col4 = st.columns(4)
