@@ -1,24 +1,121 @@
 import numpy as np
 import pandas as pd
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
 from scipy.optimize import minimize
-import talib
 from typing import Dict, Tuple, List, Optional
 import warnings
-import matplotlib.pyplot as plt
-import seaborn as sns
 warnings.filterwarnings('ignore')
 
-class MarketRegimeDetector:
-    """Detects market regimes using multiple indicators"""
+# Try to import optional dependencies
+try:
+    from sklearn.mixture import GaussianMixture
+    from sklearn.preprocessing import StandardScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    print("Warning: scikit-learn not available. Using simplified regime detection.")
+
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    TALIB_AVAILABLE = False
+    print("Warning: TA-Lib not available. Using custom RSI implementation.")
+
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    PLOTTING_AVAILABLE = True
+except ImportError:
+    PLOTTING_AVAILABLE = False
+    print("Warning: Plotting libraries not available.")
+
+class SimpleRegimeDetector:
+    """Simplified regime detector using basic technical indicators"""
     
     def __init__(self, n_regimes=3):
         self.n_regimes = n_regimes
-        self.gmm = GaussianMixture(n_components=n_regimes, random_state=42)
-        self.scaler = StandardScaler()
+        self.regime_labels = {0: 'Bull', 1: 'Bear', 2: 'Sideways'}
+        self.thresholds = None
+        
+    def _calculate_features(self, prices: pd.Series) -> pd.DataFrame:
+        """Calculate simple regime features"""
+        features = pd.DataFrame(index=prices.index)
+        
+        # Price momentum features
+        features['returns_20'] = prices.pct_change(20)
+        features['returns_5'] = prices.pct_change(5)
+        
+        # Volatility (rolling standard deviation)
+        returns = prices.pct_change()
+        features['volatility'] = returns.rolling(20).std()
+        
+        # Moving average position
+        ma_20 = prices.rolling(20).mean()
+        ma_50 = prices.rolling(50).mean()
+        features['price_vs_ma20'] = (prices - ma_20) / ma_20
+        features['ma20_vs_ma50'] = (ma_20 - ma_50) / ma_50
+        
+        return features.dropna()
+    
+    def fit(self, prices: pd.Series):
+        """Fit simple thresholds for regime classification"""
+        features = self._calculate_features(prices)
+        
+        if len(features) == 0:
+            # Default thresholds
+            self.thresholds = {
+                'momentum_bull': 0.02,    # 2% positive momentum for bull
+                'momentum_bear': -0.02,   # 2% negative momentum for bear
+                'volatility_high': features['volatility'].quantile(0.7) if len(features) > 0 else 0.03
+            }
+            return self
+        
+        # Calculate dynamic thresholds based on data distribution
+        self.thresholds = {
+            'momentum_bull': features['returns_20'].quantile(0.65),
+            'momentum_bear': features['returns_20'].quantile(0.35),
+            'volatility_high': features['volatility'].quantile(0.7)
+        }
+        
+        return self
+    
+    def predict_regime(self, prices: pd.Series) -> int:
+        """Predict regime using simple rules"""
+        if len(prices) < 50:
+            return 2  # Default to sideways
+        
+        features = self._calculate_features(prices)
+        if len(features) == 0:
+            return 2
+        
+        latest = features.iloc[-1]
+        
+        # Simple rule-based classification
+        momentum = latest['returns_20']
+        volatility = latest['volatility']
+        
+        if momentum > self.thresholds['momentum_bull']:
+            return 0  # Bull
+        elif momentum < self.thresholds['momentum_bear']:
+            return 1  # Bear
+        else:
+            return 2  # Sideways
+
+class MarketRegimeDetector:
+    """Market regime detector with fallback to simple method"""
+    
+    def __init__(self, n_regimes=3):
+        self.n_regimes = n_regimes
         self.regime_labels = {0: 'Bull', 1: 'Bear', 2: 'Sideways'}
         
+        if SKLEARN_AVAILABLE:
+            self.gmm = GaussianMixture(n_components=n_regimes, random_state=42)
+            self.scaler = StandardScaler()
+            self.use_advanced = True
+        else:
+            self.simple_detector = SimpleRegimeDetector(n_regimes)
+            self.use_advanced = False
+    
     def extract_features(self, prices: pd.Series) -> pd.DataFrame:
         """Extract regime-detection features from price data"""
         features = pd.DataFrame(index=prices.index)
@@ -46,20 +143,44 @@ class MarketRegimeDetector:
     
     def fit(self, prices: pd.Series):
         """Fit the regime detection model"""
-        features = self.extract_features(prices)
-        features_scaled = self.scaler.fit_transform(features)
-        self.gmm.fit(features_scaled)
+        if self.use_advanced:
+            features = self.extract_features(prices)
+            if len(features) > 0:
+                features_scaled = self.scaler.fit_transform(features)
+                self.gmm.fit(features_scaled)
+        else:
+            self.simple_detector.fit(prices)
         return self
     
     def predict_regime(self, prices: pd.Series) -> int:
         """Predict current market regime"""
-        features = self.extract_features(prices)
-        if len(features) == 0:
-            return 2  # Default to sideways if insufficient data
-        
-        features_scaled = self.scaler.transform(features.iloc[-1:])
-        regime = self.gmm.predict(features_scaled)[0]
-        return regime
+        if self.use_advanced:
+            features = self.extract_features(prices)
+            if len(features) == 0:
+                return 2  # Default to sideways if insufficient data
+            
+            features_scaled = self.scaler.transform(features.iloc[-1:])
+            regime = self.gmm.predict(features_scaled)[0]
+            return regime
+        else:
+            return self.simple_detector.predict_regime(prices)
+
+def calculate_rsi_custom(prices: pd.Series, window: int = 14) -> pd.Series:
+    """Custom RSI implementation when TA-Lib is not available"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_rsi(prices: pd.Series, window: int = 10) -> pd.Series:
+    """Calculate RSI using TA-Lib if available, otherwise custom implementation"""
+    if TALIB_AVAILABLE:
+        return pd.Series(talib.RSI(prices.values, timeperiod=window), index=prices.index)
+    else:
+        return calculate_rsi_custom(prices, window)
 
 class BacktestEngine:
     """Comprehensive backtesting engine for RSI-based strategies"""
@@ -70,10 +191,6 @@ class BacktestEngine:
         self.trades = pd.DataFrame()
         self.equity_curve = pd.Series()
         self.performance_metrics = {}
-        
-    def calculate_rsi(self, prices: pd.Series, window: int = 10) -> pd.Series:
-        """Calculate RSI using talib"""
-        return pd.Series(talib.RSI(prices.values, timeperiod=window), index=prices.index)
     
     def run_backtest(self, prices: pd.Series, asset_prices: Dict[str, pd.Series], 
                     strategy_signals: pd.DataFrame, initial_capital: float = 100000) -> Dict:
@@ -256,20 +373,25 @@ class BacktestEngine:
         print(f"Max Drawdown: {self.performance_metrics['max_drawdown']:.2%}")
         print(f"Win Rate: {self.performance_metrics['win_rate']:.2%}")
         print(f"Total Trades: {self.performance_metrics['total_trades']}")
-        print(f"Profit Factor: {self.performance_metrics['profit_factor']:.2f}")
+        
+        if not pd.isna(self.performance_metrics['profit_factor']) and self.performance_metrics['profit_factor'] != float('inf'):
+            print(f"Profit Factor: {self.performance_metrics['profit_factor']:.2f}")
         
         if len(self.trades) > 0:
             print(f"\nTrade Analysis:")
-            print(f"Average Win: {self.performance_metrics['avg_win']:.2%}")
-            print(f"Average Loss: {self.performance_metrics['avg_loss']:.2%}")
+            if not pd.isna(self.performance_metrics['avg_win']):
+                print(f"Average Win: {self.performance_metrics['avg_win']:.2%}")
+            if not pd.isna(self.performance_metrics['avg_loss']):
+                print(f"Average Loss: {self.performance_metrics['avg_loss']:.2%}")
             
             # Regime-based performance
-            regime_performance = self.trades.groupby('regime')['return'].agg(['count', 'mean', 'std'])
-            print(f"\nPerformance by Market Regime:")
-            for regime in regime_performance.index:
-                stats = regime_performance.loc[regime]
-                print(f"  {regime}: {stats['count']} trades, "
-                      f"{stats['mean']:.2%} avg return, {stats['std']:.2%} volatility")
+            if 'regime' in self.trades.columns:
+                regime_performance = self.trades.groupby('regime')['return'].agg(['count', 'mean', 'std'])
+                print(f"\nPerformance by Market Regime:")
+                for regime in regime_performance.index:
+                    stats = regime_performance.loc[regime]
+                    print(f"  {regime}: {stats['count']} trades, "
+                          f"{stats['mean']:.2%} avg return")
 
 class RSISignalOptimizer:
     """Optimizes RSI signals and generates trading recommendations"""
@@ -283,10 +405,6 @@ class RSISignalOptimizer:
     def set_asset_allocation_rules(self, allocation_rules: Dict):
         """Set asset allocation rules for different RSI conditions and regimes"""
         self.asset_allocation_rules = allocation_rules
-    
-    def calculate_rsi(self, prices: pd.Series, window: int = 10) -> pd.Series:
-        """Calculate RSI using talib"""
-        return pd.Series(talib.RSI(prices.values, timeperiod=window), index=prices.index)
     
     def optimize_thresholds(self, prices: pd.Series, asset_prices: Dict[str, pd.Series]) -> Dict:
         """Optimize RSI thresholds for each market regime"""
@@ -315,11 +433,16 @@ class RSISignalOptimizer:
                 self.optimal_thresholds[regime] = {'lower': 30.0, 'upper': 70.0}
                 continue
             
-            lower, upper = self._optimize_regime_thresholds(prices, asset_prices, regime)
-            self.optimal_thresholds[regime] = {'lower': lower, 'upper': upper}
+            try:
+                lower, upper = self._optimize_regime_thresholds(prices, asset_prices, regime)
+                self.optimal_thresholds[regime] = {'lower': lower, 'upper': upper}
+            except:
+                # Fallback to default thresholds if optimization fails
+                self.optimal_thresholds[regime] = {'lower': 30.0, 'upper': 70.0}
             
             regime_name = self.regime_detector.regime_labels[regime]
-            print(f"  {regime_name}: Lower={lower:.1f}, Upper={upper:.1f}")
+            thresholds = self.optimal_thresholds[regime]
+            print(f"  {regime_name}: Lower={thresholds['lower']:.1f}, Upper={thresholds['upper']:.1f}")
         
         return self.optimal_thresholds
     
@@ -330,31 +453,53 @@ class RSISignalOptimizer:
         def objective(params):
             lower_thresh, upper_thresh = params
             
-            # Generate signals for this threshold combination
-            signals = self._generate_signals(prices, asset_prices, 
-                                           {regime: {'lower': lower_thresh, 'upper': upper_thresh}})
-            
-            # Run quick backtest
-            backtest = BacktestEngine(self.target_ticker)
             try:
+                # Generate signals for this threshold combination
+                test_thresholds = {regime: {'lower': lower_thresh, 'upper': upper_thresh}}
+                signals = self._generate_signals(prices, asset_prices, test_thresholds)
+                
+                # Run quick backtest
+                backtest = BacktestEngine(self.target_ticker)
                 results = backtest.run_backtest(prices, asset_prices, signals)
-                return -results['performance_metrics'].get('sharpe_ratio', -999)
-            except:
+                sharpe = results['performance_metrics'].get('sharpe_ratio', 0)
+                
+                # Return negative Sharpe for minimization
+                return -sharpe if not pd.isna(sharpe) else 999
+                
+            except Exception as e:
                 return 999  # Penalty for failed backtest
         
         # Optimization bounds and constraints
         bounds = [(10, 45), (55, 90)]
-        constraints = {'type': 'ineq', 'fun': lambda x: x[1] - x[0] - 10}
         
-        result = minimize(objective, [30, 70], method='L-BFGS-B', 
-                         bounds=bounds, constraints=constraints)
-        
-        return (result.x[0], result.x[1]) if result.success else (30.0, 70.0)
+        try:
+            # Use scipy.optimize.minimize
+            result = minimize(objective, [30, 70], method='L-BFGS-B', bounds=bounds)
+            
+            if result.success and result.x[1] > result.x[0] + 10:
+                return (float(result.x[0]), float(result.x[1]))
+            else:
+                return (30.0, 70.0)
+                
+        except:
+            # Fallback to grid search if scipy optimization fails
+            best_sharpe = -999
+            best_params = (30.0, 70.0)
+            
+            for lower in range(15, 40, 5):
+                for upper in range(60, 85, 5):
+                    if upper > lower + 15:
+                        score = -objective([lower, upper])
+                        if score > best_sharpe:
+                            best_sharpe = score
+                            best_params = (float(lower), float(upper))
+            
+            return best_params
     
     def _generate_signals(self, prices: pd.Series, asset_prices: Dict[str, pd.Series], 
                          thresholds: Dict) -> pd.DataFrame:
         """Generate trading signals based on RSI and regime"""
-        rsi = self.calculate_rsi(prices)
+        rsi = calculate_rsi(prices)
         signals = []
         
         min_history = max(50, len(prices) // 20)
@@ -477,6 +622,13 @@ if __name__ == "__main__":
     print("RSI BACKTEST ENGINE & SIGNAL OPTIMIZER")
     print("="*70)
     
+    # Print dependency status
+    print("Dependencies:")
+    print(f"  scikit-learn: {'✓' if SKLEARN_AVAILABLE else '✗ (using simple regime detection)'}")
+    print(f"  TA-Lib: {'✓' if TALIB_AVAILABLE else '✗ (using custom RSI)'}")
+    print(f"  Plotting: {'✓' if PLOTTING_AVAILABLE else '✗'}")
+    print()
+    
     # Configuration
     TARGET_TICKER = "TQQQ"
     INITIAL_CAPITAL = 100000
@@ -564,16 +716,44 @@ if __name__ == "__main__":
     print("="*70)
     recent_signals = strategy_signals.tail()
     for date, signal in recent_signals.iterrows():
+        rsi_val = signal.get('rsi_value', 'N/A')
+        rsi_display = f"{rsi_val:.1f}" if isinstance(rsi_val, (int, float)) and not pd.isna(rsi_val) else "N/A"
         print(f"{date.strftime('%Y-%m-%d')}: "
               f"{signal['regime']} market, RSI {signal['rsi_condition']} "
-              f"({signal['rsi_value']:.1f}) -> Hold {signal['target_asset']}")
+              f"({rsi_display}) -> Hold {signal['target_asset']}")
     
     print(f"\n" + "="*70)
     print("CURRENT RECOMMENDATION")
     print("="*70)
     latest_signal = strategy_signals.iloc[-1]
+    rsi_val = latest_signal.get('rsi_value', 'N/A')
+    rsi_display = f"{rsi_val:.1f}" if isinstance(rsi_val, (int, float)) and not pd.isna(rsi_val) else "N/A"
+    
     print(f"Market Regime: {latest_signal['regime']}")
-    print(f"RSI Value: {latest_signal['rsi_value']:.1f}")
+    print(f"RSI Value: {rsi_display}")
     print(f"RSI Condition: {latest_signal['rsi_condition']}")
     print(f"Recommended Asset: {latest_signal['target_asset']}")
-    print(f"Dynamic Thresholds: {latest_signal['rsi_lower']:.1f} / {latest_signal['rsi_upper']:.1f}")
+    
+    # Display thresholds if available
+    if 'rsi_lower' in latest_signal and 'rsi_upper' in latest_signal:
+        lower_thresh = latest_signal['rsi_lower']
+        upper_thresh = latest_signal['rsi_upper']
+        if not pd.isna(lower_thresh) and not pd.isna(upper_thresh):
+            print(f"Dynamic Thresholds: {lower_thresh:.1f} / {upper_thresh:.1f}")
+    
+    print(f"\n" + "="*70)
+    print("INSTALLATION NOTES")
+    print("="*70)
+    print("To get full functionality, install optional dependencies:")
+    print("pip install scikit-learn ta-lib matplotlib seaborn")
+    print()
+    print("Current status:")
+    if not SKLEARN_AVAILABLE:
+        print("- Without scikit-learn: Using simplified regime detection")
+    if not TALIB_AVAILABLE:
+        print("- Without TA-Lib: Using custom RSI calculation")
+    if not PLOTTING_AVAILABLE:
+        print("- Without matplotlib/seaborn: No plotting capabilities")
+    
+    if SKLEARN_AVAILABLE and TALIB_AVAILABLE:
+        print("✓ All dependencies available - full functionality enabled")
