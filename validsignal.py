@@ -10,10 +10,10 @@ import warnings
 from scipy import stats
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="RSI Threshold Analysis", layout="wide")
+st.set_page_config(page_title="Signal Statistics", layout="wide")
 
-st.title("RSI Threshold Analysis")
-st.write("Statistical Validation of RSI Thresholds")
+st.title("Signal Statistics")
+st.write("RSI Threshold Analysis")
 
 def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     """Calculate RSI with standard 14-period window"""
@@ -303,11 +303,13 @@ def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, a
         'volatility': np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.0
     }
 
-def validate_data_quality(data: pd.Series, ticker: str) -> bool:
-    """Add data quality checks"""
+def validate_data_quality(data: pd.Series, ticker: str) -> Tuple[bool, List[str]]:
+    """Add data quality checks and return messages to display later"""
+    messages = []
+    
     if data is None or data.empty:
         st.error(f"❌ No data available for {ticker}")
-        return False
+        return False, messages
     
     # Check for missing data
     missing_pct = data.isnull().sum() / len(data) * 100
@@ -318,33 +320,41 @@ def validate_data_quality(data: pd.Series, ticker: str) -> bool:
     daily_returns = data.pct_change().dropna()
     extreme_moves = abs(daily_returns) > 0.15  # 15% daily moves
     if extreme_moves.sum() > 0:
-        st.info(f"🔍 Detected {extreme_moves.sum()} extreme price movements (>15%) for {ticker}")
+        messages.append(f"🔍 Detected {extreme_moves.sum()} extreme price movements (>15%) for {ticker}")
     
     # Check for sufficient data
     if len(data) < 252:  # Less than 1 year
         st.warning(f"⚠️ Limited data for {ticker}: {len(data)} days (recommend at least 252 days)")
     
-    return True
+    return True, messages
 
 def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
-                    start_date=None, end_date=None, rsi_period: int = 14, benchmark_ticker: str = "SPY") -> Tuple[pd.DataFrame, pd.Series]:
+                    start_date=None, end_date=None, rsi_period: int = 14, benchmark_ticker: str = "SPY") -> Tuple[pd.DataFrame, pd.Series, List[str]]:
     """Run comprehensive RSI analysis across the specified range"""
     
     # Fetch data with quality validation
+    all_messages = []
+    
     with st.spinner(f"Fetching data for {signal_ticker}..."):
         signal_data = get_stock_data(signal_ticker, start_date, end_date)
-        if not validate_data_quality(signal_data, signal_ticker):
+        is_valid, messages = validate_data_quality(signal_data, signal_ticker)
+        all_messages.extend(messages)
+        if not is_valid:
             return None, None
     
     with st.spinner(f"Fetching data for {target_ticker}..."):
         target_data = get_stock_data(target_ticker, start_date, end_date)
-        if not validate_data_quality(target_data, target_ticker):
+        is_valid, messages = validate_data_quality(target_data, target_ticker)
+        all_messages.extend(messages)
+        if not is_valid:
             return None, None
     
     # Fetch benchmark data for comparison - use user-selected benchmark
     with st.spinner(f"Fetching benchmark data ({benchmark_ticker})..."):
         benchmark_data = get_stock_data(benchmark_ticker, start_date, end_date)
-        if not validate_data_quality(benchmark_data, benchmark_ticker):
+        is_valid, messages = validate_data_quality(benchmark_data, benchmark_ticker)
+        all_messages.extend(messages)
+        if not is_valid:
             return None, None
     
     if signal_data is None or target_data is None or benchmark_data is None:
@@ -533,7 +543,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
         
         progress_bar.progress((i + 1) / total_thresholds)
     
-    return pd.DataFrame(results), benchmark
+    return pd.DataFrame(results), benchmark, all_messages
 
 # Streamlit Interface
 st.sidebar.header("📊 Configuration")
@@ -601,7 +611,7 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_width=True):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
-            results_df, benchmark = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, benchmark_ticker)
+            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, benchmark_ticker)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
                 # Store analysis results in session state
@@ -613,6 +623,7 @@ if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_widt
                 st.session_state['comparison'] = comparison
                 st.session_state['benchmark_ticker'] = benchmark_ticker
                 st.session_state['analysis_completed'] = True
+                st.session_state['data_messages'] = data_messages
                 
                 st.sidebar.success("✅ Analysis completed successfully!")
                 
@@ -1284,4 +1295,10 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
 
 st.write("---")
 st.write("💡 **Tip:** Try different ticker combinations and RSI conditions to find optimal signal thresholds")
-st.write("📈 **Data Source:** Real market data")
+
+# Display data quality messages at the bottom
+if 'data_messages' in st.session_state and st.session_state['data_messages']:
+    st.write("---")
+    st.subheader("📊 Data Quality Information")
+    for message in st.session_state['data_messages']:
+        st.info(message)
