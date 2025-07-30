@@ -619,195 +619,146 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     with st.expander("🔍 Filter Results", expanded=False):
         st.subheader("🔍 Filter Results")
     
-    # Create filter columns
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        # RSI Threshold filter
-        rsi_min_filter = st.number_input(
-            "Min RSI Threshold:",
-            min_value=float(display_df['RSI_Threshold'].min()),
-            max_value=float(display_df['RSI_Threshold'].max()),
-            value=float(display_df['RSI_Threshold'].min()),
-            step=0.5,
-            help="Minimum RSI threshold to include in results."
-        )
-        
-        rsi_max_filter = st.number_input(
-            "Max RSI Threshold:",
-            min_value=float(display_df['RSI_Threshold'].min()),
-            max_value=float(display_df['RSI_Threshold'].max()),
-            value=float(display_df['RSI_Threshold'].max()),
-            step=0.5,
-            help="Maximum RSI threshold to include in results."
-        )
-    
-    with col2:
-        # Confidence Level filter
-        confidence_min_filter = st.number_input(
-            "Min Confidence Level (%):",
-            min_value=0.0,
-            max_value=100.0,
-            value=0.0,
-            step=1.0,
-            help="Minimum confidence level to include in results."
-        )
-        
-        confidence_max_filter = st.number_input(
-            "Max Confidence Level (%):",
-            min_value=0.0,
-            max_value=100.0,
-            value=100.0,
-            step=1.0,
-            help="Maximum confidence level to include in results."
-        )
-    
-    with col3:
-        # Total Trades filter
-        min_trades_filter = st.number_input(
-            "Min Total Trades:",
-            min_value=0,
-            value=0,
-            help="Minimum number of trades to include in results."
-        )
-        
-        # Win Rate filter
-        min_win_rate_filter = st.number_input(
-            "Min Win Rate (%):",
-            min_value=0.0,
-            max_value=100.0,
-            value=0.0,
-            step=1.0,
-            help="Minimum win rate percentage to include in results."
-        )
-    
-    with col4:
-        # Average Return filter
-        min_avg_return_filter = st.number_input(
-            "Min Avg Return (%):",
-            min_value=-100.0,
-            max_value=100.0,
-            value=-100.0,
-            step=0.1,
-            help="Minimum average return percentage to include in results."
-        )
-        
-        # Total Return filter
-        min_total_return_filter = st.number_input(
-            "Min Total Return (%):",
-            min_value=-100.0,
-            max_value=100.0,
-            value=-100.0,
-            step=0.1,
-            help="Minimum total return percentage to include in results."
-        )
-    
-    # Additional filters
-    col5, col6, col7, col8 = st.columns(4)
-    
-    with col5:
-        # Annualized Return filter
-        min_annualized_return_filter = st.number_input(
-            "Min Annualized Return (%):",
-            min_value=-100.0,
-            max_value=100.0,
-            value=-100.0,
-            step=0.1,
-            help="Minimum annualized return percentage to include in results."
-        )
-    
-    with col6:
-        # Sortino Ratio filter
-        min_sortino_filter = st.number_input(
-            "Min Sortino Ratio:",
-            min_value=-10.0,
-            max_value=10.0,
-            value=-10.0,
-            step=0.1,
-            help="Minimum Sortino ratio to include in results."
-        )
-    
-    with col7:
-        # Significance filter
-        significance_filter = st.selectbox(
-            "Significance:",
-            ["All", "Significant Only", "Non-Significant Only"],
-            help="Filter by statistical significance."
-        )
-        
-        # P-Value filter
-        max_p_value_filter = st.number_input(
-            "Max P-Value:",
-            min_value=0.0,
-            max_value=1.0,
-            value=1.0,
-            step=0.001,
-            help="Maximum p-value to include in results (lower = more significant)."
-        )
-    
-    with col8:
-        # Clear filters button
-        if st.button("Clear All Filters", type="secondary"):
-            st.rerun()
-    
-    # Apply filters to the display dataframe
-    filtered_df = display_df.copy()
-    
-    # Apply RSI threshold filter
-    filtered_df = filtered_df[
-        (filtered_df['RSI_Threshold'] >= rsi_min_filter) & 
-        (filtered_df['RSI_Threshold'] <= rsi_max_filter)
-    ]
-    
-    # Apply confidence level filter
-    filtered_df = filtered_df[
-        (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= confidence_min_filter) & 
-        (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) <= confidence_max_filter)
-    ]
-    
-    # Apply total trades filter
-    filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades_filter]
-    
-    # Apply win rate filter
-    filtered_df = filtered_df[
-        filtered_df['Win_Rate'].str.replace('%', '').astype(float) >= min_win_rate_filter
-    ]
-    
-    # Apply average return filter
-    filtered_df = filtered_df[
-        filtered_df['Avg_Return'].str.replace('%', '').astype(float) >= min_avg_return_filter
-    ]
-    
-    # Apply total return filter
-    filtered_df = filtered_df[
-        filtered_df['Total_Return'].str.replace('%', '').astype(float) >= min_total_return_filter
-    ]
-    
-    # Apply annualized return filter
-    filtered_df = filtered_df[
-        filtered_df['Annualized_Return'].str.replace('%', '').astype(float) >= min_annualized_return_filter
-    ]
-    
-    # Apply Sortino ratio filter
-    filtered_df = filtered_df[
-        filtered_df['Sortino_Ratio'].apply(lambda x: float(x) if x != "∞" else 999) >= min_sortino_filter
-    ]
-    
-    # Apply significance filter
-    if significance_filter == "Significant Only":
-        filtered_df = filtered_df[filtered_df['Significant'] == "✓"]
-    elif significance_filter == "Non-Significant Only":
-        filtered_df = filtered_df[filtered_df['Significant'] == "✗"]
-    
-    # Apply p-value filter
-    filtered_df = filtered_df[
-        filtered_df['P_Value'].astype(float) <= max_p_value_filter
-    ]
-    
-    # Display filtered results
-    st.subheader(f"📊 RSI Analysis Results ({len(filtered_df)} signals)")
-    st.dataframe(filtered_df[display_cols], use_container_width=True)
-    
+        # Create filter columns
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            rsi_min_filter = st.number_input(
+                "Min RSI Threshold:",
+                min_value=float(display_df['RSI_Threshold'].min()),
+                max_value=float(display_df['RSI_Threshold'].max()),
+                value=float(display_df['RSI_Threshold'].min()),
+                step=0.5,
+                help="Minimum RSI threshold to include in results."
+            )
+            rsi_max_filter = st.number_input(
+                "Max RSI Threshold:",
+                min_value=float(display_df['RSI_Threshold'].min()),
+                max_value=float(display_df['RSI_Threshold'].max()),
+                value=float(display_df['RSI_Threshold'].max()),
+                step=0.5,
+                help="Maximum RSI threshold to include in results."
+            )
+        with col2:
+            confidence_min_filter = st.number_input(
+                "Min Confidence Level (%):",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=1.0,
+                help="Minimum confidence level to include in results."
+            )
+            confidence_max_filter = st.number_input(
+                "Max Confidence Level (%):",
+                min_value=0.0,
+                max_value=100.0,
+                value=100.0,
+                step=1.0,
+                help="Maximum confidence level to include in results."
+            )
+        with col3:
+            min_trades_filter = st.number_input(
+                "Min Total Trades:",
+                min_value=0,
+                value=0,
+                help="Minimum number of trades to include in results."
+            )
+            min_win_rate_filter = st.number_input(
+                "Min Win Rate (%):",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=1.0,
+                help="Minimum win rate percentage to include in results."
+            )
+        with col4:
+            min_avg_return_filter = st.number_input(
+                "Min Avg Return (%):",
+                min_value=-100.0,
+                max_value=100.0,
+                value=-100.0,
+                step=0.1,
+                help="Minimum average return percentage to include in results."
+            )
+            min_total_return_filter = st.number_input(
+                "Min Total Return (%):",
+                min_value=-100.0,
+                max_value=100.0,
+                value=-100.0,
+                step=0.1,
+                help="Minimum total return percentage to include in results."
+            )
+        col5, col6, col7, col8 = st.columns(4)
+        with col5:
+            min_annualized_return_filter = st.number_input(
+                "Min Annualized Return (%):",
+                min_value=-100.0,
+                max_value=100.0,
+                value=-100.0,
+                step=0.1,
+                help="Minimum annualized return percentage to include in results."
+            )
+        with col6:
+            min_sortino_filter = st.number_input(
+                "Min Sortino Ratio:",
+                min_value=-10.0,
+                max_value=10.0,
+                value=-10.0,
+                step=0.1,
+                help="Minimum Sortino ratio to include in results."
+            )
+        with col7:
+            significance_filter = st.selectbox(
+                "Significance:",
+                ["All", "Significant Only", "Non-Significant Only"],
+                help="Filter by statistical significance."
+            )
+            max_p_value_filter = st.number_input(
+                "Max P-Value:",
+                min_value=0.0,
+                max_value=1.0,
+                value=1.0,
+                step=0.001,
+                help="Maximum p-value to include in results (lower = more significant)."
+            )
+        with col8:
+            if st.button("Clear All Filters", type="secondary"):
+                st.rerun()
+            # Apply filters to the display dataframe
+            filtered_df = display_df.copy()
+            filtered_df = filtered_df[
+                (filtered_df['RSI_Threshold'] >= rsi_min_filter) & 
+                (filtered_df['RSI_Threshold'] <= rsi_max_filter)
+            ]
+            filtered_df = filtered_df[
+                (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= confidence_min_filter) & 
+                (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) <= confidence_max_filter)
+            ]
+            filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades_filter]
+            filtered_df = filtered_df[
+                filtered_df['Win_Rate'].str.replace('%', '').astype(float) >= min_win_rate_filter
+            ]
+            filtered_df = filtered_df[
+                filtered_df['Avg_Return'].str.replace('%', '').astype(float) >= min_avg_return_filter
+            ]
+            filtered_df = filtered_df[
+                filtered_df['Total_Return'].str.replace('%', '').astype(float) >= min_total_return_filter
+            ]
+            filtered_df = filtered_df[
+                filtered_df['Annualized_Return'].str.replace('%', '').astype(float) >= min_annualized_return_filter
+            ]
+            filtered_df = filtered_df[
+                filtered_df['Sortino_Ratio'].apply(lambda x: float(x) if x != "∞" else 999) >= min_sortino_filter
+            ]
+            if significance_filter == "Significant Only":
+                filtered_df = filtered_df[filtered_df['Significant'] == "✓"]
+            elif significance_filter == "Non-Significant Only":
+                filtered_df = filtered_df[filtered_df['Significant'] == "✗"]
+            filtered_df = filtered_df[
+                filtered_df['P_Value'].astype(float) <= max_p_value_filter
+            ]
+            st.subheader(f"📊 RSI Analysis Results ({len(filtered_df)} signals)")
+            st.dataframe(filtered_df[display_cols], use_container_width=True)
+
     # Find best strategies (needed for subsequent sections)
     best_sortino_idx = filtered_df['Sortino_Ratio'].idxmax()
     best_annualized_idx = filtered_df['annualized_return'].idxmax()
