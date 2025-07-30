@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="RSI Threshold Optimizer", layout="wide")
 
-st.title("🚀 RSI Threshold Optimizer")
+st.title("RSI Threshold Optimizer")
 st.write("Optimize RSI thresholds using real market data from Yahoo Finance")
 
 def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
@@ -1127,114 +1127,6 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
             )
             st.plotly_chart(fig_sortino_comparison, use_container_width=True, key="highest_sortino_comparison")
-            
-            # Effect size vs confidence level
-            st.subheader("📊 Effect size vs Confidence Level Analysis")
-            st.info(f"💡 **What this shows:** This scatter plot helps you understand the relationship between statistical significance and practical importance. Each point represents a signal - the position shows how confident we are (confidence level) and how much better/worse the signal is compared to {benchmark_name} (effect size).")
-            
-            # Create scatter plot with hover information
-            fig_effect = go.Figure()
-            
-            # Add points for significant signals (green)
-            significant_data = valid_signals[valid_signals['significant'] == True]
-            if not significant_data.empty:
-                fig_effect.add_trace(go.Scatter(
-                    x=significant_data['effect_size'],
-                    y=significant_data['confidence_level'],
-                    mode='markers',
-                    name='Significant Signals (≥95%)',
-                    marker=dict(color='green', size=8),
-                    hovertemplate='<b>RSI %{text}</b><br>' +
-                                'Effect Size: %{x:.3f}<br>' +
-                                'Confidence: %{y:.1f}%<br>' +
-                                'Significant: ✓<extra></extra>',
-                    text=[f"{row['RSI_Threshold']}" for _, row in significant_data.iterrows()]
-                ))
-            
-            # Add points for borderline significant signals (yellow)
-            borderline_data = valid_signals[(valid_signals['confidence_level'] >= 85) & (valid_signals['confidence_level'] < 95)]
-            if not borderline_data.empty:
-                fig_effect.add_trace(go.Scatter(
-                    x=borderline_data['effect_size'],
-                    y=borderline_data['confidence_level'],
-                    mode='markers',
-                    name='Borderline Signals (85-95%)',
-                    marker=dict(color='yellow', size=8),
-                    hovertemplate='<b>RSI %{text}</b><br>' +
-                                'Effect Size: %{x:.3f}<br>' +
-                                'Confidence: %{y:.1f}%<br>' +
-                                'Borderline: ⚠<extra></extra>',
-                    text=[f"{row['RSI_Threshold']}" for _, row in borderline_data.iterrows()]
-                ))
-            
-            # Add points for non-significant signals (red)
-            non_significant_data = valid_signals[valid_signals['confidence_level'] < 85]
-            if not non_significant_data.empty:
-                fig_effect.add_trace(go.Scatter(
-                    x=non_significant_data['effect_size'],
-                    y=non_significant_data['confidence_level'],
-                    mode='markers',
-                    name='Non-Significant Signals (<85%)',
-                    marker=dict(color='red', size=8),
-                    hovertemplate='<b>RSI %{text}</b><br>' +
-                                'Effect Size: %{x:.3f}<br>' +
-                                'Confidence: %{y:.1f}%<br>' +
-                                'Significant: ✗<extra></extra>',
-                    text=[f"{row['RSI_Threshold']}" for _, row in non_significant_data.iterrows()]
-                ))
-            
-            # Add reference lines
-            fig_effect.add_hline(y=95, line_dash="dash", line_color="red", 
-                               annotation_text="95% Confidence")
-            fig_effect.add_hline(y=85, line_dash="dash", line_color="yellow", 
-                               annotation_text="85% Confidence")
-            fig_effect.add_vline(x=0, line_dash="dash", line_color="gray", 
-                               annotation_text="No Effect")
-            
-            fig_effect.update_layout(
-                title="Effect Size vs Confidence Level",
-                xaxis_title="Effect Size (Cohen's d)",
-                yaxis_title="Confidence Level (%)",
-                hovermode='closest'
-            )
-            
-            st.plotly_chart(fig_effect, use_container_width=True, key="effect_size_chart")
-            
-            # Detailed explanation
-            with st.expander("📚 Understanding Effect Size vs Confidence Level"):
-                st.write("""
-                **What This Chart Tells You:**
-                
-                **🎯 Quadrant Analysis:**
-                - **Top Right (Green)**: High confidence + Large positive effect = Best signals
-                - **Top Left (Green)**: High confidence + Large negative effect = Poor signals  
-                - **Bottom Right (Red)**: Low confidence + Large positive effect = Promising but uncertain
-                - **Bottom Left (Red)**: Low confidence + Small effect = Weak signals
-                
-                **📊 Effect Size Interpretation:**
-                - **0.0**: No difference from the benchmark
-                - **0.2-0.5**: Small effect (signal slightly better/worse)
-                - **0.5-0.8**: Medium effect (meaningful difference)
-                - **>0.8**: Large effect (substantial outperformance/underperformance)
-                
-                **📈 Confidence Level Meaning:**
-                - **>95%**: Very strong evidence the signal differs from the benchmark
-                - **90-95%**: Strong evidence of difference
-                - **80-90%**: Moderate evidence
-                - **<80%**: Weak evidence, results could be due to chance
-                
-                **🎯 What to Look For:**
-                - **Green dots in top-right**: Your best signals (high confidence + large positive effect)
-                - **Green dots in top-left**: Signals to avoid (high confidence + large negative effect)
-                - **Red dots**: Signals with uncertain results (low confidence)
-                - **Dots near the center line**: Signals with minimal effect on performance
-                
-                **💡 Practical Guidance:**
-                - Focus on signals in the top-right quadrant
-                - Be cautious of signals with high confidence but negative effect size
-                - Consider sample size - more data points generally lead to higher confidence
-                - Remember that past performance doesn't guarantee future results
-                """)
             
             # Statistical interpretation guide
             
