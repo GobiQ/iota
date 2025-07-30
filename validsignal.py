@@ -257,7 +257,7 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
     }
 
 def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
-                    start_date=None, end_date=None, rsi_period: int = 14) -> Tuple[pd.DataFrame, pd.Series]:
+                    start_date=None, end_date=None, rsi_period: int = 14, benchmark_ticker: str = "SPY") -> Tuple[pd.DataFrame, pd.Series]:
     """Run comprehensive RSI analysis across the specified range"""
     
     # Fetch data
@@ -267,8 +267,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
     with st.spinner(f"Fetching data for {target_ticker}..."):
         target_data = get_stock_data(target_ticker, start_date, end_date)
     
-    # Fetch benchmark data for comparison - use BIL for less_than, SPY for greater_than
-    benchmark_ticker = "BIL" if comparison == "less_than" else "SPY"
+    # Fetch benchmark data for comparison - use user-selected benchmark
     with st.spinner(f"Fetching benchmark data ({benchmark_ticker})..."):
         benchmark_data = get_stock_data(benchmark_ticker, start_date, end_date)
     
@@ -412,6 +411,12 @@ else:
 
 target_ticker = st.sidebar.text_input("Target Ticker", value=default_target, help="The ticker to buy/sell based on the signal ticker's RSI. This is what you'll actually be trading.")
 
+# Benchmark selection
+benchmark_ticker = st.sidebar.selectbox("Benchmark", 
+                                       ["BIL", "SPY"], 
+                                       format_func=lambda x: "BIL (Cash Equivalent)" if x == "BIL" else "SPY (S&P 500)",
+                                       help="Choose your benchmark for comparison: BIL represents cash (money market), SPY represents the S&P 500 index. This is what your strategy will be compared against.")
+
 # Date range selection
 st.sidebar.subheader("📅 Date Range")
 use_date_range = st.sidebar.checkbox("Use custom date range", help="Check this to specify your own start and end dates. If unchecked, the app will use all available data.")
@@ -455,16 +460,17 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_width=True):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
-            results_df, benchmark = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period)
+            results_df, benchmark = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, benchmark_ticker)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
                 # Store analysis results in session state
                 st.session_state['results_df'] = results_df
                 st.session_state['benchmark'] = benchmark
                 st.session_state['signal_data'] = get_stock_data(signal_ticker, start_date, end_date)
-                st.session_state['benchmark_data'] = get_stock_data("BIL" if comparison == "less_than" else "SPY", start_date, end_date)
+                st.session_state['benchmark_data'] = get_stock_data(benchmark_ticker, start_date, end_date)
                 st.session_state['rsi_period'] = rsi_period
                 st.session_state['comparison'] = comparison
+                st.session_state['benchmark_ticker'] = benchmark_ticker
                 st.session_state['analysis_completed'] = True
                 
                 st.sidebar.success("✅ Analysis completed successfully!")
@@ -484,6 +490,7 @@ with col1:
     st.subheader("🎯 Analysis Configuration")
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
     st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
+    st.write(f"**Benchmark:** {benchmark_ticker} ({'Cash Equivalent' if benchmark_ticker == 'BIL' else 'S&P 500'})")
     st.write(f"**RSI Period:** {rsi_period}-day RSI")
     st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
     st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
@@ -560,7 +567,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     
     # Statistical Significance Analysis
     st.subheader("📊 Statistical Significance Analysis")
-    benchmark_name = "BIL (cash)" if st.session_state.get('comparison') == "less_than" else "SPY"
+    stored_benchmark_ticker = st.session_state.get('benchmark_ticker', 'SPY')
+    benchmark_name = f"{stored_benchmark_ticker} ({'Cash Equivalent' if stored_benchmark_ticker == 'BIL' else 'S&P 500'})"
     st.info(f"💡 **What this shows:** This section determines whether your strategy's performance is statistically significant - meaning the results are likely not due to chance. It compares your strategy against {benchmark_name} under the same conditions to see if your target ticker choice is actually better.")
     
     # Filter strategies with trades
@@ -571,7 +579,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         significant_strategies = valid_strategies[valid_strategies['significant'] == True]
         
         # Effect size vs confidence level
-        st.subheader("📊 Effect Size vs Confidence Level Analysis")
+        st.subheader("📊 Effect size vs Confidence Level Analysis")
         st.info(f"💡 **What this shows:** This scatter plot helps you understand the relationship between statistical significance and practical importance. Each point represents a strategy - the position shows how confident we are (confidence level) and how much better/worse the strategy is compared to {benchmark_name} (effect size).")
         
         # Create scatter plot with hover information
