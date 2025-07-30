@@ -1,1245 +1,501 @@
-#!/usr/bin/env python3
-"""
-Valid Signal Analysis with Composer Symphony Integration
-"""
-
-import streamlit as st
-import pandas as pd
 import numpy as np
-import requests
-import plotly.graph_objects as go
-from datetime import datetime, date, timedelta
-from typing import List, Dict, Any, Optional
+import pandas as pd
+from sklearn.mixture import GaussianMixture
+from sklearn.preprocessing import StandardScaler
+from scipy.optimize import minimize
+import talib
+from typing import Dict, Tuple, List
 import warnings
-import json
-
-# Suppress warnings
 warnings.filterwarnings('ignore')
 
-def clean_symphony_id(symphony_id: str) -> str:
-    """Clean symphony ID by removing URL parts if user pasted full URL."""
-    if not symphony_id or len(symphony_id.strip()) == 0:
-        return ""
+class MarketRegimeDetector:
+    """Detects market regimes using multiple indicators"""
     
-    symph_id = symphony_id.strip()
+    def __init__(self, n_regimes=3):
+        self.n_regimes = n_regimes
+        self.gmm = GaussianMixture(n_components=n_regimes, random_state=42)
+        self.scaler = StandardScaler()
+        self.regime_labels = {0: 'Bull', 1: 'Bear', 2: 'Sideways'}
+        
+    def extract_features(self, prices: pd.Series) -> pd.DataFrame:
+        """Extract regime-detection features from price data"""
+        features = pd.DataFrame(index=prices.index)
+        
+        # Volatility features
+        returns = prices.pct_change()
+        features['volatility_20'] = returns.rolling(20).std()
+        features['volatility_5'] = returns.rolling(5).std()
+        
+        # Trend features
+        features['ma_slope_20'] = prices.rolling(20).mean().pct_change(5)
+        features['ma_slope_50'] = prices.rolling(50).mean().pct_change(10)
+        
+        # Momentum features
+        features['roc_10'] = (prices / prices.shift(10) - 1)
+        features['roc_20'] = (prices / prices.shift(20) - 1)
+        
+        # Price position relative to moving averages
+        ma_20 = prices.rolling(20).mean()
+        ma_50 = prices.rolling(50).mean()
+        features['price_vs_ma20'] = (prices - ma_20) / ma_20
+        features['price_vs_ma50'] = (prices - ma_50) / ma_50
+        
+        return features.dropna()
     
-    # Handle full Composer URLs with various suffixes
-    if symph_id.startswith("https://app.composer.trade/symphony/"):
-        # Remove the base URL and any trailing suffixes like /details, /factsheet, etc.
-        symph_id = symph_id.replace("https://app.composer.trade/symphony/", "")
-        # Remove common suffixes
-        for suffix in ['/details', '/factsheet', '/backtest', '/performance']:
-            if symph_id.endswith(suffix):
-                symph_id = symph_id[:-len(suffix)]
-                break
+    def fit(self, prices: pd.Series):
+        """Fit the regime detection model"""
+        features = self.extract_features(prices)
+        features_scaled = self.scaler.fit_transform(features)
+        self.gmm.fit(features_scaled)
+        return self
     
-    # Handle URLs that might have been pasted with additional paths
-    if '/' in symph_id and not symph_id.startswith('http'):
-        # Extract just the ID part before any slashes
-        symph_id = symph_id.split('/')[0]
-    
-    # Validate Symphony ID format (should be alphanumeric, typically 20+ characters)
-    if len(symph_id) < 10:
-        st.warning(f"⚠️ Symphony ID '{symph_id}' seems too short. Valid IDs are typically 20+ characters.")
-    
-    # Check for common invalid values
-    invalid_values = ['details', 'help', 'about', 'login', 'signup', 'home', 'dashboard', 'factsheet']
-    if symph_id.lower() in invalid_values:
-        st.error(f"❌ '{symph_id}' is not a valid Symphony ID. Please enter a real Symphony ID from Composer.")
-        return ""
-    
-    return symph_id
+    def predict_regime(self, prices: pd.Series) -> int:
+        """Predict current market regime"""
+        features = self.extract_features(prices)
+        if len(features) == 0:
+            return 2  # Default to sideways if insufficient data
+        
+        features_scaled = self.scaler.transform(features.iloc[-1:])
+        regime = self.gmm.predict(features_scaled)[0]
+        return regime
 
-def fetch_symphony_data(symphony_id: str, start_date: str, end_date: str, api_key: str = None) -> Dict[str, Any]:
-    """Fetch backtest data from Composer Symphony using authenticated API."""
+class RSIThresholdOptimizer:
+    """Optimizes RSI thresholds based on market regimes with target ticker functionality"""
     
-    # Clean the symphony ID
-    clean_id = clean_symphony_id(symphony_id)
-    if not clean_id:
-        st.error("❌ Invalid Symphony ID")
-        return None
-    
-    st.info(f"🔍 Fetching data for Symphony ID: {clean_id}")
-    
-    # Method 1: Try Composer API with authentication
-    if api_key:
-        try:
-            composer_url = f"https://api.composer.trade/v1/symphonies/{clean_id}/backtest"
-            headers = {
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'User-Agent': 'Composer-Analysis-App/1.0'
+    def __init__(self, regime_detector: MarketRegimeDetector, target_ticker: str = "TQQQ"):
+        self.regime_detector = regime_detector
+        self.optimal_thresholds = {}
+        self.min_data_points = 50  # Minimum data points needed for regime detection
+        self.use_all_available_data = True  # Use maximum lookback available
+        self.target_ticker = target_ticker  # Primary ticker to analyze RSI for
+        self.asset_allocation_rules = {}  # Store optimal asset allocation per regime/condition
+        
+    def set_asset_allocation_rules(self, allocation_rules: Dict):
+        """
+        Set asset allocation rules for different RSI conditions and regimes
+        
+        Args:
+            allocation_rules: Dictionary defining which assets to hold under different conditions
+            Example:
+            {
+                'rsi_overbought': {
+                    'bull': 'UVXY',      # Hold VIX when overbought in bull market
+                    'bear': 'SQQQ',      # Hold inverse when overbought in bear market  
+                    'sideways': 'BSV'    # Hold bonds when overbought in sideways market
+                },
+                'rsi_oversold': {
+                    'bull': 'TECL',      # Hold tech bull 3x when oversold in bull market
+                    'bear': 'TQQQ',      # Hold regular when oversold in bear market
+                    'sideways': 'TQQQ'   # Hold regular when oversold in sideways market
+                },
+                'rsi_neutral': {
+                    'bull': 'TQQQ',      # Default position
+                    'bear': 'BSV',       # Conservative in bear market
+                    'sideways': 'TQQQ'   # Default position
+                }
             }
-            
-            params = {
-                'start_date': start_date,
-                'end_date': end_date,
-                'format': 'json'
-            }
-            
-            st.info(f"🌐 Trying authenticated Composer API: {composer_url}")
-            response = requests.get(composer_url, headers=headers, params=params, timeout=30)
-            
-            st.info(f"📡 Authenticated API response status: {response.status_code}")
-            
-            if response.status_code == 200:
-                if response.text.strip():
-                    try:
-                        data = response.json()
-                        st.success("✅ Successfully fetched data from authenticated Composer API")
-                        return data
-                    except ValueError as e:
-                        st.error(f"❌ Invalid JSON response from authenticated API: {str(e)}")
-                        st.info(f"📄 Response preview: {response.text[:200]}...")
-                else:
-                    st.warning("⚠️ Authenticated API returned empty response")
-            elif response.status_code == 401:
-                st.error("❌ Authentication failed - please check your API key")
-                return None
-            elif response.status_code == 404:
-                st.error("❌ Symphony not found or not accessible with your API key")
-                return None
-            else:
-                st.warning(f"⚠️ Authenticated API returned status {response.status_code}")
-                st.info(f"📄 Response: {response.text[:200]}...")
-                
-        except Exception as e:
-            st.error(f"❌ Authenticated API method failed: {str(e)}")
+        """
+        self.asset_allocation_rules = allocation_rules
     
-    # Method 2: Try Composer Web API (fallback)
-    try:
-        composer_url = f"https://app.composer.trade/api/symphony/{clean_id}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://app.composer.trade/',
-            'Origin': 'https://app.composer.trade',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-        }
+    def get_target_asset(self, rsi_value: float, market_regime: str, 
+                        rsi_lower: float, rsi_upper: float) -> str:
+        """
+        Determine which asset to hold based on RSI value and market regime
         
-        st.info(f"🌐 Trying Composer API: {composer_url}")
-        response = requests.get(composer_url, headers=headers, timeout=30)
+        Args:
+            rsi_value: Current RSI value for target ticker
+            market_regime: Current market regime ('bull', 'bear', 'sideways')
+            rsi_lower: Lower RSI threshold
+            rsi_upper: Upper RSI threshold
+            
+        Returns:
+            Asset ticker symbol to hold
+        """
+        if not self.asset_allocation_rules:
+            return self.target_ticker  # Default to target ticker if no rules set
         
-        st.info(f"📡 Response status: {response.status_code}")
-        st.info(f"📄 Response length: {len(response.text)} characters")
-        
-        if response.status_code == 200:
-            if response.text.strip():
-                # Check if response is HTML instead of JSON
-                if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
-                    st.error("❌ Composer API returned HTML instead of JSON")
-                    st.info("💡 This usually means:")
-                    st.info("   - The Symphony ID is invalid")
-                    st.info("   - The API requires authentication")
-                    st.info("   - The API endpoint has changed")
-                    st.info("📄 Response preview: <!DOCTYPE html>...")
-                    # Don't return here, continue to next method
-                
-                try:
-                    data = response.json()
-                    st.success("✅ Successfully parsed JSON from Composer API")
-                    return data
-                except ValueError as e:
-                    # Check if it's HTML after JSON parsing fails
-                    if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
-                        st.error("❌ Composer API returned HTML instead of JSON")
-                        st.info("💡 This usually means:")
-                        st.info("   - The Symphony ID is invalid")
-                        st.info("   - The API requires authentication")
-                        st.info("   - The API endpoint has changed")
-                        st.info("📄 Response preview: <!DOCTYPE html>...")
-                    else:
-                        st.error(f"❌ Invalid JSON response from Composer API: {str(e)}")
-                        st.info(f"📄 Response preview: {response.text[:200]}...")
-                    # Don't return here, continue to next method
-            else:
-                st.warning("⚠️ Composer API returned empty response")
+        # Determine RSI condition
+        if rsi_value > rsi_upper:
+            condition = 'rsi_overbought'
+        elif rsi_value < rsi_lower:
+            condition = 'rsi_oversold'
         else:
-            st.warning(f"⚠️ Composer API returned status {response.status_code}")
-            st.info(f"📄 Response: {response.text[:200]}...")
-            
-    except Exception as e:
-        st.error(f"❌ Composer API method failed: {str(e)}")
+            condition = 'rsi_neutral'
+        
+        # Get asset for this condition and regime
+        if condition in self.asset_allocation_rules:
+            regime_rules = self.asset_allocation_rules[condition]
+            if market_regime.lower() in regime_rules:
+                return regime_rules[market_regime.lower()]
+        
+        # Fallback to target ticker
+        return self.target_ticker
+        """Calculate RSI using talib"""
+        return talib.RSI(prices.values, timeperiod=window)
     
-    # Method 2: Try Firestore API
-    try:
-        firestore_url = f"https://firestore.googleapis.com/v1/projects/leverheads-278521/databases/(default)/documents/symphony/{clean_id}"
+    def backtest_strategy(self, prices: pd.Series, rsi_upper: float, rsi_lower: float, 
+                         regime: int) -> float:
+        """Backtest RSI strategy for a specific regime with given thresholds using all available data"""
+        rsi = self.calculate_rsi(prices)
         
-        st.info(f"🌐 Trying Firestore API: {firestore_url}")
-        response = requests.get(firestore_url, timeout=30)
+        # Use all available data - determine regime for each day with sufficient history
+        regime_mask = []
+        min_history = max(50, len(prices) // 20)  # At least 50 days or 5% of total data
         
-        st.info(f"📡 Firestore response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            if response.text.strip():
-                try:
-                    data = response.json()
-                    if 'fields' in data:
-                        st.success("✅ Successfully parsed JSON from Firestore API")
-                        return data
-                    else:
-                        st.warning("⚠️ Firestore response missing 'fields'")
-                except ValueError as e:
-                    st.error(f"❌ Invalid JSON response from Firestore API: {str(e)}")
-                    st.info(f"📄 Firestore response preview: {response.text[:200]}...")
-            else:
-                st.warning("⚠️ Firestore API returned empty response")
-        else:
-            st.warning(f"⚠️ Firestore API returned status {response.status_code}")
-            st.info(f"📄 Firestore response: {response.text[:200]}...")
-            
-    except Exception as e:
-        st.error(f"❌ Firestore API method failed: {str(e)}")
-    
-    # Method 3: Try alternative Composer endpoint
-    try:
-        alt_composer_url = f"https://app.composer.trade/api/symphonies/{clean_id}"
-        st.info(f"🌐 Trying alternative Composer API: {alt_composer_url}")
-        
-        response = requests.get(alt_composer_url, headers=headers, timeout=30)
-        
-        if response.status_code == 200 and response.text.strip():
+        for i in range(len(prices)):
+            if i < min_history:  # Need enough data for regime detection
+                regime_mask.append(False)
+                continue
             try:
-                data = response.json()
-                st.success("✅ Successfully parsed JSON from alternative Composer API")
-                return data
-            except ValueError:
-                st.warning("⚠️ Alternative Composer API returned invalid JSON")
-        else:
-            st.warning(f"⚠️ Alternative Composer API returned status {response.status_code}")
-            
-    except Exception as e:
-        st.error(f"❌ Alternative Composer API method failed: {str(e)}")
-    
-    # Method 4: Try Composer API with different authentication pattern
-    try:
-        auth_composer_url = f"https://api.composer.trade/v1/symphonies/{clean_id}/backtest"
-        st.info(f"🌐 Trying Composer API v1: {auth_composer_url}")
+                # Use expanding window - all data from start to current point
+                current_regime = self.regime_detector.predict_regime(prices.iloc[:i+1])
+                regime_mask.append(current_regime == regime)
+            except:
+                regime_mask.append(False)
         
-        auth_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer public'  # Try public access
-        }
+        regime_mask = pd.Series(regime_mask, index=prices.index)
         
-        params = {
-            'start_date': start_date,
-            'end_date': end_date,
-            'format': 'json'
-        }
+        # Generate signals only for the specific regime across entire dataset
+        signals = pd.Series(0, index=prices.index)
         
-        response = requests.get(auth_composer_url, headers=auth_headers, params=params, timeout=30)
-        
-        st.info(f"📡 Composer API v1 response status: {response.status_code}")
-        
-        if response.status_code == 200 and response.text.strip():
-            # Check for HTML response
-            if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
-                st.warning("⚠️ Composer API v1 returned HTML")
+        for i in range(1, len(rsi)):
+            if not regime_mask.iloc[i] or pd.isna(rsi[i]):
+                continue
+                
+            # RSI-based signals
+            if rsi[i] > rsi_upper:
+                signals.iloc[i] = -1  # Sell/Short signal
+            elif rsi[i] < rsi_lower:
+                signals.iloc[i] = 1   # Buy signal
             else:
-                try:
-                    data = response.json()
-                    st.success("✅ Successfully parsed JSON from Composer API v1")
-                    return data
-                except ValueError:
-                    st.warning("⚠️ Composer API v1 returned invalid JSON")
+                signals.iloc[i] = 0   # Hold
+        
+        # Calculate returns using all available data
+        returns = prices.pct_change()
+        strategy_returns = signals.shift(1) * returns  # Signal from previous day
+        
+        # Only consider returns when in the specific regime
+        regime_returns = strategy_returns[regime_mask]
+        
+        if len(regime_returns) == 0 or regime_returns.sum() == 0:
+            return -999  # Penalty for no valid trades
+        
+        # Calculate enhanced performance metrics using all available data
+        total_days = len(regime_returns[regime_returns != 0])
+        if total_days < 10:  # Need minimum trades for reliable statistics
+            return -999
+        
+        # Calculate annualized Sharpe ratio
+        mean_return = regime_returns.mean() * 252
+        std_return = regime_returns.std() * np.sqrt(252)
+        
+        if std_return == 0:
+            return -999
+        
+        sharpe = mean_return / std_return
+        
+        # Bonus for using more historical data (encourages longer backtests)
+        data_bonus = min(0.1, total_days / 1000)  # Small bonus for more data points
+        sharpe += data_bonus
+        
+        # Add penalty for extreme thresholds to encourage reasonable values
+        if rsi_upper > 95 or rsi_lower < 5 or rsi_upper - rsi_lower < 10:
+            sharpe -= 1
+        
+        return sharpe
+    
+    def optimize_thresholds_for_regime(self, prices: pd.Series, regime: int) -> Tuple[float, float]:
+        """Optimize RSI thresholds for a specific market regime"""
+        
+        def objective(params):
+            rsi_lower, rsi_upper = params
+            return -self.backtest_strategy(prices, rsi_upper, rsi_lower, regime)
+        
+        # Initial guess and bounds
+        initial_guess = [30, 70]  # Standard RSI thresholds
+        bounds = [(10, 45), (55, 90)]  # Reasonable bounds for RSI thresholds
+        
+        # Add constraint that upper > lower + 10
+        constraints = {'type': 'ineq', 'fun': lambda x: x[1] - x[0] - 10}
+        
+        result = minimize(objective, initial_guess, method='L-BFGS-B', 
+                         bounds=bounds, constraints=constraints)
+        
+        if result.success:
+            return result.x[0], result.x[1]
         else:
-            st.warning(f"⚠️ Composer API v1 returned status {response.status_code}")
-            
-    except Exception as e:
-        st.error(f"❌ Composer API v1 method failed: {str(e)}")
+            # Return default values if optimization fails
+            return 30, 70
     
-    # Method 5: Try to extract data from Composer's web interface
-    try:
-        web_url = f"https://app.composer.trade/symphony/{clean_id}"
-        st.info(f"🌐 Trying to access Symphony web page: {web_url}")
-        st.info("💡 This method attempts to extract data from the public web interface")
+    def fit(self, prices: pd.Series):
+        """Optimize thresholds for all market regimes using maximum available historical data"""
+        total_days = len(prices)
+        print(f"Optimizing RSI thresholds using {total_days} days of historical data...")
+        print(f"Date range: {prices.index[0].strftime('%Y-%m-%d')} to {prices.index[-1].strftime('%Y-%m-%d')}")
         
-        web_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        }
+        # Calculate regime statistics across entire dataset
+        regime_counts = {}
+        min_history = max(50, len(prices) // 20)
         
-        response = requests.get(web_url, headers=web_headers, timeout=30)
+        # Count regime occurrences across all available data
+        for i in range(min_history, len(prices)):
+            try:
+                regime = self.regime_detector.predict_regime(prices.iloc[:i+1])
+                regime_counts[regime] = regime_counts.get(regime, 0) + 1
+            except:
+                continue
         
-        if response.status_code == 200:
-            st.info("✅ Successfully accessed Symphony web page")
-            st.info("💡 Note: Web scraping is limited and may not provide full data")
-            st.info("📄 Web page length: {} characters".format(len(response.text)))
+        print(f"Regime distribution across {total_days - min_history} trading days:")
+        for regime, count in regime_counts.items():
+            regime_name = self.regime_detector.regime_labels[regime]
+            percentage = (count / sum(regime_counts.values())) * 100
+            print(f"  {regime_name}: {count} days ({percentage:.1f}%)")
+        
+        # Optimize thresholds for each regime using all available data
+        for regime in range(self.regime_detector.n_regimes):
+            regime_name = self.regime_detector.regime_labels[regime]
+            print(f"\nOptimizing for regime {regime} ({regime_name}) using full dataset...")
             
-            # For now, just indicate that web access worked
-            st.warning("⚠️ Web interface access successful, but data extraction requires additional development")
+            if regime not in regime_counts or regime_counts[regime] < 20:
+                print(f"  Insufficient data for regime {regime}, using default thresholds")
+                self.optimal_thresholds[regime] = {'lower': 30.0, 'upper': 70.0}
+                continue
+            
+            lower, upper = self.optimize_thresholds_for_regime(prices, regime)
+            self.optimal_thresholds[regime] = {
+                'lower': round(lower, 1),
+                'upper': round(upper, 1)
+            }
+            
+            print(f"  Regime {regime} ({regime_name}): Lower={lower:.1f}, Upper={upper:.1f}")
+            print(f"  Based on {regime_counts[regime]} trading days in this regime")
+        
+        return self
+    
+    def get_current_thresholds(self, prices: pd.Series) -> Dict[str, float]:
+        """Get optimal thresholds for current market regime"""
+        current_regime = self.regime_detector.predict_regime(prices)
+        
+        if current_regime in self.optimal_thresholds:
+            thresholds = self.optimal_thresholds[current_regime]
+            regime_name = self.regime_detector.regime_labels[current_regime]
+            
+            return {
+                'regime': regime_name,
+                'regime_id': current_regime,
+                'rsi_lower': thresholds['lower'],
+                'rsi_upper': thresholds['upper']
+            }
         else:
-            st.warning(f"⚠️ Web interface returned status {response.status_code}")
-            
-    except Exception as e:
-        st.error(f"❌ Web interface method failed: {str(e)}")
-    
-    st.error("❌ Failed to fetch data from Composer APIs")
-    st.info("💡 This might mean:")
-    st.info("   - The Symphony ID is incorrect")
-    st.info("   - The Symphony is private and requires authentication")
-    st.info("   - The API key is invalid or expired")
-    st.info("   - The Symphony doesn't exist")
-    
-    # Always offer sample data when APIs fail
-    st.info("🧪 Would you like to test with sample data?")
-    if st.button("📊 Create Sample Data for Testing", key="sample_data_button"):
-        st.info("📊 Creating sample data for demonstration...")
-        return create_sample_symphony_data()
-    
-    return None
+            # Fallback to default thresholds
+            return {
+                'regime': 'Unknown',
+                'regime_id': -1,
+                'rsi_lower': 30.0,
+                'rsi_upper': 70.0
+            }
 
-def create_sample_symphony_data() -> Dict[str, Any]:
-    """Create sample symphony data for testing purposes."""
-    import random
-    from datetime import datetime, timedelta
+# Example usage with extended historical data simulation
+def simulate_extended_market_data(n_years=10):
+    """Generate extended simulated market data for comprehensive testing"""
+    np.random.seed(42)
     
-    # Generate sample dates
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
-    dates = pd.date_range(start=start_date, end=end_date, freq='D')
+    # Create longer market cycles with more varied regimes
+    total_days = n_years * 252  # Trading days per year
     
-    # Generate sample returns
-    np.random.seed(42)  # For reproducible results
-    returns = np.random.normal(0.001, 0.02, len(dates))  # 0.1% daily return, 2% volatility
+    # Define multiple market cycles with different characteristics
+    cycles = [
+        {'type': 'bull', 'days': 500, 'drift': 0.0008, 'vol': 0.018},      # Strong bull
+        {'type': 'bear', 'days': 300, 'drift': -0.0012, 'vol': 0.035},    # Bear crash
+        {'type': 'recovery', 'days': 400, 'drift': 0.0006, 'vol': 0.025}, # Volatile recovery
+        {'type': 'sideways', 'days': 350, 'drift': 0.0001, 'vol': 0.015}, # Range-bound
+        {'type': 'bull', 'days': 600, 'drift': 0.0007, 'vol': 0.020},     # Sustained bull
+        {'type': 'correction', 'days': 200, 'drift': -0.0008, 'vol': 0.028}, # Correction
+        {'type': 'sideways', 'days': 300, 'drift': -0.0001, 'vol': 0.012}, # Low vol sideways
+        {'type': 'bull', 'days': 370, 'drift': 0.0009, 'vol': 0.022},     # Final bull run
+    ]
     
-    # Create returns data
-    returns_data = []
-    for i, date in enumerate(dates):
-        returns_data.append({
-            'date': date.strftime('%Y-%m-%d'),
-            'return': returns[i]
+    prices = []
+    current_price = 100
+    cycle_info = []
+    
+    for cycle in cycles:
+        if len(prices) >= total_days:
+            break
+            
+        days_remaining = min(cycle['days'], total_days - len(prices))
+        daily_returns = np.random.normal(cycle['drift'], cycle['vol'], days_remaining)
+        
+        cycle_start = len(prices)
+        for ret in daily_returns:
+            current_price *= (1 + ret)
+            prices.append(current_price)
+        
+        cycle_info.append({
+            'type': cycle['type'],
+            'start': cycle_start,
+            'end': len(prices) - 1,
+            'days': days_remaining
         })
     
-    # Create sample signals
-    signals_data = []
-    signal_types = ['RSI_OVERSOLD', 'MA_CROSSOVER', 'VOLUME_BREAKOUT', 'MOMENTUM_SIGNAL']
+    # Create date range starting from earlier date for more history
+    start_date = pd.Timestamp.now() - pd.Timedelta(days=n_years*365)
+    dates = pd.date_range(start_date, periods=len(prices), freq='B')  # Business days
     
-    for i in range(50):  # 50 sample signals
-        signal_date = random.choice(dates)
-        signals_data.append({
-            'date': signal_date.strftime('%Y-%m-%d'),
-            'signal_type': random.choice(['BUY', 'SELL']),
-            'branch_name': random.choice(signal_types),
-            'execution_price': round(random.uniform(100, 200), 2),
-            'quantity': random.randint(1, 10)
-        })
-    
-    return {
-        'returns': returns_data,
-        'signals': signals_data,
-        'symphony_name': 'Sample Symphony (Demo)'
-    }
+    return pd.Series(prices, index=dates), cycle_info
 
-def list_available_symphonies(api_key: str) -> List[Dict[str, Any]]:
-    """List available Symphonies for the authenticated user."""
-    
-    if not api_key:
-        st.warning("⚠️ API key required to list Symphonies")
-        return []
-    
-    try:
-        list_url = "https://api.composer.trade/v1/symphonies"
-        headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'Composer-Analysis-App/1.0'
-        }
-        
-        st.info("🔍 Fetching available Symphonies...")
-        response = requests.get(list_url, headers=headers, timeout=30)
-        
-        st.info(f"📡 Symphony list response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                if isinstance(data, list):
-                    st.success(f"✅ Found {len(data)} available Symphonies")
-                    return data
-                elif isinstance(data, dict) and 'symphonies' in data:
-                    symphonies = data['symphonies']
-                    st.success(f"✅ Found {len(symphonies)} available Symphonies")
-                    return symphonies
-                else:
-                    st.warning("⚠️ Unexpected response format from Symphony list API")
-                    return []
-            except ValueError as e:
-                st.error(f"❌ Invalid JSON response from Symphony list API: {str(e)}")
-                return []
-        elif response.status_code == 401:
-            st.error("❌ Authentication failed - please check your API key")
-            return []
-        else:
-            st.warning(f"⚠️ Symphony list API returned status {response.status_code}")
-            return []
-            
-    except Exception as e:
-        st.error(f"❌ Symphony list API method failed: {str(e)}")
-        return []
-
-def fetch_signal_data(symphony_id: str, start_date: str, end_date: str, api_key: str = None) -> Dict[str, Any]:
-    """Fetch detailed signal data from Composer Symphony."""
-    
-    # Clean the symphony ID
-    clean_id = clean_symphony_id(symphony_id)
-    if not clean_id:
-        return None
-    
-    st.info(f"🔍 Fetching signal data for Symphony ID: {clean_id}")
-    
-    # Try to get signal data from the main symphony data
-    symphony_data = fetch_symphony_data(symphony_id, start_date, end_date, api_key)
-    
-    if symphony_data and 'signals' in symphony_data:
-        st.success("✅ Found signals in main symphony data")
-        return {'signals': symphony_data['signals']}
-    
-    # If no signals in main data, try separate signal endpoint
-    try:
-        signal_url = f"https://app.composer.trade/api/symphony/{clean_id}/signals"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://app.composer.trade/',
-            'Origin': 'https://app.composer.trade'
-        }
-        
-        params = {
-            'start_date': start_date,
-            'end_date': end_date
-        }
-        
-        st.info(f"🌐 Trying signal endpoint: {signal_url}")
-        response = requests.get(signal_url, headers=headers, params=params, timeout=30)
-        
-        st.info(f"📡 Signal API response status: {response.status_code}")
-        st.info(f"📄 Signal API response length: {len(response.text)} characters")
-        
-        if response.status_code == 200:
-            if response.text.strip():
-                # Check if response is HTML instead of JSON
-                if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
-                    st.error("❌ Signal API returned HTML instead of JSON")
-                    st.info("💡 This usually means the Symphony ID is invalid or the API requires authentication")
-                    st.info("📄 Response preview: <!DOCTYPE html>...")
-                    # Don't return here, continue to next method
-                
-                try:
-                    data = response.json()
-                    st.success("✅ Successfully parsed signal data JSON")
-                    return data
-                except ValueError as e:
-                    # Check if it's HTML after JSON parsing fails
-                    if response.text.strip().startswith('<!DOCTYPE html>') or response.text.strip().startswith('<html'):
-                        st.error("❌ Signal API returned HTML instead of JSON")
-                        st.info("💡 This usually means the Symphony ID is invalid or the API requires authentication")
-                        st.info("📄 Response preview: <!DOCTYPE html>...")
-                    else:
-                        st.error(f"❌ Invalid JSON response from signal API: {str(e)}")
-                        st.info(f"📄 Signal response preview: {response.text[:200]}...")
-                    # Don't return here, continue to next method
-            else:
-                st.warning("⚠️ Signal API returned empty response")
-        else:
-            st.warning(f"⚠️ Signal API returned status {response.status_code}")
-            st.info(f"📄 Signal response: {response.text[:200]}...")
-            
-    except Exception as e:
-        st.error(f"❌ Signal API method failed: {str(e)}")
-    
-    # Try alternative signal endpoint
-    try:
-        alt_signal_url = f"https://app.composer.trade/api/symphonies/{clean_id}/signals"
-        st.info(f"🌐 Trying alternative signal endpoint: {alt_signal_url}")
-        
-        response = requests.get(alt_signal_url, headers=headers, params=params, timeout=30)
-        
-        if response.status_code == 200 and response.text.strip():
-            try:
-                data = response.json()
-                st.success("✅ Successfully parsed signal data from alternative endpoint")
-                return data
-            except ValueError:
-                st.warning("⚠️ Alternative signal endpoint returned invalid JSON")
-        else:
-            st.warning(f"⚠️ Alternative signal endpoint returned status {response.status_code}")
-            
-    except Exception as e:
-        st.error(f"❌ Alternative signal API method failed: {str(e)}")
-    
-    st.warning("⚠️ No signal data found - analysis will continue with overall performance only")
-    return None
-
-def parse_symphony_data(data: Dict[str, Any]) -> pd.DataFrame:
-    """Parse Composer Symphony data into a pandas DataFrame."""
-    
-    if not data:
-        st.error("❌ No data received from Composer API")
-        return pd.DataFrame()
-    
-    try:
-        # Try to extract returns from different possible data structures
-        returns_data = None
-        
-        # Method 1: Direct returns field
-        if 'returns' in data:
-            returns_data = data['returns']
-        
-        # Method 2: Backtest data
-        elif 'backtest' in data and 'returns' in data['backtest']:
-            returns_data = data['backtest']['returns']
-        
-        # Method 3: Performance data
-        elif 'performance' in data and 'returns' in data['performance']:
-            returns_data = data['performance']['returns']
-        
-        # Method 4: Firestore fields structure
-        elif 'fields' in data:
-            fields = data['fields']
-            st.info(f"🔍 Found Firestore fields: {list(fields.keys())}")
-            
-            # Try different possible field names for returns data
-            possible_return_fields = ['returns', 'backtest', 'performance', 'data', 'history', 'stats', 'latest_backtest_info']
-            
-            for field_name in possible_return_fields:
-                if field_name in fields:
-                    field_data = fields[field_name]
-                    st.info(f"🔍 Found field '{field_name}': {type(field_data)}")
-                    
-                    # Handle different Firestore value types
-                    if 'arrayValue' in field_data:
-                        returns_data = field_data['arrayValue']['values']
-                        st.info(f"✅ Found returns data in arrayValue")
-                        break
-                    elif 'mapValue' in field_data:
-                        map_fields = field_data['mapValue']['fields']
-                        st.info(f"🔍 MapValue fields: {list(map_fields.keys())}")
-                        
-                        # Look for returns in nested map
-                        for nested_field in ['returns', 'data', 'history']:
-                            if nested_field in map_fields:
-                                nested_data = map_fields[nested_field]
-                                if 'arrayValue' in nested_data:
-                                    returns_data = nested_data['arrayValue']['values']
-                                    st.info(f"✅ Found returns data in nested {nested_field}")
-                                    break
-                        if returns_data:
-                            break
-                    elif 'stringValue' in field_data:
-                        # Try to parse JSON string
-                        try:
-                            json_data = json.loads(field_data['stringValue'])
-                            if isinstance(json_data, list):
-                                returns_data = json_data
-                                st.info(f"✅ Found returns data in JSON string")
-                                break
-                        except:
-                            pass
-                    elif 'timestampValue' in field_data:
-                        # Handle timestamp data
-                        st.info(f"🔍 Found timestamp data, checking for returns...")
-                        # This might be a single timestamp, not returns data
-                        pass
-                    elif 'mapValue' in field_data:
-                        # Handle mapValue structure (like stats field)
-                        map_fields = field_data['mapValue']['fields']
-                        st.info(f"🔍 MapValue fields in {field_name}: {list(map_fields.keys())}")
-                        
-                        # Look for returns data in nested map fields
-                        for nested_field in ['returns', 'data', 'history', 'backtest', 'performance']:
-                            if nested_field in map_fields:
-                                nested_data = map_fields[nested_field]
-                                if 'arrayValue' in nested_data:
-                                    returns_data = nested_data['arrayValue']['values']
-                                    st.info(f"✅ Found returns data in nested {nested_field}")
-                                    break
-                                elif 'stringValue' in nested_data:
-                                    try:
-                                        json_data = json.loads(nested_data['stringValue'])
-                                        if isinstance(json_data, list):
-                                            returns_data = json_data
-                                            st.info(f"✅ Found returns data in JSON string from {nested_field}")
-                                            break
-                                    except:
-                                        pass
-                        if returns_data:
-                            break
-        
-        if returns_data is None:
-            st.error("❌ Could not find returns data in Composer response")
-            st.info(f"Available fields: {list(data.keys())}")
-            if 'fields' in data:
-                st.info(f"Firestore fields: {list(data['fields'].keys())}")
-                for field_name, field_data in data['fields'].items():
-                    st.info(f"  - {field_name}: {type(field_data)}")
-            return pd.DataFrame()
-        
-        # Convert to DataFrame
-        if isinstance(returns_data, list):
-            # Handle Firestore arrayValue format
-            if returns_data and isinstance(returns_data[0], dict) and 'mapValue' in returns_data[0]:
-                # Firestore arrayValue with mapValue structure
-                processed_data = []
-                for item in returns_data:
-                    if 'mapValue' in item and 'fields' in item['mapValue']:
-                        fields = item['mapValue']['fields']
-                        row_data = {}
-                        
-                        # Extract date and return values from Firestore fields
-                        if 'date' in fields:
-                            if 'timestampValue' in fields['date']:
-                                row_data['date'] = fields['date']['timestampValue']
-                            elif 'stringValue' in fields['date']:
-                                row_data['date'] = fields['date']['stringValue']
-                        
-                        if 'return' in fields:
-                            if 'doubleValue' in fields['return']:
-                                row_data['return'] = fields['return']['doubleValue']
-                            elif 'stringValue' in fields['return']:
-                                row_data['return'] = float(fields['return']['stringValue'])
-                        
-                        if 'value' in fields:
-                            if 'doubleValue' in fields['value']:
-                                row_data['return'] = fields['value']['doubleValue']
-                            elif 'stringValue' in fields['value']:
-                                row_data['return'] = float(fields['value']['stringValue'])
-                        
-                        if 'date' in row_data and 'return' in row_data:
-                            processed_data.append(row_data)
-                
-                if processed_data:
-                    df = pd.DataFrame(processed_data)
-                    st.info(f"✅ Successfully processed {len(processed_data)} data points from Firestore")
-                else:
-                    st.error("❌ Could not extract date/return data from Firestore structure")
-                    return pd.DataFrame()
-            else:
-                # Regular list format
-                df = pd.DataFrame(returns_data)
-        else:
-            # Handle different data formats
-            df = pd.DataFrame([returns_data])
-        
-        # Ensure we have the required columns
-        if 'date' in df.columns and 'return' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.sort_values('date')
-            st.info(f"✅ Successfully parsed Symphony data: {len(df)} rows")
-            return df
-        elif 'timestamp' in df.columns and 'value' in df.columns:
-            # Alternative column names
-            df = df.rename(columns={'timestamp': 'date', 'value': 'return'})
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.sort_values('date')
-            st.info(f"✅ Successfully parsed Symphony data: {len(df)} rows")
-            return df
-        else:
-            st.error("❌ Missing required columns (date, return) in Symphony data")
-            st.info(f"Available columns: {list(df.columns)}")
-            if not df.empty:
-                st.info(f"Sample data: {df.head().to_dict()}")
-            return pd.DataFrame()
-            
-    except Exception as e:
-        st.error(f"❌ Error parsing Symphony data: {str(e)}")
-        return pd.DataFrame()
-
-def parse_signal_data(signal_data: Dict[str, Any]) -> pd.DataFrame:
-    """Parse Composer signal data into a pandas DataFrame."""
-    
-    if not signal_data:
-        st.error("❌ No signal data received from Composer API")
-        return pd.DataFrame()
-    
-    try:
-        # Try to extract signals from different possible data structures
-        signals = None
-        
-        # Method 1: Direct signals field
-        if 'signals' in signal_data:
-            signals = signal_data['signals']
-        
-        # Method 2: Firestore fields structure
-        elif 'fields' in signal_data:
-            fields = signal_data['fields']
-            if 'signals' in fields:
-                signals = fields['signals']['arrayValue']['values']
-        
-        # Method 3: Check if signal_data is already a list
-        elif isinstance(signal_data, list):
-            signals = signal_data
-        
-        if signals is None:
-            st.info("❌ Could not find signals data in Composer response")
-            return pd.DataFrame()
-        
-        # Convert to DataFrame
-        if isinstance(signals, list):
-            df = pd.DataFrame(signals)
-        else:
-            df = pd.DataFrame([signals])
-        
-        # Handle different column name possibilities
-        column_mapping = {
-            'timestamp': 'date',
-            'signal_time': 'date',
-            'type': 'signal_type',
-            'signal_type': 'signal_type',
-            'branch': 'branch_name',
-            'signal_branch': 'branch_name',
-            'price': 'execution_price',
-            'execution_price': 'execution_price',
-            'size': 'quantity',
-            'amount': 'quantity'
-        }
-        
-        # Rename columns if needed
-        for old_col, new_col in column_mapping.items():
-            if old_col in df.columns and new_col not in df.columns:
-                df = df.rename(columns={old_col: new_col})
-        
-        # Ensure we have at least date and some signal information
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.sort_values('date')
-            
-            # If we don't have branch_name, create a default one
-            if 'branch_name' not in df.columns:
-                df['branch_name'] = 'Default Branch'
-            
-            # If we don't have signal_type, try to infer from other columns
-            if 'signal_type' not in df.columns:
-                if 'type' in df.columns:
-                    df['signal_type'] = df['type']
-                else:
-                    df['signal_type'] = 'Unknown'
-            
-            return df
-        else:
-            st.error("❌ Missing date column in signal data")
-            st.info(f"Available columns: {list(df.columns)}")
-            return pd.DataFrame()
-            
-    except Exception as e:
-        st.error(f"❌ Error parsing signal data: {str(e)}")
-        return pd.DataFrame()
-
-def calculate_signal_metrics(signals_df: pd.DataFrame, returns_df: pd.DataFrame) -> Dict[str, Any]:
-    """Calculate metrics for each signal branch."""
-    
-    if signals_df.empty:
-        return {}
-    
-    signal_metrics = {}
-    
-    # Group by signal branch
-    for branch_name in signals_df['branch_name'].unique():
-        branch_signals = signals_df[signals_df['branch_name'] == branch_name]
-        
-        # Calculate metrics for this branch
-        total_signals = len(branch_signals)
-        
-        # Calculate P&L for each signal
-        branch_pnl = []
-        for _, signal in branch_signals.iterrows():
-            signal_date = signal['date']
-            # Find corresponding return data
-            if signal_date in returns_df['date'].values:
-                daily_return = returns_df[returns_df['date'] == signal_date]['return'].iloc[0]
-                branch_pnl.append(daily_return)
-        
-        if branch_pnl:
-            branch_pnl = pd.Series(branch_pnl)
-            
-            # Calculate metrics
-            win_rate = (branch_pnl > 0).mean() * 100
-            avg_return = branch_pnl.mean() * 100
-            total_return = branch_pnl.sum() * 100
-            best_signal = branch_pnl.max() * 100
-            worst_signal = branch_pnl.min() * 100
-            
-            signal_metrics[branch_name] = {
-                'Total Signals': total_signals,
-                'Win Rate': win_rate,
-                'Average Return': avg_return,
-                'Total Return': total_return,
-                'Best Signal': best_signal,
-                'Worst Signal': worst_signal,
-                'Success Count': (branch_pnl > 0).sum(),
-                'Failure Count': (branch_pnl <= 0).sum()
-            }
-    
-    return signal_metrics
-
-def calculate_backtest_metrics(returns_df: pd.DataFrame) -> Dict[str, Any]:
-    """Calculate comprehensive backtest metrics from returns data."""
-    
-    if returns_df.empty:
-        return {
-            'Total Days': 0,
-            'Total Return': 0.0,
-            'Annualized Return': 0.0,
-            'Sharpe Ratio': 0.0,
-            'Sortino Ratio': 0.0,
-            'Max Drawdown': 0.0,
-            'Volatility': 0.0,
-            'Win Rate': 0.0,
-            'Best Day': 0.0,
-            'Worst Day': 0.0
-        }
-    
-    # Convert returns to numeric
-    returns = pd.to_numeric(returns_df['return'], errors='coerce').dropna()
-    
-    if returns.empty:
-        return {
-            'Total Days': len(returns_df),
-            'Total Return': 0.0,
-            'Annualized Return': 0.0,
-            'Sharpe Ratio': 0.0,
-            'Sortino Ratio': 0.0,
-            'Max Drawdown': 0.0,
-            'Volatility': 0.0,
-            'Win Rate': 0.0,
-            'Best Day': 0.0,
-            'Worst Day': 0.0
-        }
-    
-    # Calculate metrics
-    total_days = len(returns)
-    total_return = (1 + returns).prod() - 1
-    annualized_return = (1 + total_return) ** (252 / total_days) - 1 if total_days > 0 else 0
-    
-    # Volatility
-    volatility = returns.std() * np.sqrt(252) if total_days > 1 else 0
-    
-    # Sharpe Ratio
-    risk_free_rate = 0.02  # Assuming 2% risk-free rate
-    sharpe_ratio = (annualized_return - risk_free_rate) / volatility if volatility > 0 else 0
-    
-    # Sortino Ratio
-    downside_returns = returns[returns < 0]
-    downside_volatility = downside_returns.std() * np.sqrt(252) if len(downside_returns) > 1 else 0
-    sortino_ratio = (annualized_return - risk_free_rate) / downside_volatility if downside_volatility > 0 else 0
-    
-    # Max Drawdown
-    cumulative_returns = (1 + returns).cumprod()
-    running_max = cumulative_returns.expanding().max()
-    drawdown = (cumulative_returns - running_max) / running_max
-    max_drawdown = drawdown.min()
-    
-    # Win Rate
-    win_rate = (returns > 0).mean() * 100
-    
-    # Best and Worst Days
-    best_day = returns.max()
-    worst_day = returns.min()
-    
-    return {
-        'Total Days': total_days,
-        'Total Return': total_return * 100,
-        'Annualized Return': annualized_return * 100,
-        'Sharpe Ratio': sharpe_ratio,
-        'Sortino Ratio': sortino_ratio,
-        'Max Drawdown': max_drawdown * 100,
-        'Volatility': volatility * 100,
-        'Win Rate': win_rate,
-        'Best Day': best_day * 100,
-        'Worst Day': worst_day * 100
-    }
-
-def main():
-    """Main function for the Composer Symphony analysis app."""
-    
-    st.title("🔍 Composer Symphony Analysis")
-    st.markdown("Analyze backtest performance and trading characteristics from Composer Symphony data.")
-    
-    # Input section
-    st.subheader("📊 Symphony Configuration")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        symphony_id = st.text_input(
-            "Symphony ID or URL",
-            placeholder="Enter Symphony ID or full Composer URL",
-            help="Enter the Symphony ID (e.g., GiR9AkRAZ1S4IONmYIkS) or full Composer URL",
-            key="symphony_id_input"
-        )
-        
-        # API Key input (optional)
-        api_key = st.text_input(
-            "Composer API Key (Optional)",
-            placeholder="Enter your Composer API key for authenticated access",
-            help="For authenticated access to private Symphonies. Leave empty for public access only.",
-            type="password"
-        )
-        
-        # Quick test with provided API key
-        if st.checkbox("Use provided API key for testing", value=True):
-            api_key = "c67819a7-c646-4f41-8210-567f3ac3d36d"
-            st.info("🔑 Using provided API key for testing")
-        
-        # Button to list available Symphonies
-        if api_key and st.button("📋 List Available Symphonies", key="list_symphonies"):
-            with st.spinner("🔄 Fetching available Symphonies..."):
-                symphonies = list_available_symphonies(api_key)
-                if symphonies:
-                    st.subheader("📋 Available Symphonies")
-                    symphony_data = []
-                    for symphony in symphonies:
-                        symphony_data.append({
-                            'ID': symphony.get('id', 'N/A'),
-                            'Name': symphony.get('name', 'N/A'),
-                            'Description': symphony.get('description', 'N/A')[:50] + '...' if symphony.get('description') else 'N/A',
-                            'Created': symphony.get('created_at', 'N/A'),
-                            'Updated': symphony.get('updated_at', 'N/A')
-                        })
-                    
-                    df = pd.DataFrame(symphony_data)
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # Allow user to select a Symphony
-                    if len(symphonies) > 0:
-                        selected_symphony = st.selectbox(
-                            "Select a Symphony to analyze:",
-                            options=[f"{s.get('name', 'Unknown')} ({s.get('id', 'N/A')})" for s in symphonies],
-                            key="symphony_selector"
-                        )
-                        
-                        if selected_symphony:
-                            # Extract ID from selection
-                            selected_id = selected_symphony.split('(')[-1].rstrip(')')
-                            st.info(f"🎯 Selected Symphony ID: {selected_id}")
-                            # Update the symphony_id input
-                            st.session_state.symphony_id = selected_id
-        
-        # Show example
-        with st.expander("💡 How to find your Symphony ID"):
-            st.markdown("""
-            **Option 1: From Composer URL**
-            - Go to your Symphony on Composer
-            - Copy the URL: `https://app.composer.trade/symphony/GiR9AkRAZ1S4IONmYIkS`
-            - Paste the full URL or just the ID: `GiR9AkRAZ1S4IONmYIkS`
-            
-            **Option 2: From Symphony Page**
-            - Open your Symphony in Composer
-            - Look at the URL in your browser
-            - The ID is the last part after `/symphony/`
-            
-            **Option 3: URLs with Suffixes**
-            - The app automatically handles URLs with suffixes like:
-              - `https://app.composer.trade/symphony/GiR9AkRAZ1S4IONmYIkS/details`
-              - `https://app.composer.trade/symphony/GiR9AkRAZ1S4IONmYIkS/factsheet`
-            - Just paste the full URL and the app will extract the ID
-            
-            **Valid Symphony ID Examples:**
-            - `GiR9AkRAZ1S4IONmYIkS` (20+ characters, alphanumeric)
-            - `abc123def456ghi789jkl` (typical format)
-            
-            **Invalid Examples:**
-            - `details` ❌ (too short, not a real ID)
-            - `factsheet` ❌ (not a real Symphony ID)
-            - `help` ❌ (not a Symphony ID)
-            - `123` ❌ (too short)
-            """)
-            
-            st.markdown("""
-            **💡 Tip:** If you don't have a Symphony ID, you can:
-            1. Create a new Symphony on Composer
-            2. Use the sample data option for testing
-            3. Ask someone with a Symphony to share their ID
-            """)
-    
-    with col2:
-        # Date range selection
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=365)  # Default to 1 year
-        
-        date_range = st.date_input(
-            "Date Range",
-            value=(start_date, end_date),
-            help="Select the date range for analysis"
-        )
-    
-    # Analysis parameters
-    st.subheader("⚙️ Analysis Parameters")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        risk_free_rate = st.number_input(
-            "Risk-Free Rate (%)",
-            min_value=0.0,
-            max_value=10.0,
-            value=2.0,
-            step=0.1,
-            help="Risk-free rate for Sharpe/Sortino calculations"
-        )
-    
-    with col2:
-        confidence_level = st.selectbox(
-            "Confidence Level",
-            options=[0.90, 0.95, 0.99],
-            index=1,
-            help="Confidence level for statistical analysis"
-        )
-    
-    with col3:
-        min_data_days = st.number_input(
-            "Minimum Data Days",
-            min_value=30,
-            max_value=1000,
-            value=90,
-            help="Minimum number of days required for analysis"
-        )
-    
-    # Run analysis button
-    if st.button("🚀 Analyze Symphony", type="primary"):
-        if not symphony_id:
-            st.error("❌ Please enter a Symphony ID")
-            return
-        
-        # Validate Symphony ID before making API calls
-        clean_id = clean_symphony_id(symphony_id)
-        if not clean_id:
-            st.error("❌ Please enter a valid Symphony ID")
-            st.info("💡 Valid Symphony IDs are typically 20+ characters long and alphanumeric")
-            return
-        
-        if len(date_range) != 2:
-            st.error("❌ Please select a valid date range")
-            return
-        
-        start_date, end_date = date_range
-        
-        with st.spinner("🔄 Fetching Symphony data..."):
-            # Fetch both backtest and signal data from Composer
-            backtest_data = fetch_symphony_data(
-                symphony_id,
-                start_date.strftime("%Y-%m-%d"),
-                end_date.strftime("%Y-%m-%d"),
-                api_key
-            )
-            
-            signal_data = fetch_signal_data(
-                symphony_id,
-                start_date.strftime("%Y-%m-%d"),
-                end_date.strftime("%Y-%m-%d"),
-                api_key
-            )
-        
-        if backtest_data is None:
-            st.error("❌ Failed to fetch backtest data from Composer")
-            return
-        
-        # Parse the data
-        returns_df = parse_symphony_data(backtest_data)
-        signals_df = parse_signal_data(signal_data) if signal_data else pd.DataFrame()
-        
-        if returns_df.empty:
-            st.error("❌ No valid data found for the specified period")
-            return
-        
-        if len(returns_df) < min_data_days:
-            st.warning(f"⚠️ Limited data: Only {len(returns_df)} days available (minimum: {min_data_days})")
-        
-        # Calculate overall metrics
-        metrics = calculate_backtest_metrics(returns_df)
-        
-        # Calculate signal-level metrics if signal data is available
-        signal_metrics = {}
-        if not signals_df.empty:
-            signal_metrics = calculate_signal_metrics(signals_df, returns_df)
-        
-        # Display results
-        st.success("✅ Analysis completed successfully!")
-        
-        # Overall Performance metrics
-        st.subheader("📈 Overall Performance Metrics")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Total Return", f"{metrics['Total Return']:.2f}%")
-            st.metric("Annualized Return", f"{metrics['Annualized Return']:.2f}%")
-            st.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio']:.2f}")
-        
-        with col2:
-            st.metric("Sortino Ratio", f"{metrics['Sortino Ratio']:.2f}")
-            st.metric("Max Drawdown", f"{metrics['Max Drawdown']:.2f}%")
-            st.metric("Volatility", f"{metrics['Volatility']:.2f}%")
-        
-        with col3:
-            st.metric("Win Rate", f"{metrics['Win Rate']:.1f}%")
-            st.metric("Best Day", f"{metrics['Best Day']:.2f}%")
-            st.metric("Worst Day", f"{metrics['Worst Day']:.2f}%")
-        
-        # Signal Branch Analysis
-        if signal_metrics:
-            st.subheader("🎯 Signal Branch Analysis")
-            st.markdown("Breakdown of performance by individual signal branches:")
-            
-            # Create signal metrics table
-            signal_data = []
-            for branch_name, branch_metrics in signal_metrics.items():
-                signal_data.append({
-                    'Branch Name': branch_name,
-                    'Total Signals': branch_metrics['Total Signals'],
-                    'Win Rate (%)': f"{branch_metrics['Win Rate']:.1f}",
-                    'Avg Return (%)': f"{branch_metrics['Average Return']:.2f}",
-                    'Total Return (%)': f"{branch_metrics['Total Return']:.2f}",
-                    'Success/Failure': f"{branch_metrics['Success Count']}/{branch_metrics['Failure Count']}",
-                    'Best Signal (%)': f"{branch_metrics['Best Signal']:.2f}",
-                    'Worst Signal (%)': f"{branch_metrics['Worst Signal']:.2f}"
-                })
-            
-            signal_df = pd.DataFrame(signal_data)
-            st.dataframe(signal_df, use_container_width=True)
-            
-            # Signal branch performance visualization
-            st.subheader("📊 Signal Branch Performance")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Win rate by branch
-                branch_names = list(signal_metrics.keys())
-                win_rates = [signal_metrics[branch]['Win Rate'] for branch in branch_names]
-                
-                fig_win_rate = go.Figure(data=[go.Bar(x=branch_names, y=win_rates)])
-                fig_win_rate.update_layout(
-                    title="Win Rate by Signal Branch",
-                    xaxis_title="Signal Branch",
-                    yaxis_title="Win Rate (%)",
-                    yaxis=dict(range=[0, 100])
-                )
-                st.plotly_chart(fig_win_rate, use_container_width=True)
-            
-            with col2:
-                # Total return by branch
-                total_returns = [signal_metrics[branch]['Total Return'] for branch in branch_names]
-                
-                fig_total_return = go.Figure(data=[go.Bar(x=branch_names, y=total_returns)])
-                fig_total_return.update_layout(
-                    title="Total Return by Signal Branch",
-                    xaxis_title="Signal Branch",
-                    yaxis_title="Total Return (%)"
-                )
-                st.plotly_chart(fig_total_return, use_container_width=True)
-            
-            # Signal frequency analysis
-            st.subheader("📈 Signal Frequency Analysis")
-            
-            if not signals_df.empty:
-                # Signal frequency over time
-                signal_counts = signals_df.groupby(['date', 'branch_name']).size().reset_index(name='count')
-                
-                fig_frequency = go.Figure()
-                for branch in signals_df['branch_name'].unique():
-                    branch_data = signal_counts[signal_counts['branch_name'] == branch]
-                    fig_frequency.add_trace(go.Scatter(
-                        x=branch_data['date'],
-                        y=branch_data['count'],
-                        mode='lines+markers',
-                        name=branch
-                    ))
-                
-                fig_frequency.update_layout(
-                    title="Signal Frequency Over Time",
-                    xaxis_title="Date",
-                    yaxis_title="Number of Signals"
-                )
-                st.plotly_chart(fig_frequency, use_container_width=True)
-        
-        # Data summary
-        st.subheader("📋 Data Summary")
-        st.info(f"**Analysis Period**: {start_date} to {end_date} ({metrics['Total Days']} trading days)")
-        if signal_metrics:
-            st.info(f"**Total Signal Branches**: {len(signal_metrics)}")
-            total_signals = sum(signal_metrics[branch]['Total Signals'] for branch in signal_metrics)
-            st.info(f"**Total Signals Fired**: {total_signals}")
-        
-        # Returns distribution
-        st.subheader("📊 Returns Distribution")
-        
-        if not returns_df.empty:
-            returns = pd.to_numeric(returns_df['return'], errors='coerce').dropna()
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Histogram
-                fig_hist = go.Figure(data=[go.Histogram(x=returns*100, nbinsx=30)])
-                fig_hist.update_layout(
-                    title="Daily Returns Distribution",
-                    xaxis_title="Daily Return (%)",
-                    yaxis_title="Frequency"
-                )
-                st.plotly_chart(fig_hist, use_container_width=True)
-            
-            with col2:
-                # Cumulative returns
-                cumulative_returns = (1 + returns).cumprod()
-                fig_cum = go.Figure(data=[go.Scatter(x=returns_df['date'], y=cumulative_returns)])
-                fig_cum.update_layout(
-                    title="Cumulative Returns",
-                    xaxis_title="Date",
-                    yaxis_title="Cumulative Return"
-                )
-                st.plotly_chart(fig_cum, use_container_width=True)
-        
-        # Performance interpretation
-        st.subheader("🎯 Performance Interpretation")
-        
-        # Risk assessment
-        risk_level = "LOW" if metrics['Max Drawdown'] < 10 else "MEDIUM" if metrics['Max Drawdown'] < 20 else "HIGH"
-        performance_rating = "EXCELLENT" if metrics['Sharpe Ratio'] > 1.5 else "GOOD" if metrics['Sharpe Ratio'] > 1.0 else "POOR"
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.info(f"**Risk Level**: {risk_level} (Max Drawdown: {metrics['Max Drawdown']:.2f}%)")
-            st.info(f"**Performance Rating**: {performance_rating} (Sharpe: {metrics['Sharpe Ratio']:.2f})")
-        
-        with col2:
-            st.info(f"**Consistency**: {'HIGH' if metrics['Win Rate'] > 60 else 'MEDIUM' if metrics['Win Rate'] > 50 else 'LOW'} ({metrics['Win Rate']:.1f}% win rate)")
-            st.info(f"**Volatility**: {'LOW' if metrics['Volatility'] < 15 else 'MEDIUM' if metrics['Volatility'] < 25 else 'HIGH'} ({metrics['Volatility']:.2f}%)")
-        
-        # Signal branch insights
-        if signal_metrics:
-            st.subheader("💡 Signal Branch Insights")
-            
-            # Find best and worst performing branches
-            best_branch = max(signal_metrics.items(), key=lambda x: x[1]['Win Rate'])
-            worst_branch = min(signal_metrics.items(), key=lambda x: x[1]['Win Rate'])
-            most_active_branch = max(signal_metrics.items(), key=lambda x: x[1]['Total Signals'])
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.success(f"**Best Performing Branch**: {best_branch[0]} ({best_branch[1]['Win Rate']:.1f}% win rate)")
-            
-            with col2:
-                st.warning(f"**Worst Performing Branch**: {worst_branch[0]} ({worst_branch[1]['Win Rate']:.1f}% win rate)")
-            
-            with col3:
-                st.info(f"**Most Active Branch**: {most_active_branch[0]} ({most_active_branch[1]['Total Signals']} signals)")
-
+# Main execution with target ticker functionality
 if __name__ == "__main__":
-    main() 
+    # Generate extended market data (10 years worth)
+    print("Generating 10 years of simulated market data for maximum lookback...")
+    market_data, cycle_info = simulate_extended_market_data(n_years=10)
+    
+    print(f"Generated {len(market_data)} trading days of data")
+    print(f"Date range: {market_data.index[0].strftime('%Y-%m-%d')} to {market_data.index[-1].strftime('%Y-%m-%d')}")
+    print(f"Price range: ${market_data.min():.2f} to ${market_data.max():.2f}")
+    
+    print("\nMarket cycles in simulated data:")
+    for i, cycle in enumerate(cycle_info):
+        start_date = market_data.index[cycle['start']].strftime('%Y-%m-%d')
+        end_date = market_data.index[cycle['end']].strftime('%Y-%m-%d')
+        print(f"  {i+1}. {cycle['type'].title()}: {start_date} to {end_date} ({cycle['days']} days)")
+    
+    # Initialize and train the regime detector using all available data
+    print(f"\nTraining market regime detector on full {len(market_data)} day dataset...")
+    regime_detector = MarketRegimeDetector(n_regimes=3)
+    regime_detector.fit(market_data)
+    
+    # Initialize optimizer with target ticker
+    target_ticker = "TQQQ"  # User can change this
+    print(f"\nInitializing RSI threshold optimizer for target ticker: {target_ticker}")
+    threshold_optimizer = RSIThresholdOptimizer(regime_detector, target_ticker=target_ticker)
+    
+    # Define asset allocation rules (user can customize this)
+    allocation_rules = {
+        'rsi_overbought': {
+            'bull': 'UVXY',      # VIX when overbought in bull market
+            'bear': 'SQQQ',      # Inverse QQQ when overbought in bear market  
+            'sideways': 'BSV'    # Bonds when overbought in sideways market
+        },
+        'rsi_oversold': {
+            'bull': 'TECL',      # Tech bull 3x when oversold in bull market
+            'bear': 'TQQQ',      # Regular QQQ when oversold in bear market
+            'sideways': 'SOXL'   # Semiconductor bull when oversold in sideways
+        },
+        'rsi_neutral': {
+            'bull': 'TQQQ',      # Default position in bull
+            'bear': 'BSV',       # Conservative bonds in bear market
+            'sideways': 'TQQQ'   # Default position in sideways
+        }
+    }
+    
+    print("\nSetting up asset allocation rules:")
+    for condition, rules in allocation_rules.items():
+        print(f"  {condition.replace('_', ' ').title()}:")
+        for regime, asset in rules.items():
+            print(f"    {regime.title()} market -> {asset}")
+    
+    threshold_optimizer.set_asset_allocation_rules(allocation_rules)
+    
+    # Optimize thresholds using maximum lookback
+    threshold_optimizer.fit(market_data)
+    
+    # Get complete current recommendation
+    print("\n" + "="*70)
+    print("CURRENT TRADING RECOMMENDATION (Target Ticker Analysis)")
+    print("="*70)
+    
+    recommendation = threshold_optimizer.get_current_recommendation(market_data)
+    
+    print(f"Target Ticker: {recommendation['target_ticker']}")
+    print(f"Current RSI: {recommendation['current_rsi']}")
+    print(f"RSI Condition: {recommendation['rsi_condition']}")
+    print(f"Market Regime: {recommendation['market_regime']}")
+    print(f"Dynamic Thresholds: {recommendation['rsi_lower_threshold']}/{recommendation['rsi_upper_threshold']}")
+    print(f"Recommended Asset: {recommendation['recommended_asset']}")
+    print(f"Reasoning: {recommendation['reasoning']}")
+    
+    # Show all regime thresholds with asset allocations
+    print("\n" + "="*70)
+    print("COMPLETE ASSET ALLOCATION STRATEGY BY REGIME")
+    print("="*70)
+    
+    for regime_id, thresholds in threshold_optimizer.optimal_thresholds.items():
+        regime_name = regime_detector.regime_labels[regime_id].lower()
+        print(f"\n{regime_name.title()} Market (Regime {regime_id}):")
+        print(f"  RSI Thresholds: {thresholds['lower']} / {thresholds['upper']}")
+        print(f"  Asset Allocation:")
+        
+        # Show what happens in each RSI condition
+        sample_rsi_values = [25, 50, 85]  # Oversold, neutral, overbought
+        for rsi_val in sample_rsi_values:
+            asset = threshold_optimizer.get_target_asset(
+                rsi_val, regime_name, thresholds['lower'], thresholds['upper']
+            )
+            condition = "Oversold" if rsi_val < thresholds['lower'] else \
+                       "Overbought" if rsi_val > thresholds['upper'] else "Neutral"
+            print(f"    RSI {rsi_val} ({condition}) -> {asset}")
+    
+    # Generate Composer symphony code with target ticker functionality
+    print("\n" + "="*70)
+    print("COMPOSER SYMPHONY WITH TARGET TICKER FUNCTIONALITY")
+    print("="*70)
+    
+    print(f"""
+;; Dynamic RSI strategy with target ticker analysis
+;; Target: {target_ticker}
+;; Current regime: {recommendation['market_regime']}
+;; Current thresholds: {recommendation['rsi_lower_threshold']}/{recommendation['rsi_upper_threshold']}
+
+(defsymphony
+ "Target Ticker Dynamic RSI Strategy"
+ {{:asset-class "EQUITIES", :rebalance-threshold 0.05}}
+ (weight-equal
+  [(cond
+    ;; Overbought condition - current threshold: {recommendation['rsi_upper_threshold']}
+    (> (rsi "{target_ticker}" {{:window 10}}) (get-dynamic-rsi-upper))
+    [(asset (get-overbought-asset) "Asset for overbought {target_ticker}")]
+    
+    ;; Oversold condition - current threshold: {recommendation['rsi_lower_threshold']}  
+    (< (rsi "{target_ticker}" {{:window 10}}) (get-dynamic-rsi-lower))
+    [(asset (get-oversold-asset) "Asset for oversold {target_ticker}")]
+    
+    ;; Neutral condition
+    :else
+    [(asset (get-neutral-asset) "Default asset for neutral {target_ticker}")])]))
+
+;; Current recommendations based on market regime:
+;; Market regime: {recommendation['market_regime']}
+;; If {target_ticker} RSI > {recommendation['rsi_upper_threshold']}: Hold {allocation_rules['rsi_overbought'][recommendation['market_regime'].lower()]}
+;; If {target_ticker} RSI < {recommendation['rsi_lower_threshold']}: Hold {allocation_rules['rsi_oversold'][recommendation['market_regime'].lower()]}  
+;; If neutral: Hold {allocation_rules['rsi_neutral'][recommendation['market_regime'].lower()]}
+
+;; Example with current conditions:
+;; Current RSI: {recommendation['current_rsi']} ({recommendation['rsi_condition']})
+;; -> Recommended asset: {recommendation['recommended_asset']}
+    """)
+    
+    print("\n" + "="*70) 
+    print("USER CUSTOMIZATION OPTIONS")
+    print("="*70)
+    print(f"""
+To customize for your strategy:
+
+1. Change target ticker:
+   threshold_optimizer = RSIThresholdOptimizer(regime_detector, target_ticker="SPY")
+
+2. Modify asset allocation rules:
+   allocation_rules = {{
+       'rsi_overbought': {{'bull': 'VXX', 'bear': 'SPXS', 'sideways': 'TLT'}},
+       'rsi_oversold': {{'bull': 'UPRO', 'bear': 'SPY', 'sideways': 'QQQ'}},
+       'rsi_neutral': {{'bull': 'SPY', 'bear': 'TLT', 'sideways': 'SPY'}}
+   }}
+
+3. Current setup analyzes: {target_ticker}
+4. Uses {len(market_data)} days of historical data
+5. Adapts thresholds based on market regime
+6. Recommends specific assets for each condition
+
+Current recommendation: Hold {recommendation['recommended_asset']} 
+({recommendation['reasoning']})
+    """)
