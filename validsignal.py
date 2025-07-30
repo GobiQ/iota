@@ -497,7 +497,7 @@ else:
     st.sidebar.info("Using maximum available data")
 
 if comparison == "less_than":
-    default_min, default_max = 0, 40
+    default_min, default_max = 5, 37
     st.sidebar.write("Buy signals: Signal RSI ≤ threshold")
 else:
     default_min, default_max = 70, 100
@@ -723,41 +723,44 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         with col8:
             if st.button("Clear All Filters", type="secondary"):
                 st.rerun()
-            # Apply filters to the display dataframe
-            filtered_df = display_df.copy()
-            filtered_df = filtered_df[
-                (filtered_df['RSI_Threshold'] >= rsi_min_filter) & 
-                (filtered_df['RSI_Threshold'] <= rsi_max_filter)
-            ]
-            filtered_df = filtered_df[
-                (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= confidence_min_filter) & 
-                (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) <= confidence_max_filter)
-            ]
-            filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades_filter]
-            filtered_df = filtered_df[
-                filtered_df['Win_Rate'].str.replace('%', '').astype(float) >= min_win_rate_filter
-            ]
-            filtered_df = filtered_df[
-                filtered_df['Avg_Return'].str.replace('%', '').astype(float) >= min_avg_return_filter
-            ]
-            filtered_df = filtered_df[
-                filtered_df['Total_Return'].str.replace('%', '').astype(float) >= min_total_return_filter
-            ]
-            filtered_df = filtered_df[
-                filtered_df['Annualized_Return'].str.replace('%', '').astype(float) >= min_annualized_return_filter
-            ]
-            filtered_df = filtered_df[
-                filtered_df['Sortino_Ratio'].apply(lambda x: float(x) if x != "∞" else 999) >= min_sortino_filter
-            ]
-            if significance_filter == "Significant Only":
-                filtered_df = filtered_df[filtered_df['Significant'] == "✓"]
-            elif significance_filter == "Non-Significant Only":
-                filtered_df = filtered_df[filtered_df['Significant'] == "✗"]
-            filtered_df = filtered_df[
-                filtered_df['P_Value'].astype(float) <= max_p_value_filter
-            ]
-            st.subheader(f"📊 RSI Analysis Results ({len(filtered_df)} signals)")
-            st.dataframe(filtered_df[display_cols], use_container_width=True)
+        
+        # Apply filters to the display dataframe (outside of columns)
+        filtered_df = display_df.copy()
+        filtered_df = filtered_df[
+            (filtered_df['RSI_Threshold'] >= rsi_min_filter) & 
+            (filtered_df['RSI_Threshold'] <= rsi_max_filter)
+        ]
+        filtered_df = filtered_df[
+            (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) >= confidence_min_filter) & 
+            (filtered_df['Confidence_Level'].str.replace('%', '').astype(float) <= confidence_max_filter)
+        ]
+        filtered_df = filtered_df[filtered_df['Total_Trades'] >= min_trades_filter]
+        filtered_df = filtered_df[
+            filtered_df['Win_Rate'].str.replace('%', '').astype(float) >= min_win_rate_filter
+        ]
+        filtered_df = filtered_df[
+            filtered_df['Avg_Return'].str.replace('%', '').astype(float) >= min_avg_return_filter
+        ]
+        filtered_df = filtered_df[
+            filtered_df['Total_Return'].str.replace('%', '').astype(float) >= min_total_return_filter
+        ]
+        filtered_df = filtered_df[
+            filtered_df['Annualized_Return'].str.replace('%', '').astype(float) >= min_annualized_return_filter
+        ]
+        filtered_df = filtered_df[
+            filtered_df['Sortino_Ratio'].apply(lambda x: float(x) if x != "∞" else 999) >= min_sortino_filter
+        ]
+        if significance_filter == "Significant Only":
+            filtered_df = filtered_df[filtered_df['Significant'] == "✓"]
+        elif significance_filter == "Non-Significant Only":
+            filtered_df = filtered_df[filtered_df['Significant'] == "✗"]
+        filtered_df = filtered_df[
+            filtered_df['P_Value'].astype(float) <= max_p_value_filter
+        ]
+        
+        # Display the filtered results table (outside of columns)
+        st.subheader(f"📊 RSI Analysis Results ({len(filtered_df)} signals)")
+        st.dataframe(filtered_df[display_cols], use_container_width=True)
 
     # Find best strategies (needed for subsequent sections)
     best_sortino_idx = filtered_df['Sortino_Ratio'].idxmax()
