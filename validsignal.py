@@ -605,7 +605,11 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 st.plotly_chart(fig_comparison, use_container_width=True)
 
                 # Download results
-                csv = results_df[display_cols].to_csv(index=False)
+                # Use the original column names from results_df for CSV download
+                download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
+                               'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
+                               'Return_Std', 'Best_Return', 'Worst_Return', 'confidence_level', 'significant', 'effect_size']
+                csv = results_df[download_cols].to_csv(index=False)
                 filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
                 st.download_button(
                     label="📥 Download Results as CSV",
