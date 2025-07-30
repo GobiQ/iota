@@ -488,31 +488,43 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Interactive RSI Analysis Results
                 st.subheader("📊 Interactive RSI Analysis Results")
-                st.write("📋 **Results Table**: View all strategies below")
-                st.write("🎯 **Individual Analysis**: Use the dropdown to select any strategy for detailed analysis")
+                st.write("�� **Results Table**: Click on any row to analyze that strategy")
+                st.write("🎯 **Individual Analysis**: Selected strategy details appear below")
                 
-                # Display the results table with better formatting
-                st.dataframe(
-                    display_df[display_cols], 
-                    use_container_width=True,
-                    hide_index=True
-                )
+                # Store results in session state to persist across interactions
+                if 'rsi_results' not in st.session_state:
+                    st.session_state.rsi_results = results_df
+                    st.session_state.benchmark = benchmark
+                    st.session_state.selected_threshold = None
                 
-                st.write("---")
-                st.write("**💡 Tip**: Use the dropdown below to analyze any specific strategy in detail")
+                # Update session state with current results
+                st.session_state.rsi_results = results_df
+                st.session_state.benchmark = benchmark
                 
-                # Create a selectbox for individual threshold analysis using existing data
+                # Create interactive table with clickable rows
                 available_thresholds = results_df[results_df['Total_Trades'] > 0]['RSI_Threshold'].tolist()
+                available_thresholds.sort()
                 
+                # Create a more interactive selection method
+                st.write("**Select a strategy to analyze:**")
+                
+                # Use radio buttons for better interaction
                 if available_thresholds:
-                    # Sort thresholds for better user experience
-                    available_thresholds.sort()
-                    
-                    selected_threshold = st.selectbox(
-                        "🎯 Select RSI Threshold to analyze:",
+                    selected_threshold = st.radio(
+                        "Choose RSI Threshold:",
                         options=available_thresholds,
-                        index=0,
-                        format_func=lambda x: f"RSI {x} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {x}) - {results_df[results_df['RSI_Threshold'] == x]['Total_Return'].iloc[0]:.2%} return"
+                        format_func=lambda x: f"RSI {x} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {x}) - {results_df[results_df['RSI_Threshold'] == x]['Total_Return'].iloc[0]:.2%} return",
+                        key="strategy_selector"
+                    )
+                    
+                    # Store selected threshold in session state
+                    st.session_state.selected_threshold = selected_threshold
+                    
+                    # Display the results table
+                    st.dataframe(
+                        display_df[display_cols], 
+                        use_container_width=True,
+                        hide_index=True
                     )
                     
                     # Get data for selected threshold from existing results
