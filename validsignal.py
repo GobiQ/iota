@@ -458,6 +458,647 @@ with col2:
     else:
         st.info(f"🔵 BUY {target_ticker} when {signal_ticker} {rsi_period}-day RSI ≥ threshold\n\n📈 SELL {target_ticker} when {signal_ticker} {rsi_period}-day RSI < threshold")
 
+# Check if we have stored analysis results
+if 'analysis_completed' in st.session_state and st.session_state['analysis_completed']:
+    # Display stored results
+    results_df = st.session_state['results_df']
+    benchmark = st.session_state['benchmark']
+    
+    st.success("✅ Analysis completed successfully!")
+    
+    # Display results table
+    st.subheader("📊 RSI Analysis Results")
+    st.info("💡 **What this shows:** This table displays all the RSI thresholds tested and their performance metrics. Each row represents a different RSI level and shows how well that strategy performed.")
+    
+    # Format the dataframe for display
+    display_df = results_df.copy()
+    
+    # Check if required columns exist before formatting
+    required_columns = ['Win_Rate', 'Avg_Return', 'Total_Return', 'annualized_return', 
+                      'Sortino_Ratio', 'Avg_Hold_Days', 'Return_Std', 'Best_Return', 
+                      'Worst_Return', 'Final_Equity', 'confidence_level', 'significant', 'effect_size']
+    
+    missing_columns = [col for col in required_columns if col not in results_df.columns]
+    if missing_columns:
+        st.error(f"Missing columns in results: {missing_columns}")
+        st.stop()
+    
+    # Format the columns for display
+    display_df['Win_Rate'] = display_df['Win_Rate'].apply(lambda x: f"{x:.1%}")
+    display_df['Avg_Return'] = display_df['Avg_Return'].apply(lambda x: f"{x:.2%}")
+    display_df['Total_Return'] = display_df['Total_Return'].apply(lambda x: f"{x:.2%}")
+    display_df['Annualized_Return'] = display_df['annualized_return'].apply(lambda x: f"{x:.2%}")
+    display_df['Sortino_Ratio'] = display_df['Sortino_Ratio'].apply(lambda x: f"{x:.2f}" if not np.isinf(x) else "∞")
+    display_df['Avg_Hold_Days'] = display_df['Avg_Hold_Days'].apply(lambda x: f"{x:.1f}")
+    display_df['Return_Std'] = display_df['Return_Std'].apply(lambda x: f"{x:.2%}")
+    display_df['Best_Return'] = display_df['Best_Return'].apply(lambda x: f"{x:.2%}")
+    display_df['Worst_Return'] = display_df['Worst_Return'].apply(lambda x: f"{x:.2%}")
+    display_df['Final_Equity'] = display_df['Final_Equity'].apply(lambda x: f"{x:.3f}")
+    display_df['Confidence_Level'] = display_df['confidence_level'].apply(lambda x: f"{x:.1f}%")
+    display_df['Significant'] = display_df['significant'].apply(lambda x: "✓" if x else "✗")
+    display_df['Effect_Size'] = display_df['effect_size'].apply(lambda x: f"{x:.2f}")
+    
+    # Drop the equity_curve and trades columns for display
+    display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
+                   'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
+                   'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size']
+    
+    # Check if all display columns exist
+    missing_display_cols = [col for col in display_cols if col not in display_df.columns]
+    if missing_display_cols:
+        st.error(f"Missing display columns: {missing_display_cols}")
+        st.stop()
+    
+    st.dataframe(display_df[display_cols], use_container_width=True)
+    
+    # Find best strategies (needed for subsequent sections)
+    best_sortino_idx = display_df['Sortino_Ratio'].idxmax()
+    best_annualized_idx = display_df['annualized_return'].idxmax()
+    best_winrate_idx = display_df['Win_Rate'].idxmax()
+    best_total_return_idx = display_df['Total_Return'].idxmax()
+    
+    # Statistical Significance Analysis
+    st.subheader("📊 Statistical Significance Analysis")
+    st.info("💡 **What this shows:** This section determines whether your strategy's performance is statistically significant - meaning the results are likely not due to chance. It compares your strategy against SPY under the same conditions to see if your target ticker choice is actually better.")
+    
+    # Filter strategies with trades
+    valid_strategies = display_df[display_df['Total_Trades'] > 0].copy()
+    
+    if not valid_strategies.empty:
+        # Create significance summary
+        significant_strategies = valid_strategies[valid_strategies['significant'] == True]
+        
+        # Effect size vs confidence level
+        st.subheader("📊 Effect Size vs Confidence Level Analysis")
+        st.info("💡 **What this shows:** This scatter plot helps you understand the relationship between statistical significance and practical importance. Each point represents a strategy - the position shows how confident we are (confidence level) and how much better/worse the strategy is compared to SPY (effect size).")
+        
+        # Create scatter plot with hover information
+        fig_effect = go.Figure()
+        
+        # Add points for significant strategies (green)
+        significant_data = valid_strategies[valid_strategies['significant'] == True]
+        if not significant_data.empty:
+            fig_effect.add_trace(go.Scatter(
+                x=significant_data['effect_size'],
+                y=significant_data['confidence_level'],
+                mode='markers',
+                name='Significant Strategies',
+                marker=dict(color='green', size=8),
+                hovertemplate='<b>RSI %{text}</b><br>' +
+                            'Effect Size: %{x:.3f}<br>' +
+                            'Confidence: %{y:.1f}%<br>' +
+                            'Significant: ✓<extra></extra>',
+                text=[f"{row['RSI_Threshold']}" for _, row in significant_data.iterrows()]
+            ))
+        
+        # Add points for non-significant strategies (red)
+        non_significant_data = valid_strategies[valid_strategies['significant'] == False]
+        if not non_significant_data.empty:
+            fig_effect.add_trace(go.Scatter(
+                x=non_significant_data['effect_size'],
+                y=non_significant_data['confidence_level'],
+                mode='markers',
+                name='Non-Significant Strategies',
+                marker=dict(color='red', size=8),
+                hovertemplate='<b>RSI %{text}</b><br>' +
+                            'Effect Size: %{x:.3f}<br>' +
+                            'Confidence: %{y:.1f}%<br>' +
+                            'Significant: ✗<extra></extra>',
+                text=[f"{row['RSI_Threshold']}" for _, row in non_significant_data.iterrows()]
+            ))
+        
+        # Add reference lines
+        fig_effect.add_hline(y=95, line_dash="dash", line_color="red", 
+                                           annotation_text="95% Confidence")
+        fig_effect.add_vline(x=0, line_dash="dash", line_color="gray", 
+                                           annotation_text="No Effect")
+        
+        fig_effect.update_layout(
+            title="Effect Size vs Confidence Level",
+            xaxis_title="Effect Size (Cohen's d)",
+            yaxis_title="Confidence Level (%)",
+            hovermode='closest'
+        )
+        
+        st.plotly_chart(fig_effect, use_container_width=True)
+        
+        # Detailed explanation
+        with st.expander("📚 Understanding Effect Size vs Confidence Level"):
+            st.write("""
+            **What This Chart Tells You:**
+            
+            **🎯 Quadrant Analysis:**
+            - **Top Right (Green)**: High confidence + Large positive effect = Best strategies
+            - **Top Left (Green)**: High confidence + Large negative effect = Poor strategies  
+            - **Bottom Right (Red)**: Low confidence + Large positive effect = Promising but uncertain
+            - **Bottom Left (Red)**: Low confidence + Small effect = Weak strategies
+            
+            **📊 Effect Size Interpretation:**
+            - **0.0**: No difference from SPY
+            - **0.2-0.5**: Small effect (strategy slightly better/worse)
+            - **0.5-0.8**: Medium effect (meaningful difference)
+            - **>0.8**: Large effect (substantial outperformance/underperformance)
+            
+            **📈 Confidence Level Meaning:**
+            - **>95%**: Very strong evidence the strategy differs from SPY
+            - **90-95%**: Strong evidence of difference
+            - **80-90%**: Moderate evidence
+            - **<80%**: Weak evidence, results could be due to chance
+            
+            **🎯 What to Look For:**
+            - **Green dots in top-right**: Your best strategies (high confidence + large positive effect)
+            - **Green dots in top-left**: Strategies to avoid (high confidence + large negative effect)
+            - **Red dots**: Strategies with uncertain results (low confidence)
+            - **Dots near the center line**: Strategies with minimal effect on performance
+            
+            **💡 Practical Guidance:**
+            - Focus on strategies in the top-right quadrant
+            - Be cautious of strategies with high confidence but negative effect size
+            - Consider sample size - more data points generally lead to higher confidence
+            - Remember that past performance doesn't guarantee future results
+            """)
+        
+        # Download results
+        st.subheader("📥 Download Results")
+        st.info("💡 **What this does:** Download your analysis results as a CSV file that you can open in Excel or other spreadsheet programs. This includes all the performance metrics for every RSI threshold tested.")
+        # Use the original column names from results_df for CSV download
+        download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 
+                       'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
+                       'Return_Std', 'Best_Return', 'Worst_Return', 'confidence_level', 'significant', 'effect_size']
+        csv = results_df[download_cols].to_csv(index=False)
+        filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
+        st.download_button(
+            label="📥 Download Results as CSV",
+            data=csv,
+            file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+        
+        # Top significant strategies
+        if len(significant_strategies) > 0:
+            st.subheader("🏆 Top Statistically Significant Strategies")
+            
+            # Sort by confidence level
+            top_significant = significant_strategies.nlargest(5, 'confidence_level')
+            
+            # Multiple Strategy Comparison for Significant Strategies
+            st.subheader("📊 Significant Strategies Comparison")
+            st.info("💡 **What this shows:** This chart compares the top 5 most confident statistically significant strategies against SPY buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The strategies are ranked by confidence level, showing the most statistically reliable strategies first.")
+            
+            # Create comparison chart with all significant strategies
+            fig_comparison = go.Figure()
+            
+            # Add benchmark
+            fig_comparison.add_trace(go.Scatter(
+                x=benchmark.index,
+                y=benchmark.values,
+                mode='lines',
+                name="SPY Buy & Hold",
+                line=dict(color='red', width=2, dash='dash')
+            ))
+            
+            # Add significant strategies
+            colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
+            for i, (idx, row) in enumerate(top_significant.iterrows()):
+                if row['equity_curve'] is not None:
+                    color = colors[i % len(colors)]
+                    fig_comparison.add_trace(go.Scatter(
+                        x=row['equity_curve'].index,
+                        y=row['equity_curve'].values,
+                        mode='lines',
+                        name=f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% conf)",
+                        line=dict(color=color, width=2)
+                    ))
+            
+            fig_comparison.update_layout(
+                title="Significant Strategies Comparison vs SPY",
+                xaxis_title="Date",
+                yaxis_title="Equity Value",
+                hovermode='x unified',
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+            )
+            st.plotly_chart(fig_comparison, use_container_width=True)
+            
+            # Individual strategy details
+            st.subheader("📈 Individual Strategy Details (95%+ Confidence)")
+            st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy with 95% or above confidence level, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
+            
+            # Sort options for significant strategies
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                significant_sort_by = st.selectbox(
+                    "Sort by:",
+                    ["RSI_Threshold", "confidence_level", "Sortino_Ratio", "Win_Rate", "annualized_return", "Total_Return"],
+                    format_func=lambda x: {
+                        "RSI_Threshold": "RSI Threshold",
+                        "confidence_level": "Confidence Level", 
+                        "Sortino_Ratio": "Sortino Ratio",
+                        "Win_Rate": "Win Rate",
+                        "annualized_return": "Annualized Return",
+                        "Total_Return": "Total Return"
+                    }[x],
+                    key="significant_sort"
+                )
+            with col2:
+                significant_sort_order = st.radio(
+                    "Order:",
+                    ["ascending", "descending"],
+                    horizontal=True,
+                    key="significant_order"
+                )
+            
+            # Sort significant strategies
+            if significant_sort_order == "ascending":
+                sorted_significant = significant_strategies.sort_values(significant_sort_by)
+            else:
+                sorted_significant = significant_strategies.sort_values(significant_sort_by, ascending=False)
+
+            for idx, row in sorted_significant.iterrows():
+                with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
+                    # Performance metrics - comprehensive display
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Trades", row['Total_Trades'], 
+                                 help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
+                        st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                                 help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
+                    
+                    with col2:
+                        st.metric("P-value", f"{row['p_value']:.4f}", 
+                                 help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
+                        st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
+                                 help="How certain we are that the strategy outperforms SPY. Higher percentage means stronger evidence the strategy works.")
+                    
+                    with col3:
+                        st.metric("Total Return", f"{row['Total_Return']:.2%}", 
+                                 help="The total percentage gain or loss over the entire period. Shows how much money you would have made (or lost) if you invested $100.")
+                        st.metric("Annualized Return", f"{row['annualized_return']:.2%}", 
+                                 help="The yearly return rate, useful for comparing strategies over different time periods. Shows how much you'd earn per year on average.")
+                    
+                    with col4:
+                        st.metric("Win Rate", f"{row['Win_Rate']:.1%}", 
+                                 help="Percentage of trades that were profitable. A higher win rate means the strategy wins more often than it loses.")
+                        st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞", 
+                                 help="Risk-adjusted return measure that focuses on downside risk. Higher is better - it shows good returns with less risk of big losses.")
+                    
+                    # Additional metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
+                                 help="Average number of days the strategy held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
+                        st.metric("Effect Size", f"{row['effect_size']:.2f}", 
+                                 help="How much better/worse the strategy is compared to SPY. Positive means it beats SPY, negative means it underperforms.")
+                    
+                    with col2:
+                        st.metric("Best Return", f"{row['Best_Return']:.2%}", 
+                                 help="The best single trade return achieved by this strategy. Shows the strategy's potential upside.")
+                        st.metric("Worst Return", f"{row['Worst_Return']:.2%}", 
+                                 help="The worst single trade return achieved by this strategy. Shows the strategy's potential downside risk.")
+                    
+                    with col3:
+                        st.metric("Return Std Dev", f"{row['Return_Std']:.2%}", 
+                                 help="Standard deviation of trade returns. Lower values mean more consistent performance, higher values mean more volatile results.")
+                        st.metric("Final Equity", f"{row['Final_Equity']:.3f}", 
+                                 help="The final value of a $1 investment. Shows how much your money would have grown (or shrunk) over the period.")
+                    
+                    with col4:
+                        st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
+                                 help="Statistical measure of how different the strategy is from SPY. Examples: 2.0 = moderate difference, 3.0 = strong difference, 4.0+ = very strong difference. Higher absolute values mean stronger evidence of a real difference.")
+                        st.metric("Power", f"{row['power']:.2f}", 
+                                 help="How likely the test is to detect a real difference if one exists. Higher power means more reliable statistical results.")
+                    
+                    # Final row
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Significant", "✓" if row['significant'] else "✗", 
+                                 help="Whether the strategy reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
+                    
+                    # Show equity curve for this strategy
+                    if row['equity_curve'] is not None:
+                        st.subheader("📈 Equity Curve Comparison")
+                        
+                        # Create SPY equity curve that follows the same RSI conditions
+                        signal_rsi = calculate_rsi(st.session_state['signal_data'], window=st.session_state['rsi_period'])
+                        
+                        # Generate buy signals for SPY (same as strategy)
+                        if st.session_state['comparison'] == "less_than":
+                            spy_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
+                        else:  # greater_than
+                            spy_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
+                        
+                        # Calculate SPY equity curve using same conditions
+                        spy_equity_curve = pd.Series(1.0, index=st.session_state['benchmark_data'].index)
+                        current_equity = 1.0
+                        in_position = False
+                        entry_equity = 1.0
+                        entry_price = None
+                        
+                        for date in st.session_state['benchmark_data'].index:
+                            current_signal = spy_signals[date] if date in spy_signals.index else 0
+                            current_price = st.session_state['benchmark_data'][date]
+                            
+                            if current_signal == 1 and not in_position:
+                                # Enter position
+                                in_position = True
+                                entry_equity = current_equity
+                                entry_price = current_price
+                                
+                            elif current_signal == 0 and in_position:
+                                # Exit position
+                                trade_return = (current_price - entry_price) / entry_price
+                                current_equity = entry_equity * (1 + trade_return)
+                                in_position = False
+                            
+                            # Update equity curve
+                            if in_position:
+                                current_equity = entry_equity * (current_price / entry_price)
+                            
+                            spy_equity_curve[date] = current_equity
+                        
+                        # Handle case where we're still in position at the end
+                        if in_position:
+                            final_price = st.session_state['benchmark_data'].iloc[-1]
+                            trade_return = (final_price - entry_price) / entry_price
+                            current_equity = entry_equity * (1 + trade_return)
+                            spy_equity_curve.iloc[-1] = current_equity
+                        
+                        fig_sig = go.Figure()
+                        
+                        fig_sig.add_trace(go.Scatter(
+                            x=row['equity_curve'].index,
+                            y=row['equity_curve'].values,
+                            mode='lines',
+                            name=f'Strategy (RSI {row["RSI_Threshold"]})',
+                            line=dict(color='green', width=2)
+                        ))
+                        
+                        fig_sig.add_trace(go.Scatter(
+                            x=spy_equity_curve.index,
+                            y=spy_equity_curve.values,
+                            mode='lines',
+                            name=f'SPY (Same RSI {row["RSI_Threshold"]} Conditions)',
+                            line=dict(color='blue', width=2)
+                        ))
+                        
+                        fig_sig.add_trace(go.Scatter(
+                            x=benchmark.index,
+                            y=benchmark.values,
+                            mode='lines',
+                            name='SPY Buy & Hold',
+                            line=dict(color='red', width=2, dash='dash')
+                        ))
+                        
+                        fig_sig.update_layout(
+                            title=f"Equity Curve - RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% Confidence)",
+                            xaxis_title="Date",
+                            yaxis_title="Equity Value",
+                            hovermode='x unified'
+                        )
+                        
+                        st.plotly_chart(fig_sig, use_container_width=True)
+                        
+                        # Add explanation
+                        st.info("💡 **What this shows:** The green line shows your strategy performance. The blue line shows SPY performance under the same RSI conditions. The red dashed line shows SPY buy-and-hold. This helps you see if your target ticker choice beats SPY when the same RSI signals are applied.")
+        else:
+            st.warning("No strategies reached statistical significance (p < 0.05)")
+        
+        # Strategies with 80-95% confidence (borderline significant)
+        borderline_strategies = valid_strategies[(valid_strategies['confidence_level'] >= 80) & 
+                                              (valid_strategies['confidence_level'] < 95)].copy()
+        
+        if not borderline_strategies.empty:
+            st.subheader("📊 Borderline Significant Strategies (80-95% Confidence)")
+            st.info("💡 **What this shows:** These strategies show promising results but don't quite reach the 95% confidence threshold. They may still be worth considering, especially if they have good performance metrics.")
+            
+            # Sort options for borderline strategies
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                borderline_sort_by = st.selectbox(
+                    "Sort by:",
+                    ["RSI_Threshold", "confidence_level", "Sortino_Ratio", "Win_Rate", "annualized_return", "Total_Return"],
+                    format_func=lambda x: {
+                        "RSI_Threshold": "RSI Threshold",
+                        "confidence_level": "Confidence Level", 
+                        "Sortino_Ratio": "Sortino Ratio",
+                        "Win_Rate": "Win Rate",
+                        "annualized_return": "Annualized Return",
+                        "Total_Return": "Total Return"
+                    }[x],
+                    key="borderline_sort"
+                )
+            with col2:
+                borderline_sort_order = st.radio(
+                    "Order:",
+                    ["ascending", "descending"],
+                    horizontal=True,
+                    key="borderline_order"
+                )
+            
+            # Sort borderline strategies
+            if borderline_sort_order == "ascending":
+                sorted_borderline = borderline_strategies.sort_values(borderline_sort_by)
+            else:
+                sorted_borderline = borderline_strategies.sort_values(borderline_sort_by, ascending=False)
+
+            for idx, row in sorted_borderline.iterrows():
+                with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
+                    # Performance metrics with hover tooltips
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Trades", row['Total_Trades'], 
+                                 help="The number of buy/sell transactions the strategy made. More trades can mean more opportunities but also more transaction costs.")
+                        st.metric("Trades Won", int(row['Total_Trades'] * row['Win_Rate']), 
+                                 help="The number of profitable trades out of all trades made. Shows how many times the strategy was successful.")
+                    
+                    with col2:
+                        st.metric("P-value", f"{row['p_value']:.4f}", 
+                                 help="Probability that the results happened by chance. Lower values are better - under 0.05 means statistically significant.")
+                        st.metric("Confidence Level", f"{row['confidence_level']:.1f}%", 
+                                 help="How certain we are that the strategy outperforms SPY. Higher percentage means stronger evidence the strategy works.")
+                    
+                    with col3:
+                        st.metric("Total Return", f"{row['Total_Return']:.2%}", 
+                                 help="The total percentage gain or loss over the entire period. Shows how much money you would have made (or lost) if you invested $100.")
+                        st.metric("Annualized Return", f"{row['annualized_return']:.2%}", 
+                                 help="The yearly return rate, useful for comparing strategies over different time periods. Shows how much you'd earn per year on average.")
+                    
+                    with col4:
+                        st.metric("Win Rate", f"{row['Win_Rate']:.1%}", 
+                                 help="Percentage of trades that were profitable. A higher win rate means the strategy wins more often than it loses.")
+                        st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞", 
+                                 help="Risk-adjusted return measure that focuses on downside risk. Higher is better - it shows good returns with less risk of big losses.")
+                    
+                    # Additional metrics with hover tooltips
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}", 
+                                 help="Average number of days the strategy held each position. Shorter holds mean more frequent trading, longer holds mean more patience.")
+                        st.metric("Effect Size", f"{row['effect_size']:.2f}", 
+                                 help="How much better/worse the strategy is compared to SPY. Positive means it beats SPY, negative means it underperforms.")
+                    
+                    with col2:
+                        st.metric("Best Return", f"{row['Best_Return']:.2%}", 
+                                 help="The best single trade return achieved by this strategy. Shows the strategy's potential upside.")
+                        st.metric("Worst Return", f"{row['Worst_Return']:.2%}", 
+                                 help="The worst single trade return achieved by this strategy. Shows the strategy's potential downside risk.")
+                    
+                    with col3:
+                        st.metric("Return Std Dev", f"{row['Return_Std']:.2%}", 
+                                 help="Standard deviation of trade returns. Lower values mean more consistent performance, higher values mean more volatile results.")
+                        st.metric("Final Equity", f"{row['Final_Equity']:.3f}", 
+                                 help="The final value of a $1 investment. Shows how much your money would have grown (or shrunk) over the period.")
+                    
+                    with col4:
+                        st.metric("T-statistic", f"{row['t_statistic']:.3f}", 
+                                 help="Statistical measure of how different the strategy is from SPY. Examples: 2.0 = moderate difference, 3.0 = strong difference, 4.0+ = very strong difference. Higher absolute values mean stronger evidence of a real difference.")
+                        st.metric("Power", f"{row['power']:.2f}", 
+                                 help="How likely the test is to detect a real difference if one exists. Higher power means more reliable statistical results.")
+                    
+                    # Final row
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Significant", "✓" if row['significant'] else "✗", 
+                                 help="Whether the strategy reached statistical significance (p < 0.05). ✓ means strong evidence, ✗ means results could be due to chance.")
+                    
+                    # Show equity curve for this borderline strategy
+                    if row['equity_curve'] is not None:
+                        st.subheader("📈 Equity Curve Comparison")
+                        
+                        # Create SPY equity curve that follows the same RSI conditions
+                        signal_rsi = calculate_rsi(st.session_state['signal_data'], window=st.session_state['rsi_period'])
+                        
+                        # Generate buy signals for SPY (same as strategy)
+                        if st.session_state['comparison'] == "less_than":
+                            spy_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
+                        else:  # greater_than
+                            spy_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
+                        
+                        # Calculate SPY equity curve using same conditions
+                        spy_equity_curve = pd.Series(1.0, index=st.session_state['benchmark_data'].index)
+                        current_equity = 1.0
+                        in_position = False
+                        entry_equity = 1.0
+                        entry_price = None
+                        
+                        for date in st.session_state['benchmark_data'].index:
+                            current_signal = spy_signals[date] if date in spy_signals.index else 0
+                            current_price = st.session_state['benchmark_data'][date]
+                            
+                            if current_signal == 1 and not in_position:
+                                # Enter position
+                                in_position = True
+                                entry_equity = current_equity
+                                entry_price = current_price
+                                
+                            elif current_signal == 0 and in_position:
+                                # Exit position
+                                trade_return = (current_price - entry_price) / entry_price
+                                current_equity = entry_equity * (1 + trade_return)
+                                in_position = False
+                            
+                            # Update equity curve
+                            if in_position:
+                                current_equity = entry_equity * (current_price / entry_price)
+                            
+                            spy_equity_curve[date] = current_equity
+                        
+                        # Handle case where we're still in position at the end
+                        if in_position:
+                            final_price = st.session_state['benchmark_data'].iloc[-1]
+                            trade_return = (final_price - entry_price) / entry_price
+                            current_equity = entry_equity * (1 + trade_return)
+                            spy_equity_curve.iloc[-1] = current_equity
+                        
+                        fig_sig = go.Figure()
+                        
+                        fig_sig.add_trace(go.Scatter(
+                            x=row['equity_curve'].index,
+                            y=row['equity_curve'].values,
+                            mode='lines',
+                            name=f'Strategy (RSI {row["RSI_Threshold"]})',
+                            line=dict(color='green', width=2)
+                        ))
+                        
+                        fig_sig.add_trace(go.Scatter(
+                            x=spy_equity_curve.index,
+                            y=spy_equity_curve.values,
+                            mode='lines',
+                            name=f'SPY (Same RSI {row["RSI_Threshold"]} Conditions)',
+                            line=dict(color='blue', width=2)
+                        ))
+                        
+                        fig_sig.add_trace(go.Scatter(
+                            x=benchmark.index,
+                            y=benchmark.values,
+                            mode='lines',
+                            name='SPY Buy & Hold',
+                            line=dict(color='red', width=2, dash='dash')
+                        ))
+                        
+                        fig_sig.update_layout(
+                            title=f"Equity Curve - RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% Confidence)",
+                            xaxis_title="Date",
+                            yaxis_title="Equity Value",
+                            hovermode='x unified'
+                        )
+                        
+                        st.plotly_chart(fig_sig, use_container_width=True)
+                        
+                        # Add explanation
+                        st.info("💡 **What this shows:** The green line shows your strategy performance. The blue line shows SPY performance under the same RSI conditions. The red dashed line shows SPY buy-and-hold. This helps you see if your target ticker choice beats SPY when the same RSI signals are applied.")
+        else:
+            st.info("No strategies found with 80-95% confidence level.")
+
+    # Statistical interpretation guide
+    with st.expander("📚 Statistical Significance Guide"):
+        st.write("""
+        **Understanding Statistical Significance:**
+        
+        - **Confidence Level**: Percentage confidence that the strategy outperforms SPY **under the same RSI conditions**
+        - **P-value**: Probability of getting these results by chance (lower is better)
+        - **Effect Size**: Magnitude of the difference (Cohen's d)
+        - **Significant**: P-value < 0.05 (95% confidence level)
+        
+        **What This Measures:**
+        The confidence level compares your strategy (buying/selling the target ticker based on signal RSI) 
+        vs. buying/selling SPY based on the **same signal RSI conditions**. This ensures a fair comparison 
+        of whether your target ticker choice is better than SPY when the same RSI signals are applied.
+        
+        **Interpretation:**
+        - ✓ **Significant**: Strong evidence your target ticker beats SPY under these RSI conditions
+        - ✗ **Not Significant**: Results could be due to chance
+        - **Effect Size**: 
+          - Small: 0.2-0.5
+          - Medium: 0.5-0.8  
+          - Large: > 0.8
+        
+        **Key Metrics Explained:**
+        
+        **📊 Performance Metrics:**
+        - **Total Return**: How much money you would have made (or lost) over the entire period
+        - **Annualized Return**: The yearly return rate, useful for comparing strategies over different time periods
+        - **Win Rate**: Percentage of trades that were profitable
+        - **Total Trades**: Number of buy/sell transactions the strategy made
+        - **Sortino Ratio**: Risk-adjusted return measure (higher is better, focuses on downside risk)
+        - **Avg Hold Days**: Average number of days the strategy held each position
+        
+        **📈 Statistical Metrics:**
+        - **Confidence Level**: How certain we are that the strategy beats SPY (higher % = more certain)
+        - **P-value**: Probability the results happened by chance (lower = more significant)
+        - **Effect Size**: How much better/worse the strategy is compared to SPY
+        - **T-statistic**: Statistical measure of the difference between strategy and SPY
+        - **Power**: How likely the test is to detect a real difference if one exists
+        
+        **🎯 What to Look For:**
+        - **High Confidence (>95%)**: Very strong evidence the strategy works
+        - **Low P-value (<0.05)**: Results are statistically significant
+        - **Positive Effect Size**: Strategy outperforms SPY
+        - **High Win Rate**: Strategy wins more often than it loses
+        - **Good Sortino Ratio**: Strategy has good risk-adjusted returns
+        """)
+
 if st.button("🚀 Run RSI Analysis", type="primary"):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
@@ -472,9 +1113,18 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 st.session_state['rsi_period'] = rsi_period
                 st.session_state['comparison'] = comparison
                 
+                # Store analysis results in session state
+                st.session_state['results_df'] = results_df
+                st.session_state['benchmark'] = benchmark
+                st.session_state['analysis_completed'] = True
+                
                 # Display results table
                 st.subheader("📊 RSI Analysis Results")
                 st.info("💡 **What this shows:** This table displays all the RSI thresholds tested and their performance metrics. Each row represents a different RSI level and shows how well that strategy performed.")
+                
+                # Use session state data if available, otherwise use current results
+                display_df = st.session_state.get('results_df', results_df) if 'analysis_completed' in st.session_state else results_df
+                benchmark = st.session_state.get('benchmark', benchmark) if 'analysis_completed' in st.session_state else benchmark
                 
                 # Format the dataframe for display
                 display_df = results_df.copy()
@@ -518,17 +1168,17 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 st.dataframe(display_df[display_cols], use_container_width=True)
                 
                 # Find best strategies (needed for subsequent sections)
-                best_sortino_idx = results_df['Sortino_Ratio'].idxmax()
-                best_annualized_idx = results_df['annualized_return'].idxmax()
-                best_winrate_idx = results_df['Win_Rate'].idxmax()
-                best_total_return_idx = results_df['Total_Return'].idxmax()
+                best_sortino_idx = display_df['Sortino_Ratio'].idxmax()
+                best_annualized_idx = display_df['annualized_return'].idxmax()
+                best_winrate_idx = display_df['Win_Rate'].idxmax()
+                best_total_return_idx = display_df['Total_Return'].idxmax()
                 
                 # Statistical Significance Analysis
                 st.subheader("📊 Statistical Significance Analysis")
                 st.info("💡 **What this shows:** This section determines whether your strategy's performance is statistically significant - meaning the results are likely not due to chance. It compares your strategy against SPY under the same conditions to see if your target ticker choice is actually better.")
                 
                 # Filter strategies with trades
-                valid_strategies = results_df[results_df['Total_Trades'] > 0].copy()
+                valid_strategies = display_df[display_df['Total_Trades'] > 0].copy()
                 
                 if not valid_strategies.empty:
                     # Create significance summary
