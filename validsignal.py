@@ -761,8 +761,19 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     benchmark_name = f"{stored_benchmark_ticker} ({'S&P 500' if stored_benchmark_ticker == 'SPY' else 'Cash Equivalent'})"
     st.info(f"💡 **What this shows:** This section determines whether your signal's performance is statistically significant - meaning the results are likely not due to chance. It compares your signal against {benchmark_name} under the same conditions to see if your target ticker choice is actually better.")
     
+    # Add note about confidence levels at extreme RSI values
+    st.warning("⚠️ **Note on Extreme RSI Values:** At the extreme ends of RSI thresholds (very low or very high values), there are often not enough historical events to generate statistically confident results. This is why confidence levels may drop off at these extremes - the sample size becomes too small for reliable statistical analysis.")
+    
     # Filter signals with trades
     valid_signals = filtered_df[filtered_df['Total_Trades'] > 0].copy()
+    
+    # Add summary of statistical analysis
+    if not valid_signals.empty:
+        significant_count = len(valid_signals[valid_signals['significant'] == True])
+        total_signals = len(valid_signals)
+        st.success(f"📊 **Analysis Summary:** Found {significant_count} statistically significant signals out of {total_signals} signals with trades.")
+    else:
+        st.warning("⚠️ **No signals with trades found.** This means none of the RSI thresholds generated any buy/sell signals during the analysis period.")
     
     if not valid_signals.empty:
         # Create significance summary
