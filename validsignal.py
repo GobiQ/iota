@@ -35,40 +35,60 @@ def get_stock_data(ticker, period="2y"):
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
-def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, signal_type="buy"):
+def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, comparison="less_than"):
     """Analyze RSI signals for a specific threshold"""
     rsi = calculate_rsi(signal_prices)
     
-    # Generate signals based on RSI threshold
-    if signal_type == "buy":
+    # Generate buy signals based on RSI threshold and comparison
+    if comparison == "less_than":
         signals = (rsi <= rsi_threshold).astype(int)
-    else:  # sell
+    else:  # greater_than
         signals = (rsi >= rsi_threshold).astype(int)
     
-    # Find signal points (when signal changes from 0 to 1)
+    # Find entry and exit points
     signal_changes = signals.diff()
-    entry_points = signal_changes == 1
+    entry_points = signal_changes == 1  # Signal turns on
+    exit_points = signal_changes == -1  # Signal turns off
     
     if not entry_points.any():
         return {
             'total_trades': 0,
             'win_rate': 0,
             'avg_return': 0,
-            'returns': []
+            'returns': [],
+            'avg_hold_days': 0
         }
     
-    # Calculate returns for each signal
+    # Calculate returns for each complete trade (entry to exit)
     returns = []
-    hold_period = 5  # Hold for 5 days after signal
+    hold_periods = []
     
-    for entry_date in signal_prices[entry_points].index:
+    entry_dates = signal_prices[entry_points].index
+    
+    for entry_date in entry_dates:
         try:
             entry_idx = target_prices.index.get_loc(entry_date)
-            if entry_idx + hold_period < len(target_prices):
-                entry_price = target_prices.iloc[entry_idx]
-                exit_price = target_prices.iloc[entry_idx + hold_period]
-                ret = (exit_price - entry_price) / entry_price
-                returns.append(ret)
+            
+            # Find the next exit point after this entry
+            future_exits = exit_points[exit_points.index > entry_date]
+            
+            if future_exits.any():
+                exit_date = future_exits.index[0]
+                exit_idx = target_prices.index.get_loc(exit_date)
+            else:
+                # If no exit signal, hold until end of data
+                exit_idx = len(target_prices) - 1
+                exit_date = target_prices.index[exit_idx]
+            
+            # Calculate return and hold period
+            entry_price = target_prices.iloc[entry_idx]
+            exit_price = target_prices.iloc[exit_idx]
+            ret = (exit_price - entry_price) / entry_price
+            hold_days = (exit_date - entry_date).days
+            
+            returns.append(ret)
+            hold_periods.append(hold_days)
+            
         except (KeyError, IndexError):
             continue
     
@@ -77,21 +97,24 @@ def analyze_rsi_signals(signal_prices, target_prices, rsi_threshold, signal_type
             'total_trades': 0,
             'win_rate': 0,
             'avg_return': 0,
-            'returns': []
+            'returns': [],
+            'avg_hold_days': 0
         }
     
     returns = np.array(returns)
     win_rate = (returns > 0).mean()
     avg_return = returns.mean()
+    avg_hold_days = np.mean(hold_periods)
     
     return {
         'total_trades': len(returns),
         'win_rate': win_rate,
         'avg_return': avg_return,
-        'returns': returns
+        'returns': returns,
+        'avg_hold_days': avg_hold_days
     }
 
-def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, signal_type):
+def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison):
     """Run comprehensive RSI analysis across the specified range"""
     
     # Fetch data
@@ -118,13 +141,14 @@ def run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, signal_type
     total_thresholds = len(rsi_thresholds)
     
     for i, threshold in enumerate(rsi_thresholds):
-        analysis = analyze_rsi_signals(signal_data, target_data, threshold, signal_type)
+        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison)
         
         results.append({
             'RSI_Threshold': threshold,
             'Total_Trades': analysis['total_trades'],
             'Win_Rate': analysis['win_rate'],
             'Avg_Return': analysis['avg_return'],
+            'Avg_Hold_Days': analysis['avg_hold_days'],
             'Return_Std': np.std(analysis['returns']) if len(analysis['returns']) > 0 else 0,
             'Best_Return': np.max(analysis['returns']) if len(analysis['returns']) > 0 else 0,
             'Worst_Return': np.min(analysis['returns']) if len(analysis['returns']) > 0 else 0
@@ -139,16 +163,19 @@ st.sidebar.header("Configuration")
 
 # Input fields
 signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="Ticker to generate RSI signals from")
-target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="Ticker to trade based on signals")
+target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="Ticker to buy based on signals")
 
-signal_type = st.sidebar.selectbox("Signal Type", ["buy", "sell"], help="Buy signals trigger on low RSI, sell signals on high RSI")
+comparison = st.sidebar.selectbox("RSI Condition", 
+                                 ["less_than", "greater_than"], 
+                                 format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
+                                 help="Buy when RSI is less than or greater than threshold")
 
-if signal_type == "buy":
+if comparison == "less_than":
     default_min, default_max = 20, 40
-    st.sidebar.write("Buy signals: RSI <= threshold")
+    st.sidebar.write("Buy signals: RSI ≤ threshold")
 else:
     default_min, default_max = 60, 80
-    st.sidebar.write("Sell signals: RSI >= threshold")
+    st.sidebar.write("Buy signals: RSI ≥ threshold")
 
 rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5)
 rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5)
@@ -163,20 +190,20 @@ with col1:
     st.subheader("Analysis Configuration")
     st.write(f"**Signal Ticker:** {signal_ticker}")
     st.write(f"**Target Ticker:** {target_ticker}")
-    st.write(f"**Signal Type:** {signal_type.title()}")
+    st.write(f"**RSI Condition:** RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
     st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
 
 with col2:
     st.subheader("Strategy Logic")
-    if signal_type == "buy":
-        st.info("🔵 Generate BUY signals when RSI ≤ threshold\n\n📈 Trade the target ticker for 5 days")
+    if comparison == "less_than":
+        st.info("🔵 Generate BUY signals when RSI ≤ threshold\n\n📈 Hold target ticker until RSI > threshold")
     else:
-        st.info("🔴 Generate SELL signals when RSI ≥ threshold\n\n📉 Trade the target ticker for 5 days")
+        st.info("🔵 Generate BUY signals when RSI ≥ threshold\n\n📈 Hold target ticker until RSI < threshold")
 
 if st.button("Run RSI Analysis", type="primary"):
     if rsi_min < rsi_max:
         try:
-            results_df = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, signal_type)
+            results_df = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison)
             
             if results_df is not None and not results_df.empty:
                 st.success("✓ Analysis completed successfully!")
@@ -188,6 +215,7 @@ if st.button("Run RSI Analysis", type="primary"):
                 display_df = results_df.copy()
                 display_df['Win_Rate'] = display_df['Win_Rate'].apply(lambda x: f"{x:.1%}")
                 display_df['Avg_Return'] = display_df['Avg_Return'].apply(lambda x: f"{x:.2%}")
+                display_df['Avg_Hold_Days'] = display_df['Avg_Hold_Days'].apply(lambda x: f"{x:.1f}")
                 display_df['Return_Std'] = display_df['Return_Std'].apply(lambda x: f"{x:.2%}")
                 display_df['Best_Return'] = display_df['Best_Return'].apply(lambda x: f"{x:.2%}")
                 display_df['Worst_Return'] = display_df['Worst_Return'].apply(lambda x: f"{x:.2%}")
@@ -211,8 +239,8 @@ if st.button("Run RSI Analysis", type="primary"):
                     st.metric("Average Return", f"{avg_return:.2%}" if not np.isnan(avg_return) else "N/A")
                 
                 with col4:
-                    best_threshold = results_df.loc[results_df['Avg_Return'].idxmax(), 'RSI_Threshold'] if not results_df.empty else "N/A"
-                    st.metric("Best RSI Threshold", best_threshold)
+                    avg_hold = results_df[results_df['Total_Trades'] > 0]['Avg_Hold_Days'].mean()
+                    st.metric("Average Hold Days", f"{avg_hold:.1f}" if not np.isnan(avg_hold) else "N/A")
                 
                 # Visualization
                 st.subheader("Performance by RSI Threshold")
