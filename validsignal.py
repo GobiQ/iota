@@ -517,125 +517,6 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 best_winrate_idx = results_df['Win_Rate'].idxmax()
                 best_total_return_idx = results_df['Total_Return'].idxmax()
                 
-                # Return Distribution Analysis
-                st.subheader("📊 Return Distribution Analysis")
-                st.info("💡 **What this shows:** This analyzes the best performing strategy's individual trade returns. The histogram shows how often different return levels occurred, helping you understand the risk and reward pattern of the strategy.")
-                
-                # Use the best annualized return strategy for distribution analysis
-                best_strategy_returns = results_df.loc[best_annualized_idx, 'returns']
-                
-                if len(best_strategy_returns) > 0:
-                    fig = px.histogram(
-                        x=best_strategy_returns,
-                        nbins=20,
-                        title=f"Distribution of Trade Returns (Best Annualized Strategy: RSI {results_df.loc[best_annualized_idx, 'RSI_Threshold']})",
-                        labels={'x': 'Trade Return', 'y': 'Frequency'}
-                    )
-                    fig.update_layout(showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Return statistics
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Total Trades", len(best_strategy_returns))
-                        st.metric("Win Rate", f"{(best_strategy_returns > 0).mean():.1%}")
-                    
-                    with col2:
-                        st.metric("Average Return", f"{np.mean(best_strategy_returns):.2%}")
-                        st.metric("Best Return", f"{np.max(best_strategy_returns):.2%}")
-                    
-                    with col3:
-                        st.metric("Worst Return", f"{np.min(best_strategy_returns):.2%}")
-                        st.metric("Return Std Dev", f"{np.std(best_strategy_returns):.2%}")
-                    
-                    with col4:
-                        st.metric("Skewness", f"{stats.skew(best_strategy_returns):.2f}")
-                        st.metric("Kurtosis", f"{stats.kurtosis(best_strategy_returns):.2f}")
-                
-                # Best Strategy Analysis
-                st.subheader("🏆 Best Strategy Analysis")
-                st.info("💡 **What this shows:** This section highlights the best strategies in different categories. Each tab shows the top performer for that specific metric, with detailed performance statistics and an equity curve showing how the strategy performed over time.")
-                
-                # Create tabs for different best strategies
-                tab1, tab2, tab3, tab4 = st.tabs(["📈 Best Annualized Return", "📊 Best Sortino Ratio", "🎯 Best Win Rate", "💰 Best Total Return"])
-                
-                with tab1:
-                    best_annualized_strategy = results_df.loc[best_annualized_idx]
-                    st.write(f"**Strategy:** RSI {best_annualized_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_annualized_strategy['RSI_Threshold']})")
-                    
-                    # Performance metrics - standardized order
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total Return", f"{best_annualized_strategy['Total_Return']:.2%}")
-                        st.metric("Annualized Return", f"{best_annualized_strategy['annualized_return']:.2%}")
-                    with col2:
-                        st.metric("Win Rate", f"{best_annualized_strategy['Win_Rate']:.1%}")
-                        st.metric("Total Trades", best_annualized_strategy['Total_Trades'])
-                    with col3:
-                        st.metric("Sortino Ratio", f"{best_annualized_strategy['Sortino_Ratio']:.2f}")
-                        st.metric("Avg Hold Days", f"{best_annualized_strategy['Avg_Hold_Days']:.1f}")
-                    with col4:
-                        st.metric("Confidence Level", f"{best_annualized_strategy['confidence_level']:.1f}%")
-                        st.metric("Significant", "✓" if best_annualized_strategy['significant'] else "✗")
-                
-                with tab2:
-                    best_sortino_strategy = results_df.loc[best_sortino_idx]
-                    st.write(f"**Strategy:** RSI {best_sortino_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_sortino_strategy['RSI_Threshold']})")
-                    
-                    # Performance metrics - standardized order
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total Return", f"{best_sortino_strategy['Total_Return']:.2%}")
-                        st.metric("Annualized Return", f"{best_sortino_strategy['annualized_return']:.2%}")
-                    with col2:
-                        st.metric("Win Rate", f"{best_sortino_strategy['Win_Rate']:.1%}")
-                        st.metric("Total Trades", best_sortino_strategy['Total_Trades'])
-                    with col3:
-                        st.metric("Sortino Ratio", f"{best_sortino_strategy['Sortino_Ratio']:.2f}")
-                        st.metric("Avg Hold Days", f"{best_sortino_strategy['Avg_Hold_Days']:.1f}")
-                    with col4:
-                        st.metric("Confidence Level", f"{best_sortino_strategy['confidence_level']:.1f}%")
-                        st.metric("Significant", "✓" if best_sortino_strategy['significant'] else "✗")
-                
-                with tab3:
-                    best_winrate_strategy = results_df.loc[best_winrate_idx]
-                    st.write(f"**Strategy:** RSI {best_winrate_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_winrate_strategy['RSI_Threshold']})")
-                    
-                    # Performance metrics - standardized order
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total Return", f"{best_winrate_strategy['Total_Return']:.2%}")
-                        st.metric("Annualized Return", f"{best_winrate_strategy['annualized_return']:.2%}")
-                    with col2:
-                        st.metric("Win Rate", f"{best_winrate_strategy['Win_Rate']:.1%}")
-                        st.metric("Total Trades", best_winrate_strategy['Total_Trades'])
-                    with col3:
-                        st.metric("Sortino Ratio", f"{best_winrate_strategy['Sortino_Ratio']:.2f}")
-                        st.metric("Avg Hold Days", f"{best_winrate_strategy['Avg_Hold_Days']:.1f}")
-                    with col4:
-                        st.metric("Confidence Level", f"{best_winrate_strategy['confidence_level']:.1f}%")
-                        st.metric("Significant", "✓" if best_winrate_strategy['significant'] else "✗")
-                
-                with tab4:
-                    best_total_return_strategy = results_df.loc[best_total_return_idx]
-                    st.write(f"**Strategy:** RSI {best_total_return_strategy['RSI_Threshold']} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {best_total_return_strategy['RSI_Threshold']})")
-                    
-                    # Performance metrics - standardized order
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total Return", f"{best_total_return_strategy['Total_Return']:.2%}")
-                        st.metric("Annualized Return", f"{best_total_return_strategy['annualized_return']:.2%}")
-                    with col2:
-                        st.metric("Win Rate", f"{best_total_return_strategy['Win_Rate']:.1%}")
-                        st.metric("Total Trades", best_total_return_strategy['Total_Trades'])
-                    with col3:
-                        st.metric("Sortino Ratio", f"{best_total_return_strategy['Sortino_Ratio']:.2f}")
-                        st.metric("Avg Hold Days", f"{best_total_return_strategy['Avg_Hold_Days']:.1f}")
-                    with col4:
-                        st.metric("Confidence Level", f"{best_total_return_strategy['confidence_level']:.1f}%")
-                        st.metric("Significant", "✓" if best_total_return_strategy['significant'] else "✗")
-
                 # Statistical Significance Analysis
                 st.subheader("📊 Statistical Significance Analysis")
                 st.info("💡 **What this shows:** This section determines whether your strategy's performance is statistically significant - meaning the results are likely not due to chance. It compares your strategy against SPY under the same conditions to see if your target ticker choice is actually better.")
@@ -647,47 +528,95 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     # Create significance summary
                     significant_strategies = valid_strategies[valid_strategies['significant'] == True]
                     
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Total Strategies", len(valid_strategies))
-                    
-                    with col2:
-                        st.metric("Statistically Significant", len(significant_strategies))
-                    
-                    with col3:
-                        significance_rate = len(significant_strategies) / len(valid_strategies) * 100
-                        st.metric("Significance Rate", f"{significance_rate:.1f}%")
-                    
-                    with col4:
-                        avg_confidence = valid_strategies['confidence_level'].mean()
-                        st.metric("Avg Confidence Level", f"{avg_confidence:.1f}%")
-                    
-                    # Confidence level distribution
-                    fig_confidence = px.histogram(
-                        valid_strategies, 
-                        x='confidence_level',
-                        title="Distribution of Confidence Levels",
-                        labels={'confidence_level': 'Confidence Level (%)', 'y': 'Number of Strategies'},
-                        nbins=10
-                    )
-                    fig_confidence.add_vline(x=95, line_dash="dash", line_color="red", 
-                                               annotation_text="95% Confidence")
-                    st.plotly_chart(fig_confidence, use_container_width=True)
-                    
                     # Effect size vs confidence level
-                    fig_effect = px.scatter(
-                        valid_strategies,
-                        x='effect_size',
-                        y='confidence_level',
-                        color='significant',
-                        title="Effect Size vs Confidence Level",
-                        labels={'effect_size': 'Effect Size (Cohen\'s d)', 'confidence_level': 'Confidence Level (%)'},
-                        color_discrete_map={True: 'green', False: 'red'}
-                    )
+                    st.subheader("📊 Effect Size vs Confidence Level Analysis")
+                    st.info("💡 **What this shows:** This scatter plot helps you understand the relationship between statistical significance and practical importance. Each point represents a strategy - the position shows how confident we are (confidence level) and how much better/worse the strategy is compared to SPY (effect size).")
+                    
+                    # Create scatter plot with hover information
+                    fig_effect = go.Figure()
+                    
+                    # Add points for significant strategies (green)
+                    significant_data = valid_strategies[valid_strategies['significant'] == True]
+                    if not significant_data.empty:
+                        fig_effect.add_trace(go.Scatter(
+                            x=significant_data['effect_size'],
+                            y=significant_data['confidence_level'],
+                            mode='markers',
+                            name='Significant Strategies',
+                            marker=dict(color='green', size=8),
+                            hovertemplate='<b>RSI %{text}</b><br>' +
+                                        'Effect Size: %{x:.3f}<br>' +
+                                        'Confidence: %{y:.1f}%<br>' +
+                                        'Significant: ✓<extra></extra>',
+                            text=[f"{row['RSI_Threshold']}" for _, row in significant_data.iterrows()]
+                        ))
+                    
+                    # Add points for non-significant strategies (red)
+                    non_significant_data = valid_strategies[valid_strategies['significant'] == False]
+                    if not non_significant_data.empty:
+                        fig_effect.add_trace(go.Scatter(
+                            x=non_significant_data['effect_size'],
+                            y=non_significant_data['confidence_level'],
+                            mode='markers',
+                            name='Non-Significant Strategies',
+                            marker=dict(color='red', size=8),
+                            hovertemplate='<b>RSI %{text}</b><br>' +
+                                        'Effect Size: %{x:.3f}<br>' +
+                                        'Confidence: %{y:.1f}%<br>' +
+                                        'Significant: ✗<extra></extra>',
+                            text=[f"{row['RSI_Threshold']}" for _, row in non_significant_data.iterrows()]
+                        ))
+                    
+                    # Add reference lines
                     fig_effect.add_hline(y=95, line_dash="dash", line_color="red", 
                                                annotation_text="95% Confidence")
+                    fig_effect.add_vline(x=0, line_dash="dash", line_color="gray", 
+                                               annotation_text="No Effect")
+                    
+                    fig_effect.update_layout(
+                        title="Effect Size vs Confidence Level",
+                        xaxis_title="Effect Size (Cohen's d)",
+                        yaxis_title="Confidence Level (%)",
+                        hovermode='closest'
+                    )
+                    
                     st.plotly_chart(fig_effect, use_container_width=True)
+                    
+                    # Detailed explanation
+                    with st.expander("📚 Understanding Effect Size vs Confidence Level"):
+                        st.write("""
+                        **What This Chart Tells You:**
+                        
+                        **🎯 Quadrant Analysis:**
+                        - **Top Right (Green)**: High confidence + Large positive effect = Best strategies
+                        - **Top Left (Green)**: High confidence + Large negative effect = Poor strategies  
+                        - **Bottom Right (Red)**: Low confidence + Large positive effect = Promising but uncertain
+                        - **Bottom Left (Red)**: Low confidence + Small effect = Weak strategies
+                        
+                        **📊 Effect Size Interpretation:**
+                        - **0.0**: No difference from SPY
+                        - **0.2-0.5**: Small effect (strategy slightly better/worse)
+                        - **0.5-0.8**: Medium effect (meaningful difference)
+                        - **>0.8**: Large effect (substantial outperformance/underperformance)
+                        
+                        **📈 Confidence Level Meaning:**
+                        - **>95%**: Very strong evidence the strategy differs from SPY
+                        - **90-95%**: Strong evidence of difference
+                        - **80-90%**: Moderate evidence
+                        - **<80%**: Weak evidence, results could be due to chance
+                        
+                        **🎯 What to Look For:**
+                        - **Green dots in top-right**: Your best strategies (high confidence + large positive effect)
+                        - **Green dots in top-left**: Strategies to avoid (high confidence + large negative effect)
+                        - **Red dots**: Strategies with uncertain results (low confidence)
+                        - **Dots near the center line**: Strategies with minimal effect on performance
+                        
+                        **💡 Practical Guidance:**
+                        - Focus on strategies in the top-right quadrant
+                        - Be cautious of strategies with high confidence but negative effect size
+                        - Consider sample size - more data points generally lead to higher confidence
+                        - Remember that past performance doesn't guarantee future results
+                        """)
                     
                     # Download results
                     st.subheader("📥 Download Results")
@@ -712,104 +641,13 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                         # Sort by confidence level
                         top_significant = significant_strategies.nlargest(5, 'confidence_level')
                         
-                        # Interactive Multiple Strategy Comparison
-                        st.subheader("📊 Interactive Strategy Comparison")
-                        st.info("💡 **What this shows:** This interactive section lets you select which strategies to compare side-by-side. You can choose which statistically significant strategies to display on the same chart, making it easy to see which ones perform best over time.")
-                        st.write("Select strategies to compare their equity curves:")
-                        
-                        # Create strategy options for multiselect
-                        strategy_options = []
-                        strategy_data = {}
-                        for idx, row in top_significant.iterrows():
-                            strategy_name = f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% confidence)"
-                            strategy_options.append(strategy_name)
-                            strategy_data[strategy_name] = (idx, row)
-                        
-                        # Use multiselect for strategy selection
-                        selected_strategy_names = st.multiselect(
-                            "Choose strategies to display:",
-                            options=strategy_options,
-                            default=strategy_options,  # All selected by default
-                            help="Select which strategies to show on the comparison chart. You can select multiple strategies or just one."
-                        )
-                        
-                        # Convert selected names back to strategy data
-                        selected_strategies = [strategy_data[name] for name in selected_strategy_names]
-                        
-                        # Strategy summary
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write("**Strategy Summary:**")
-                            st.write(f"**Total Significant Strategies:** {len(significant_strategies)}")
-                            st.write(f"**Selected for Comparison:** {len(selected_strategies)}")
-                        
-                        with col2:
-                            if selected_strategies:
-                                st.write("**Selected Strategies:**")
-                                for name in selected_strategy_names:
-                                    st.write(f"• {name}")
-
-                        # Create interactive comparison chart
-                        if selected_strategies:
-                            fig_comparison = go.Figure()
-                            
-                            # Add benchmark
-                            fig_comparison.add_trace(go.Scatter(
-                                x=benchmark.index,
-                                y=benchmark.values,
-                                mode='lines',
-                                name="SPY Buy & Hold",
-                                line=dict(color='red', width=2, dash='dash')
-                            ))
-                            
-                            # Add selected strategies
-                            colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
-                            for i, (idx, row) in enumerate(selected_strategies):
-                                if row['equity_curve'] is not None:
-                                    color = colors[i % len(colors)]
-                                    fig_comparison.add_trace(go.Scatter(
-                                        x=row['equity_curve'].index,
-                                        y=row['equity_curve'].values,
-                                        mode='lines',
-                                        name=f"RSI {row['RSI_Threshold']} ({row['confidence_level']:.1f}% conf)",
-                                        line=dict(color=color, width=2)
-                                    ))
-                            
-                            fig_comparison.update_layout(
-                                title="Interactive Strategy Comparison vs SPY",
-                                xaxis_title="Date",
-                                yaxis_title="Equity Value",
-                                hovermode='x unified',
-                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-                            )
-                            st.plotly_chart(fig_comparison, use_container_width=True)
-                            
-                            # Strategy comparison table
-                            st.subheader("📋 Selected Strategies Comparison")
-                            comparison_data = []
-                            for idx, row in selected_strategies:
-                                comparison_data.append({
-                                    'RSI Threshold': row['RSI_Threshold'],
-                                    'Confidence Level': f"{row['confidence_level']:.1f}%",
-                                    'Total Return': f"{row['Total_Return']:.2%}",
-                                    'Annualized Return': f"{row['annualized_return']:.2%}",
-                                    'Win Rate': f"{row['Win_Rate']:.1%}",
-                                    'Sortino Ratio': f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞",
-                                    'Total Trades': row['Total_Trades'],
-                                    'Effect Size': f"{row['effect_size']:.2f}"
-                                })
-                            
-                            comparison_df = pd.DataFrame(comparison_data)
-                            st.dataframe(comparison_df, use_container_width=True)
-                        else:
-                            st.info("Select at least one strategy to see the comparison chart.")
-                        
                         # Individual strategy details
                         st.subheader("📈 Individual Strategy Details")
                         st.info("💡 **What this shows:** Each expandable section shows detailed information about a specific strategy, including performance metrics, statistical significance, and an individual equity curve comparing that strategy to SPY.")
                         for idx, row in top_significant.iterrows():
                             with st.expander(f"RSI {row['RSI_Threshold']} - {row['confidence_level']:.1f}% Confidence"):
-                                col1, col2, col3 = st.columns(3)
+                                # Performance metrics - comprehensive display
+                                col1, col2, col3, col4 = st.columns(4)
                                 
                                 with col1:
                                     st.metric("Total Return", f"{row['Total_Return']:.2%}")
@@ -817,19 +655,130 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                 
                                 with col2:
                                     st.metric("Win Rate", f"{row['Win_Rate']:.1%}")
-                                    st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞")
+                                    st.metric("Total Trades", row['Total_Trades'])
                                 
                                 with col3:
+                                    st.metric("Sortino Ratio", f"{row['Sortino_Ratio']:.2f}" if not np.isinf(row['Sortino_Ratio']) else "∞")
+                                    st.metric("Avg Hold Days", f"{row['Avg_Hold_Days']:.1f}")
+                                
+                                with col4:
                                     st.metric("Confidence Level", f"{row['confidence_level']:.1f}%")
                                     st.metric("Effect Size", f"{row['effect_size']:.2f}")
                                 
-                                st.write(f"**Statistical Details:**")
-                                st.write(f"- T-statistic: {row['t_statistic']:.3f}")
-                                st.write(f"- P-value: {row['p_value']:.4f}")
-                                st.write(f"- Power: {row['power']:.2f}")
+                                # Additional metrics
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.metric("Best Return", f"{row['Best_Return']:.2%}")
+                                    st.metric("Worst Return", f"{row['Worst_Return']:.2%}")
                                 
+                                with col2:
+                                    st.metric("Return Std Dev", f"{row['Return_Std']:.2%}")
+                                    st.metric("Final Equity", f"{row['Final_Equity']:.3f}")
+                                
+                                with col3:
+                                    st.metric("T-statistic", f"{row['t_statistic']:.3f}")
+                                    st.metric("P-value", f"{row['p_value']:.4f}")
+                                
+                                with col4:
+                                    st.metric("Power", f"{row['power']:.2f}")
+                                    st.metric("Significant", "✓" if row['significant'] else "✗")
+                                
+                                # Distribution of returns vs SPY histogram
+                                if len(row['returns']) > 0:
+                                    st.subheader("📊 Distribution of Strategy Returns vs SPY")
+                                    
+                                    # Calculate SPY returns for the same conditions
+                                    strategy_equity = row['equity_curve']
+                                    if strategy_equity is not None and len(strategy_equity) > 0:
+                                        # Create SPY equity curve that follows the same RSI conditions
+                                        signal_rsi = calculate_rsi(signal_data, window=rsi_period)
+                                        
+                                        # Generate buy signals for SPY (same as strategy)
+                                        if comparison == "less_than":
+                                            spy_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
+                                        else:  # greater_than
+                                            spy_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
+                                        
+                                        # Calculate SPY equity curve using same conditions
+                                        spy_equity_curve = pd.Series(1.0, index=benchmark_data.index)
+                                        current_equity = 1.0
+                                        in_position = False
+                                        entry_equity = 1.0
+                                        entry_price = None
+                                        
+                                        for date in benchmark_data.index:
+                                            current_signal = spy_signals[date] if date in spy_signals.index else 0
+                                            current_price = benchmark_data[date]
+                                            
+                                            if current_signal == 1 and not in_position:
+                                                # Enter position
+                                                in_position = True
+                                                entry_equity = current_equity
+                                                entry_price = current_price
+                                                
+                                            elif current_signal == 0 and in_position:
+                                                # Exit position
+                                                trade_return = (current_price - entry_price) / entry_price
+                                                current_equity = entry_equity * (1 + trade_return)
+                                                in_position = False
+                                            
+                                            # Update equity curve
+                                            if in_position:
+                                                current_equity = entry_equity * (current_price / entry_price)
+                                            
+                                            spy_equity_curve[date] = current_equity
+                                        
+                                        # Handle case where we're still in position at the end
+                                        if in_position:
+                                            final_price = benchmark_data.iloc[-1]
+                                            trade_return = (final_price - entry_price) / entry_price
+                                            current_equity = entry_equity * (1 + trade_return)
+                                            spy_equity_curve.iloc[-1] = current_equity
+                                        
+                                        # Align both equity curves on same dates
+                                        common_dates = strategy_equity.index.intersection(spy_equity_curve.index)
+                                        if len(common_dates) > 0:
+                                            strategy_aligned = strategy_equity[common_dates]
+                                            spy_aligned = spy_equity_curve[common_dates]
+                                            
+                                            # Calculate daily returns for both strategies under same conditions
+                                            strategy_daily_returns = strategy_aligned.pct_change().dropna()
+                                            spy_daily_returns = spy_aligned.pct_change().dropna()
+                                            
+                                            # Create histogram comparing strategy vs SPY daily returns under same conditions
+                                            fig_dist = go.Figure()
+                                            
+                                            fig_dist.add_trace(go.Histogram(
+                                                x=strategy_daily_returns.values,
+                                                name=f'Strategy Returns (RSI {row["RSI_Threshold"]})',
+                                                nbinsx=20,
+                                                opacity=0.7,
+                                                marker_color='blue'
+                                            ))
+                                            
+                                            fig_dist.add_trace(go.Histogram(
+                                                x=spy_daily_returns.values,
+                                                name='SPY Returns (Same RSI Conditions)',
+                                                nbinsx=20,
+                                                opacity=0.7,
+                                                marker_color='red'
+                                            ))
+                                            
+                                            fig_dist.update_layout(
+                                                title=f"Distribution of Daily Returns - RSI {row['RSI_Threshold']} vs SPY (Same Conditions)",
+                                                xaxis_title="Daily Return",
+                                                yaxis_title="Frequency",
+                                                barmode='overlay'
+                                            )
+                                            
+                                            st.plotly_chart(fig_dist, use_container_width=True)
+                                            
+                                            # Add explanation
+                                            st.info("💡 **What this shows:** This histogram compares the daily returns of your strategy vs SPY when the same RSI conditions are met. It shows whether your target ticker choice (vs SPY) performs better under identical RSI signals.")
+
                                 # Show equity curve for this strategy
                                 if row['equity_curve'] is not None:
+                                    st.subheader("📈 Equity Curve Comparison")
                                     fig_sig = go.Figure()
                                     
                                     fig_sig.add_trace(go.Scatter(
