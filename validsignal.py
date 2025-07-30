@@ -1258,6 +1258,55 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         
         st.plotly_chart(fig_return_rsi, use_container_width=True, key="return_rsi_chart")
         
+        # RSI vs Max Drawdown Chart
+        st.subheader("📊 RSI Threshold vs Max Drawdown")
+        st.info("💡 **What this shows:** This chart displays how the maximum drawdown (worst single trade loss) varies across different RSI thresholds. Lower drawdown values indicate better risk management. Look for valleys in the chart to identify RSI thresholds with lower risk.")
+        
+        fig_drawdown_rsi = go.Figure()
+        
+        # Add points for significant signals (green)
+        if not significant_data.empty:
+            fig_drawdown_rsi.add_trace(go.Scatter(
+                x=significant_data['RSI_Threshold'],
+                y=significant_data['Worst_Return'],
+                mode='markers',
+                name='Significant Signals',
+                marker=dict(color='green', size=8),
+                line=dict(width=0),  # Explicitly disable lines
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Max Drawdown: %{y:.3%}<br>' +
+                            'Significant: ✓<extra></extra>'
+            ))
+        
+        # Add points for non-significant signals (red)
+        if not non_significant_data.empty:
+            fig_drawdown_rsi.add_trace(go.Scatter(
+                x=non_significant_data['RSI_Threshold'],
+                y=non_significant_data['Worst_Return'],
+                mode='markers',
+                name='Non-Significant Signals',
+                marker=dict(color='red', size=8),
+                line=dict(width=0),  # Explicitly disable lines
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Max Drawdown: %{y:.3%}<br>' +
+                            'Significant: ✗<extra></extra>'
+            ))
+        
+        # Add reference line at y=0
+        fig_drawdown_rsi.add_hline(y=0, line_dash="dash", line_color="gray", 
+                                  annotation_text="No Loss")
+        
+        fig_drawdown_rsi.update_layout(
+            title="Max Drawdown vs RSI Threshold",
+            xaxis_title="RSI Threshold",
+            yaxis_title="Max Drawdown (%)",
+            hovermode='closest',
+            xaxis=dict(range=[rsi_min, rsi_max]),
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_drawdown_rsi, use_container_width=True, key="drawdown_rsi_chart")
+        
         # Top significant signals
         if len(significant_signals) > 0:
             st.subheader("🏆 Top Statistically Significant Signals")
