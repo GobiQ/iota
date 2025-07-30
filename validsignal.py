@@ -488,17 +488,28 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                 
                 # Interactive RSI Analysis Results
                 st.subheader("📊 Interactive RSI Analysis Results")
-                st.write("Select any strategy from the table below to see detailed analysis:")
+                st.write("📋 **Results Table**: View all strategies below")
+                st.write("🎯 **Individual Analysis**: Use the dropdown to select any strategy for detailed analysis")
                 
-                # Display the results table
-                st.dataframe(display_df[display_cols], use_container_width=True)
+                # Display the results table with better formatting
+                st.dataframe(
+                    display_df[display_cols], 
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.write("---")
+                st.write("**💡 Tip**: Use the dropdown below to analyze any specific strategy in detail")
                 
                 # Create a selectbox for individual threshold analysis using existing data
                 available_thresholds = results_df[results_df['Total_Trades'] > 0]['RSI_Threshold'].tolist()
                 
                 if available_thresholds:
+                    # Sort thresholds for better user experience
+                    available_thresholds.sort()
+                    
                     selected_threshold = st.selectbox(
-                        "Select RSI Threshold to analyze:",
+                        "🎯 Select RSI Threshold to analyze:",
                         options=available_thresholds,
                         index=0,
                         format_func=lambda x: f"RSI {x} ({signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {x}) - {results_df[results_df['RSI_Threshold'] == x]['Total_Return'].iloc[0]:.2%} return"
@@ -510,6 +521,9 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                     
                     # Display detailed analysis for selected threshold
                     st.subheader(f"🎯 Detailed Analysis: RSI {selected_threshold}")
+                    
+                    # Show which strategy was selected
+                    st.info(f"**Selected Strategy**: {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {selected_threshold} (Target: {target_ticker})")
                     
                     # Display metrics for selected threshold
                     col1, col2, col3, col4 = st.columns(4)
