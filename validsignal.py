@@ -67,20 +67,21 @@ def get_stock_data(ticker: str, start_date=None, end_date=None) -> pd.Series:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
-def analyze_rsi_strategy(prices: pd.Series, rsi_threshold: float, comparison: str = "less_than") -> Dict:
-    """Analyze RSI strategy for a specific threshold"""
-    rsi = calculate_rsi(prices)
+def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than") -> Dict:
+    """Analyze RSI signals for a specific threshold"""
+    # Calculate RSI for the SIGNAL ticker
+    signal_rsi = calculate_rsi(signal_prices)
     
-    # Generate buy signals based on RSI threshold and comparison
+    # Generate buy signals based on SIGNAL RSI threshold and comparison
     if comparison == "less_than":
-        # RSI ≤ threshold: signal is ON when RSI is at or below threshold
-        signals = (rsi <= rsi_threshold).astype(int)
+        # "≤" configuration: Buy TARGET when SIGNAL RSI ≤ threshold, sell when SIGNAL RSI > threshold
+        signals = (signal_rsi <= rsi_threshold).astype(int)
     else:  # greater_than
-        # RSI ≥ threshold: signal is ON when RSI is at or above threshold
-        signals = (rsi >= rsi_threshold).astype(int)
+        # "≥" configuration: Buy TARGET when SIGNAL RSI ≥ threshold, sell when SIGNAL RSI < threshold
+        signals = (signal_rsi >= rsi_threshold).astype(int)
     
-    # Calculate equity curve day by day
-    equity_curve = pd.Series(1.0, index=prices.index)
+    # Calculate equity curve day by day - buy/sell TARGET based on SIGNAL RSI
+    equity_curve = pd.Series(1.0, index=target_prices.index)
     current_equity = 1.0
     in_position = False
     entry_equity = 1.0
@@ -88,19 +89,19 @@ def analyze_rsi_strategy(prices: pd.Series, rsi_threshold: float, comparison: st
     entry_price = None
     trades = []
     
-    for i, date in enumerate(prices.index):
+    for i, date in enumerate(target_prices.index):
         current_signal = signals[date] if date in signals.index else 0
-        current_price = prices[date]
+        current_price = target_prices[date]  # TARGET price
         
         if current_signal == 1 and not in_position:
-            # Enter position - buy at close
+            # Enter position - buy TARGET at close when SIGNAL RSI meets condition
             in_position = True
             entry_equity = current_equity
             entry_date = date
             entry_price = current_price
             
         elif current_signal == 0 and in_position:
-            # Exit position - sell at close
+            # Exit position - sell TARGET at close when SIGNAL RSI no longer meets condition
             trade_return = (current_price - entry_price) / entry_price
             current_equity = entry_equity * (1 + trade_return)
             
@@ -118,15 +119,15 @@ def analyze_rsi_strategy(prices: pd.Series, rsi_threshold: float, comparison: st
         
         # Update equity curve
         if in_position:
-            # Mark-to-market the position
+            # Mark-to-market the TARGET position
             current_equity = entry_equity * (current_price / entry_price)
         
         equity_curve[date] = current_equity
     
     # Handle case where we're still in position at the end
     if in_position:
-        final_price = prices.iloc[-1]
-        final_date = prices.index[-1]
+        final_price = target_prices.iloc[-1]
+        final_date = target_prices.index[-1]
         trade_return = (final_price - entry_price) / entry_price
         current_equity = entry_equity * (1 + trade_return)
         
@@ -170,19 +171,32 @@ def analyze_rsi_strategy(prices: pd.Series, rsi_threshold: float, comparison: st
         'trades': trades
     }
 
-def run_rsi_optimization(ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
-                        start_date=None, end_date=None) -> Tuple[pd.DataFrame, pd.Series]:
-    """Run RSI optimization across the specified range"""
+def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
+                    start_date=None, end_date=None) -> Tuple[pd.DataFrame, pd.Series]:
+    """Run comprehensive RSI analysis across the specified range"""
     
     # Fetch data
-    with st.spinner(f"Fetching data for {ticker}..."):
-        price_data = get_stock_data(ticker, start_date, end_date)
+    with st.spinner(f"Fetching data for {signal_ticker}..."):
+        signal_data = get_stock_data(signal_ticker, start_date, end_date)
     
-    if price_data is None:
+    with st.spinner(f"Fetching data for {target_ticker}..."):
+        target_data = get_stock_data(target_ticker, start_date, end_date)
+    
+    # Fetch benchmark data for comparison
+    with st.spinner("Fetching benchmark data..."):
+        benchmark_data = get_stock_data("SPY", start_date, end_date)
+    
+    if signal_data is None or target_data is None or benchmark_data is None:
         return None, None
     
+    # Align data on common dates
+    common_dates = signal_data.index.intersection(target_data.index).intersection(benchmark_data.index)
+    signal_data = signal_data[common_dates]
+    target_data = target_data[common_dates]
+    benchmark_data = benchmark_data[common_dates]
+    
     # Create buy-and-hold benchmark
-    benchmark = price_data / price_data.iloc[0]  # Normalize to start at 1.0
+    benchmark = benchmark_data / benchmark_data.iloc[0]  # Normalize to start at 1.0
     
     # Generate RSI thresholds (every 0.5)
     rsi_thresholds = np.arange(rsi_min, rsi_max + 0.5, 0.5)
@@ -193,7 +207,7 @@ def run_rsi_optimization(ticker: str, rsi_min: float, rsi_max: float, comparison
     total_thresholds = len(rsi_thresholds)
     
     for i, threshold in enumerate(rsi_thresholds):
-        analysis = analyze_rsi_strategy(price_data, threshold, comparison)
+        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison)
         
         results.append({
             'RSI_Threshold': threshold,
@@ -219,7 +233,8 @@ def run_rsi_optimization(ticker: str, rsi_min: float, rsi_max: float, comparison
 st.sidebar.header("📊 Configuration")
 
 # Input fields
-ticker = st.sidebar.text_input("Ticker Symbol", value="SPY", help="Stock ticker to analyze")
+signal_ticker = st.sidebar.text_input("Signal Ticker", value="SPY", help="Ticker to generate RSI signals from")
+target_ticker = st.sidebar.text_input("Target Ticker", value="QQQ", help="Ticker to buy/sell based on signal RSI")
 
 # Date range selection
 st.sidebar.subheader("📅 Date Range")
@@ -248,10 +263,10 @@ comparison = st.sidebar.selectbox("RSI Condition",
 
 if comparison == "less_than":
     default_min, default_max = 20, 40
-    st.sidebar.write("Buy signals: RSI ≤ threshold")
+    st.sidebar.write("Buy signals: Signal RSI ≤ threshold")
 else:
     default_min, default_max = 60, 80
-    st.sidebar.write("Buy signals: RSI ≥ threshold")
+    st.sidebar.write("Buy signals: Signal RSI ≥ threshold")
 
 rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5)
 rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5)
@@ -264,8 +279,9 @@ col1, col2 = st.columns([2, 1])
 
 with col1:
     st.subheader("🎯 Analysis Configuration")
-    st.write(f"**Ticker:** {ticker}")
-    st.write(f"**RSI Condition:** RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
+    st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
+    st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
+    st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
     st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
     if use_date_range and start_date and end_date:
         st.write(f"**Date Range:** {start_date} to {end_date}")
@@ -275,20 +291,20 @@ with col1:
 with col2:
     st.subheader("📋 Strategy Logic")
     if comparison == "less_than":
-        st.info(f"🔵 BUY at close when RSI ≤ threshold\n\n📈 SELL at close when RSI > threshold")
+        st.info(f"🔵 BUY {target_ticker} when {signal_ticker} RSI ≤ threshold\n\n📈 SELL {target_ticker} when {signal_ticker} RSI > threshold")
     else:
-        st.info(f"🔵 BUY at close when RSI ≥ threshold\n\n📈 SELL at close when RSI < threshold")
+        st.info(f"🔵 BUY {target_ticker} when {signal_ticker} RSI ≥ threshold\n\n📈 SELL {target_ticker} when {signal_ticker} RSI < threshold")
 
-if st.button("🚀 Run RSI Optimization", type="primary"):
+if st.button("🚀 Run RSI Analysis", type="primary"):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
-            results_df, benchmark = run_rsi_optimization(ticker, rsi_min, rsi_max, comparison, start_date, end_date)
+            results_df, benchmark = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
-                st.success("✅ Optimization completed successfully!")
+                st.success("✅ Analysis completed successfully!")
                 
                 # Display results table
-                st.subheader("📊 RSI Optimization Results")
+                st.subheader("📊 RSI Analysis Results")
                 
                 # Format the dataframe for display
                 display_df = results_df.copy()
@@ -332,7 +348,7 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
                 
                 with col4:
                     benchmark_return = (benchmark.iloc[-1] - 1)
-                    st.metric("Buy & Hold Return", f"{benchmark_return:.2%}")
+                    st.metric("SPY Buy & Hold Return", f"{benchmark_return:.2%}")
                 
                 # Visualization
                 st.subheader("📊 Performance by RSI Threshold")
@@ -351,7 +367,7 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
                         # Add benchmark line
                         benchmark_return = (benchmark.iloc[-1] - 1)
                         fig1.add_hline(y=benchmark_return, line_dash="dash", line_color="red", 
-                                      annotation_text=f"Buy & Hold: {benchmark_return:.2%}")
+                                      annotation_text=f"SPY Buy & Hold: {benchmark_return:.2%}")
                         st.plotly_chart(fig1, use_container_width=True)
                     
                     with col2:
@@ -395,7 +411,7 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
                             x=benchmark.index,
                             y=benchmark.values,
                             mode='lines',
-                            name='Buy & Hold',
+                            name='SPY Buy & Hold',
                             line=dict(color='red', width=2, dash='dash')
                         ))
                         
@@ -420,7 +436,7 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
                             ))
                         
                         fig_comparison.update_layout(
-                            title="Strategy Comparison vs Buy & Hold",
+                            title="Strategy Comparison vs SPY Buy & Hold",
                             xaxis_title="Date",
                             yaxis_title="Equity Value",
                             hovermode='x unified',
@@ -437,7 +453,7 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
                         # Benchmark data
                         benchmark_return = (benchmark.iloc[-1] - 1)
                         comparison_data.append({
-                            'Strategy': 'Buy & Hold',
+                            'Strategy': 'SPY Buy & Hold',
                             'Total Return': f"{benchmark_return:.2%}",
                             'Final Value': f"{benchmark.iloc[-1]:.3f}",
                             'Sortino Ratio': 'N/A',
@@ -477,12 +493,12 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
                 st.download_button(
                     label="📥 Download Results as CSV",
                     data=csv,
-                    file_name=f"rsi_optimization_{ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    file_name=f"rsi_analysis_{signal_ticker}_{target_ticker}{filename_suffix}_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv"
                 )
             
         except Exception as e:
-            st.error(f"❌ Error during optimization: {str(e)}")
+            st.error(f"❌ Error during analysis: {str(e)}")
     else:
         if rsi_min >= rsi_max:
             st.error("Please ensure RSI Min is less than RSI Max")
@@ -490,5 +506,5 @@ if st.button("🚀 Run RSI Optimization", type="primary"):
             st.error("Please ensure start date is before end date")
 
 st.write("---")
-st.write("💡 **Tip:** Try different ticker symbols and RSI conditions to find optimal signal thresholds")
+st.write("💡 **Tip:** Try different ticker combinations and RSI conditions to find optimal signal thresholds")
 st.write("📈 **Data Source:** Real market data from Yahoo Finance via yfinance")
