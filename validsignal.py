@@ -827,14 +827,68 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                 # Show equity curve for this strategy
                                 if row['equity_curve'] is not None:
                                     st.subheader("📈 Equity Curve Comparison")
+                                    
+                                    # Create SPY equity curve that follows the same RSI conditions
+                                    signal_rsi = calculate_rsi(st.session_state['signal_data'], window=st.session_state['rsi_period'])
+                                    
+                                    # Generate buy signals for SPY (same as strategy)
+                                    if st.session_state['comparison'] == "less_than":
+                                        spy_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
+                                    else:  # greater_than
+                                        spy_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
+                                    
+                                    # Calculate SPY equity curve using same conditions
+                                    spy_equity_curve = pd.Series(1.0, index=st.session_state['benchmark_data'].index)
+                                    current_equity = 1.0
+                                    in_position = False
+                                    entry_equity = 1.0
+                                    entry_price = None
+                                    
+                                    for date in st.session_state['benchmark_data'].index:
+                                        current_signal = spy_signals[date] if date in spy_signals.index else 0
+                                        current_price = st.session_state['benchmark_data'][date]
+                                        
+                                        if current_signal == 1 and not in_position:
+                                            # Enter position
+                                            in_position = True
+                                            entry_equity = current_equity
+                                            entry_price = current_price
+                                            
+                                        elif current_signal == 0 and in_position:
+                                            # Exit position
+                                            trade_return = (current_price - entry_price) / entry_price
+                                            current_equity = entry_equity * (1 + trade_return)
+                                            in_position = False
+                                        
+                                        # Update equity curve
+                                        if in_position:
+                                            current_equity = entry_equity * (current_price / entry_price)
+                                        
+                                        spy_equity_curve[date] = current_equity
+                                    
+                                    # Handle case where we're still in position at the end
+                                    if in_position:
+                                        final_price = st.session_state['benchmark_data'].iloc[-1]
+                                        trade_return = (final_price - entry_price) / entry_price
+                                        current_equity = entry_equity * (1 + trade_return)
+                                        spy_equity_curve.iloc[-1] = current_equity
+                                    
                                     fig_sig = go.Figure()
                                     
                                     fig_sig.add_trace(go.Scatter(
                                         x=row['equity_curve'].index,
                                         y=row['equity_curve'].values,
                                         mode='lines',
-                                        name=f'RSI {row["RSI_Threshold"]} Strategy',
+                                        name=f'Strategy (RSI {row["RSI_Threshold"]})',
                                         line=dict(color='green', width=2)
+                                    ))
+                                    
+                                    fig_sig.add_trace(go.Scatter(
+                                        x=spy_equity_curve.index,
+                                        y=spy_equity_curve.values,
+                                        mode='lines',
+                                        name=f'SPY (Same RSI {row["RSI_Threshold"]} Conditions)',
+                                        line=dict(color='blue', width=2)
                                     ))
                                     
                                     fig_sig.add_trace(go.Scatter(
@@ -853,6 +907,10 @@ if st.button("🚀 Run RSI Analysis", type="primary"):
                                     )
                                     
                                     st.plotly_chart(fig_sig, use_container_width=True)
+                                    
+                                    # Add explanation
+                                    st.info("💡 **What this shows:** The green line shows your strategy performance. The blue line shows SPY performance under the same RSI conditions. The red dashed line shows SPY buy-and-hold. This helps you see if your target ticker choice beats SPY when the same RSI signals are applied.")
+
                     else:
                         st.warning("No strategies reached statistical significance (p < 0.05)")
 
