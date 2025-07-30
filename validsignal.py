@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="RSI Threshold Optimizer", layout="wide")
 
 st.title("RSI Threshold Optimizer")
-st.write("Optimize RSI thresholds using real market data from Yahoo Finance")
+st.write("Analyzing RSI thresholds using real market data")
 
 def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     """Calculate RSI with standard 14-period window"""
