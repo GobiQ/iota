@@ -223,14 +223,19 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
             'power': 0
         }
     
-    # Perform t-test on daily returns
-    t_stat, p_value = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
+    # Perform one-tailed t-test to test if strategy BEATS benchmark
+    t_stat, p_value_two_tail = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
     
-    # Calculate confidence level (1 - p_value)
-    confidence_level = (1 - p_value) * 100
-    
-    # Determine if significant (p < 0.05)
-    significant = p_value < 0.05
+    # Convert to one-tailed test
+    if np.mean(strategy_returns.values) > np.mean(benchmark_returns.values):
+        p_value_one_tail = p_value_two_tail / 2
+        confidence_level = (1 - p_value_one_tail) * 100
+        significant = p_value_one_tail < 0.05
+    else:
+        # Strategy underperforms benchmark
+        p_value_one_tail = 1.0
+        confidence_level = 0
+        significant = False
     
     # Calculate effect size (Cohen's d)
     pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns.values, ddof=1) + 
@@ -244,7 +249,7 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
     
     return {
         't_statistic': t_stat,
-        'p_value': p_value,
+        'p_value': p_value_one_tail,
         'confidence_level': confidence_level,
         'significant': significant,
         'effect_size': effect_size,
