@@ -2049,7 +2049,7 @@ def main():
                     min_value=10,
                     max_value=500,
                     value=default_n_slices,
-                    help="How many historical periods to compare against (more = better statistics, slower analysis)"
+                    help="How many historical periods to compare against"
                 )
             
             with col2:
