@@ -679,9 +679,9 @@ rsi_method = "wilders"
 
 # Conditional target ticker default based on RSI condition
 comparison = st.sidebar.selectbox("RSI Condition", 
-                               ["less_than", "greater_than"], 
-                               format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
-                               help="Choose when to buy: 'RSI ≤ threshold' means buy when RSI is low (oversold), 'RSI ≥ threshold' means buy when RSI is high (overbought).")
+                               ["greater_than", "less_than"], 
+                               format_func=lambda x: "RSI ≥ threshold" if x == "greater_than" else "RSI ≤ threshold",
+                               help="Choose when to buy: 'RSI ≥ threshold' means buy when RSI is high (overbought), 'RSI ≤ threshold' means buy when RSI is low (oversold).")
 
 # Set default target ticker based on RSI condition
 if comparison == "less_than":
