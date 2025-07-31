@@ -86,6 +86,46 @@ except ImportError:
     QUANTSTATS_AVAILABLE = False
     st.warning("quantstats not available - using internal calculations")
 
+def ensure_datetime_index(returns: pd.Series) -> pd.Series:
+    """Ensure the series has a proper DatetimeIndex for quantstats compatibility."""
+    if returns.empty:
+        return returns
+    
+    # If index is already DatetimeIndex, return as is
+    if isinstance(returns.index, pd.DatetimeIndex):
+        return returns
+    
+    # If index is PeriodIndex, convert to DatetimeIndex
+    if isinstance(returns.index, pd.PeriodIndex):
+        returns.index = returns.index.to_timestamp()
+        return returns
+    
+    # If index is date objects, convert to DatetimeIndex
+    if len(returns.index) > 0 and hasattr(returns.index[0], 'year'):  # Check if it's date-like
+        returns.index = pd.to_datetime(returns.index)
+        return returns
+    
+    # If index is strings, try to parse as dates
+    try:
+        returns.index = pd.to_datetime(returns.index)
+        return returns
+    except:
+        # If all else fails, create a dummy DatetimeIndex
+        # This is a fallback for when the index can't be converted
+        try:
+            # Try to use the original index values as a starting point
+            if len(returns.index) > 0:
+                # Create a reasonable date range based on the number of periods
+                start_date = pd.Timestamp('2020-01-01')
+                dummy_index = pd.date_range(start=start_date, periods=len(returns), freq='D')
+            else:
+                dummy_index = pd.date_range(start='2020-01-01', periods=len(returns), freq='D')
+            returns.index = dummy_index
+        except:
+            # Ultimate fallback
+            returns.index = pd.date_range(start='2020-01-01', periods=len(returns), freq='D')
+        return returns
+
 # Add requests import for API calls
 try:
     import requests
@@ -104,6 +144,9 @@ def qs_sharpe_ratio(returns: pd.Series) -> float:
                 returns_decimal = returns / 100.0
             else:
                 returns_decimal = returns
+            
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
             
             # Use quantstats Sharpe calculation
             sharpe = qs.stats.sharpe(returns_decimal)
@@ -124,6 +167,9 @@ def qs_sortino_ratio(returns: pd.Series) -> float:
             else:
                 returns_decimal = returns
             
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
+            
             # Use quantstats Sortino calculation
             sortino = qs.stats.sortino(returns_decimal)
             return float(sortino) if np.isfinite(sortino) else 0.0
@@ -142,6 +188,9 @@ def qs_cumulative_return(returns: pd.Series) -> float:
                 returns_decimal = returns / 100.0
             else:
                 returns_decimal = returns
+            
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
             
             # Use quantstats cumulative return calculation
             cum_ret = qs.stats.comp(returns_decimal)
@@ -162,6 +211,9 @@ def qs_annualized_return(returns: pd.Series) -> float:
             else:
                 returns_decimal = returns
             
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
+            
             # Use quantstats annualized return calculation
             ann_ret = qs.stats.cagr(returns_decimal)
             return float(ann_ret) if np.isfinite(ann_ret) else 0.0
@@ -180,6 +232,9 @@ def qs_volatility(returns: pd.Series) -> float:
                 returns_decimal = returns / 100.0
             else:
                 returns_decimal = returns
+            
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
             
             # Use quantstats volatility calculation
             vol = qs.stats.volatility(returns_decimal)
@@ -200,6 +255,9 @@ def qs_max_drawdown(returns: pd.Series) -> float:
             else:
                 returns_decimal = returns
             
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
+            
             # Use quantstats max drawdown calculation
             mdd = qs.stats.max_drawdown(returns_decimal)
             return float(mdd) if np.isfinite(mdd) else 0.0
@@ -218,6 +276,9 @@ def qs_calmar_ratio(returns: pd.Series) -> float:
                 returns_decimal = returns / 100.0
             else:
                 returns_decimal = returns
+            
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
             
             # Use quantstats Calmar ratio calculation
             calmar = qs.stats.calmar(returns_decimal)
@@ -1123,6 +1184,10 @@ def qs_beta(returns: pd.Series, benchmark_returns: pd.Series = None) -> float:
             else:
                 benchmark_decimal = benchmark_returns
             
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
+            benchmark_decimal = ensure_datetime_index(benchmark_decimal)
+            
             # Use quantstats beta calculation
             beta = qs.stats.beta(returns_decimal, benchmark_decimal)
             return float(beta) if np.isfinite(beta) else 0.0
@@ -1147,6 +1212,10 @@ def qs_alpha(returns: pd.Series, benchmark_returns: pd.Series = None) -> float:
             else:
                 benchmark_decimal = benchmark_returns
             
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
+            benchmark_decimal = ensure_datetime_index(benchmark_decimal)
+            
             # Use quantstats alpha calculation
             alpha = qs.stats.alpha(returns_decimal, benchmark_decimal)
             return float(alpha) if np.isfinite(alpha) else 0.0
@@ -1170,6 +1239,10 @@ def qs_information_ratio(returns: pd.Series, benchmark_returns: pd.Series = None
                 benchmark_decimal = benchmark_returns / 100.0
             else:
                 benchmark_decimal = benchmark_returns
+            
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
+            benchmark_decimal = ensure_datetime_index(benchmark_decimal)
             
             # Use quantstats information ratio calculation
             ir = qs.stats.information_ratio(returns_decimal, benchmark_decimal)
@@ -1263,6 +1336,9 @@ def get_comprehensive_stats(returns: pd.Series) -> Dict[str, float]:
                 returns_decimal = returns / 100.0
             else:
                 returns_decimal = returns
+            
+            # Ensure proper DatetimeIndex for quantstats
+            returns_decimal = ensure_datetime_index(returns_decimal)
             
             # Get comprehensive stats from quantstats
             stats = {
