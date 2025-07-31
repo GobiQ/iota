@@ -47,14 +47,20 @@ def check_dependencies():
     # Check for quantstats
     try:
         import quantstats as qs
-        # Test basic functionality
-        test_returns = pd.Series([0.01, -0.01, 0.02, -0.005])
+        # Test basic functionality with proper DatetimeIndex
+        test_returns = pd.Series([0.01, -0.01, 0.02, -0.005], 
+                                index=pd.date_range('2020-01-01', periods=4, freq='D'))
         qs.stats.sharpe(test_returns)
     except ImportError:
         missing.append("quantstats")
     except Exception as e:
         # quantstats is installed but may have issues
         st.warning(f"quantstats installed but may have issues: {str(e)[:50]}")
+        # Try to provide more specific error information
+        if "DatetimeIndex" in str(e):
+            st.info("quantstats requires proper DatetimeIndex - the app will handle this automatically")
+        elif "PeriodIndex" in str(e):
+            st.info("quantstats requires DatetimeIndex, not PeriodIndex - the app will convert automatically")
     
     return missing
 
@@ -86,10 +92,56 @@ except ImportError:
     QUANTSTATS_AVAILABLE = False
     st.warning("quantstats not available - using internal calculations")
 
+def test_quantstats_compatibility():
+    """Test if quantstats is working properly with our data format."""
+    if not QUANTSTATS_AVAILABLE:
+        return False, "quantstats not installed"
+    
+    try:
+        # Test with various index types that might be encountered
+        test_cases = [
+            # Case 1: DatetimeIndex
+            pd.Series([0.01, -0.01, 0.02, -0.005], 
+                     index=pd.date_range('2020-01-01', periods=4, freq='D')),
+            # Case 2: Range index (will be converted)
+            pd.Series([0.01, -0.01, 0.02, -0.005], index=range(4)),
+            # Case 3: String dates
+            pd.Series([0.01, -0.01, 0.02, -0.005], 
+                     index=['2020-01-01', '2020-01-02', '2020-01-03', '2020-01-04']),
+        ]
+        
+        for i, test_series in enumerate(test_cases):
+            try:
+                # Test the ensure_datetime_index function
+                converted_series = ensure_datetime_index(test_series.copy())
+                
+                # Test quantstats functions
+                sharpe = qs.stats.sharpe(converted_series)
+                sortino = qs.stats.sortino(converted_series)
+                
+                if not (np.isfinite(sharpe) and np.isfinite(sortino)):
+                    return False, f"quantstats returned non-finite values for test case {i+1}"
+                    
+            except Exception as e:
+                return False, f"quantstats failed for test case {i+1}: {str(e)}"
+        
+        return True, "quantstats working properly"
+        
+    except Exception as e:
+        return False, f"quantstats compatibility test failed: {str(e)}"
+
 def ensure_datetime_index(returns: pd.Series) -> pd.Series:
     """Ensure the series has a proper DatetimeIndex for quantstats compatibility."""
     if returns.empty:
         return returns
+    
+    # Debug: Log the index type and first few values
+    try:
+        st.debug(f"Index type: {type(returns.index)}")
+        if len(returns.index) > 0:
+            st.debug(f"First index value: {returns.index[0]} (type: {type(returns.index[0])})")
+    except:
+        pass
     
     # If index is already DatetimeIndex, return as is
     if isinstance(returns.index, pd.DatetimeIndex):
@@ -109,22 +161,29 @@ def ensure_datetime_index(returns: pd.Series) -> pd.Series:
     try:
         returns.index = pd.to_datetime(returns.index)
         return returns
-    except:
-        # If all else fails, create a dummy DatetimeIndex
-        # This is a fallback for when the index can't be converted
+    except Exception as e:
+        st.debug(f"Failed to parse index as dates: {str(e)}")
+    
+    # If all else fails, create a dummy DatetimeIndex
+    # This is a fallback for when the index can't be converted
+    try:
+        # Create a reasonable date range based on the number of periods
+        start_date = pd.Timestamp('2020-01-01')
+        dummy_index = pd.date_range(start=start_date, periods=len(returns), freq='D')
+        returns.index = dummy_index
+        st.debug(f"Created dummy DatetimeIndex with {len(dummy_index)} periods")
+    except Exception as e:
+        st.debug(f"Failed to create dummy index: {str(e)}")
+        # Ultimate fallback - create a simple range index and convert
         try:
-            # Try to use the original index values as a starting point
-            if len(returns.index) > 0:
-                # Create a reasonable date range based on the number of periods
-                start_date = pd.Timestamp('2020-01-01')
-                dummy_index = pd.date_range(start=start_date, periods=len(returns), freq='D')
-            else:
-                dummy_index = pd.date_range(start='2020-01-01', periods=len(returns), freq='D')
-            returns.index = dummy_index
-        except:
-            # Ultimate fallback
+            returns.index = range(len(returns))
             returns.index = pd.date_range(start='2020-01-01', periods=len(returns), freq='D')
-        return returns
+        except:
+            # If even this fails, return the original series
+            st.warning("Could not create valid DatetimeIndex for quantstats")
+            return returns
+    
+    return returns
 
 # Add requests import for API calls
 try:
@@ -135,9 +194,9 @@ except ImportError:
 
 # ===== QUANTSTATS WRAPPER FUNCTIONS =====
 
-def qs_sharpe_ratio(returns: pd.Series) -> float:
-    """Calculate Sharpe ratio using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_sharpe_ratio(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate Sharpe ratio using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -148,18 +207,27 @@ def qs_sharpe_ratio(returns: pd.Series) -> float:
             # Ensure proper DatetimeIndex for quantstats
             returns_decimal = ensure_datetime_index(returns_decimal)
             
+            # Double-check that we have a valid DatetimeIndex
+            if not isinstance(returns_decimal.index, pd.DatetimeIndex):
+                st.debug("Failed to create valid DatetimeIndex, using internal calculation")
+                return sharpe_ratio_internal(returns)
+            
             # Use quantstats Sharpe calculation
             sharpe = qs.stats.sharpe(returns_decimal)
             return float(sharpe) if np.isfinite(sharpe) else 0.0
         except Exception as e:
-            st.warning(f"quantstats Sharpe calculation failed: {str(e)[:50]}, using internal calculation")
+            error_msg = str(e)
+            if "DatetimeIndex" in error_msg or "PeriodIndex" in error_msg:
+                st.debug(f"quantstats index issue: {error_msg[:100]}")
+            else:
+                st.warning(f"quantstats Sharpe calculation failed: {error_msg[:50]}, using internal calculation")
             return sharpe_ratio_internal(returns)
     else:
         return sharpe_ratio_internal(returns)
 
-def qs_sortino_ratio(returns: pd.Series) -> float:
-    """Calculate Sortino ratio using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_sortino_ratio(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate Sortino ratio using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -179,9 +247,9 @@ def qs_sortino_ratio(returns: pd.Series) -> float:
     else:
         return sortino_ratio_internal(returns)
 
-def qs_cumulative_return(returns: pd.Series) -> float:
-    """Calculate cumulative return using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_cumulative_return(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate cumulative return using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -201,9 +269,9 @@ def qs_cumulative_return(returns: pd.Series) -> float:
     else:
         return cumulative_return_internal(returns)
 
-def qs_annualized_return(returns: pd.Series) -> float:
-    """Calculate annualized return using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_annualized_return(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate annualized return using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -223,9 +291,9 @@ def qs_annualized_return(returns: pd.Series) -> float:
     else:
         return window_cagr_internal(returns)
 
-def qs_volatility(returns: pd.Series) -> float:
-    """Calculate volatility using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_volatility(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate volatility using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -245,9 +313,9 @@ def qs_volatility(returns: pd.Series) -> float:
     else:
         return returns.std(ddof=1) * np.sqrt(252)
 
-def qs_max_drawdown(returns: pd.Series) -> float:
-    """Calculate maximum drawdown using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_max_drawdown(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate maximum drawdown using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -267,9 +335,9 @@ def qs_max_drawdown(returns: pd.Series) -> float:
     else:
         return calculate_max_drawdown_internal(returns)
 
-def qs_calmar_ratio(returns: pd.Series) -> float:
-    """Calculate Calmar ratio using quantstats if available, fallback to internal calculation."""
-    if QUANTSTATS_AVAILABLE:
+def qs_calmar_ratio(returns: pd.Series, use_quantstats: bool = True) -> float:
+    """Calculate Calmar ratio using quantstats if available and enabled, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Convert percentage returns to decimal if needed
             if returns.max() > 1.0:  # Likely percentage format
@@ -397,21 +465,21 @@ def parse_exclusion_input(user_str: str) -> List[Tuple[date, date]]:
         out.append((min(a, b), max(a, b)))
     return out
 
-def cumulative_return(daily_pct: pd.Series) -> float:
+def cumulative_return(daily_pct: pd.Series, use_quantstats: bool = True) -> float:
     """Total compounded return over the period (decimal) - uses quantstats if available."""
-    return qs_cumulative_return(daily_pct)
+    return qs_cumulative_return(daily_pct, use_quantstats)
 
-def window_cagr(daily_pct: pd.Series) -> float:
+def window_cagr(daily_pct: pd.Series, use_quantstats: bool = True) -> float:
     """Compounded annual growth rate over window - uses quantstats if available."""
-    return qs_annualized_return(daily_pct)
+    return qs_annualized_return(daily_pct, use_quantstats)
 
-def sharpe_ratio(daily_pct: pd.Series) -> float:
+def sharpe_ratio(daily_pct: pd.Series, use_quantstats: bool = True) -> float:
     """Sharpe ratio calculation - uses quantstats if available."""
-    return qs_sharpe_ratio(daily_pct)
+    return qs_sharpe_ratio(daily_pct, use_quantstats)
 
-def sortino_ratio(daily_pct: pd.Series) -> float:
+def sortino_ratio(daily_pct: pd.Series, use_quantstats: bool = True) -> float:
     """Sortino ratio calculation - uses quantstats if available."""
-    return qs_sortino_ratio(daily_pct)
+    return qs_sortino_ratio(daily_pct, use_quantstats)
 
 def assess_sample_reliability(n_is: int, n_oos: int) -> str:
     """Assess statistical reliability based on sample sizes."""
@@ -1756,7 +1824,7 @@ def fetch_oos_date_from_symphony(symph_id: str) -> Optional[date]:
 def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date, 
                         is_ret: pd.Series, n_slices: int = 100, overlap: bool = True,
                         window_size: int = None, step_size: int = None, 
-                        min_windows: int = 6) -> Dict[str, Any]:
+                        min_windows: int = 6, use_quantstats: bool = False) -> Dict[str, Any]:
     """Simplified rolling analysis for overfitting detection."""
     oos_data = daily_ret[daily_ret.index >= oos_start_dt]
     total_oos_days = len(oos_data)
@@ -1813,9 +1881,9 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
     
     # Pre-compute IS metrics
     is_metrics = {
-        'sh': [sharpe_ratio(s) for s in is_slices], 
-        'cr': [cumulative_return(s) for s in is_slices],
-        'so': [sortino_ratio(s) for s in is_slices]
+        'sh': [sharpe_ratio(s, use_quantstats) for s in is_slices], 
+        'cr': [cumulative_return(s, use_quantstats) for s in is_slices],
+        'so': [sortino_ratio(s, use_quantstats) for s in is_slices]
     }
     
     # Create rolling windows
@@ -1828,9 +1896,9 @@ def rolling_oos_analysis(daily_ret: pd.Series, oos_start_dt: date,
         if len(window_data) == window_size:
             window_num = len(windows) + 1
             
-            window_sh = sharpe_ratio(window_data)
-            window_cr = window_cagr(window_data)  # Use annualized return for consistency
-            window_so = sortino_ratio(window_data)
+            window_sh = sharpe_ratio(window_data, use_quantstats)
+            window_cr = window_cagr(window_data, use_quantstats)  # Use annualized return for consistency
+            window_so = sortino_ratio(window_data, use_quantstats)
             
             window_iotas = {}
             for metric in ['sh', 'cr', 'so']:
@@ -2436,7 +2504,8 @@ def main():
     
     # Show quantstats status
     if QUANTSTATS_AVAILABLE:
-        st.success("✅ Using quantstats for enhanced financial calculations")
+        st.success("✅ quantstats available for enhanced financial calculations")
+        st.info("💡 You can enable/disable quantstats in the Configuration tab")
     else:
         st.warning("⚠️ quantstats not available - using internal calculations")
     
@@ -2458,6 +2527,16 @@ def main():
         # Show quantstats status in configuration
         if QUANTSTATS_AVAILABLE:
             st.success("✅ quantstats available - using enhanced financial calculations")
+            
+            # Add test button for debugging
+            if st.button("🧪 Test quantstats compatibility"):
+                with st.spinner("Testing quantstats compatibility..."):
+                    is_working, message = test_quantstats_compatibility()
+                    if is_working:
+                        st.success(f"✅ {message}")
+                    else:
+                        st.error(f"❌ {message}")
+                        st.info("The app will fall back to internal calculations when quantstats fails")
         else:
             st.warning("⚠️ quantstats not available - install with: pip install quantstats")
         
@@ -2588,6 +2667,25 @@ def main():
                 else:
                     auto_window = True
             
+            # Quantstats parameters
+            st.subheader("📊 Calculation Engine Parameters")
+            col1, col2 = st.columns(2)
+            with col1:
+                default_use_quantstats = query_params.get("use_quantstats", "false").lower() == "true"
+                use_quantstats = st.checkbox(
+                    "Use quantstats for calculations",
+                    value=default_use_quantstats,
+                    help="Use quantstats library for enhanced financial calculations. When disabled, uses internal calculations."
+                )
+            
+            with col2:
+                if use_quantstats and not QUANTSTATS_AVAILABLE:
+                    st.warning("⚠️ quantstats not available - will use internal calculations")
+                elif use_quantstats and QUANTSTATS_AVAILABLE:
+                    st.success("✅ quantstats available")
+                else:
+                    st.info("ℹ️ Using internal calculations")
+            
             # Show manual window settings when auto is disabled
             if enable_rolling and not auto_window:
                 col1, col2 = st.columns(2)
@@ -2651,7 +2749,8 @@ def main():
                         'enable_rolling': enable_rolling,
                         'auto_window': auto_window,
                         'window_size': window_size,
-                        'step_size': step_size
+                        'step_size': step_size,
+                        'use_quantstats': use_quantstats
                     }
                     st.session_state.run_analysis = True
                     st.session_state.auto_switch_to_results = True
@@ -2668,6 +2767,7 @@ def main():
                         "exclusions_str": exclusions_str,
                         "enable_rolling": str(enable_rolling).lower(),
                         "auto_window": str(auto_window).lower(),
+                        "use_quantstats": str(use_quantstats).lower(),
                     }
                     if window_size is not None:
                         params["window_size"] = str(window_size)
@@ -2800,11 +2900,14 @@ def main():
                 st.markdown("### 🧮 Core Analysis")
                 
                 with st.spinner("📊 Running core Iota analysis..."):
+                    # Get quantstats preference from config
+                    use_quantstats = config.get('use_quantstats', False)
+                    
                     # Calculate OOS metrics
-                    ar_oos = window_cagr(oos_ret)
-                    sh_oos = sharpe_ratio(oos_ret)
-                    cr_oos = cumulative_return(oos_ret)
-                    so_oos = sortino_ratio(oos_ret)
+                    ar_oos = window_cagr(oos_ret, use_quantstats)
+                    sh_oos = sharpe_ratio(oos_ret, use_quantstats)
+                    cr_oos = cumulative_return(oos_ret, use_quantstats)
+                    so_oos = sortino_ratio(oos_ret, use_quantstats)
                     
                     # Build IS slices
                     slice_len = n_oos
@@ -2827,10 +2930,10 @@ def main():
                             "slice": i,
                             "start": s.index[0],
                             "end": s.index[-1],
-                            "ar_is": window_cagr(s),
-                            "sh_is": sharpe_ratio(s),
-                            "cr_is": cumulative_return(s),
-                            "so_is": sortino_ratio(s)
+                            "ar_is": window_cagr(s, use_quantstats),
+                            "sh_is": sharpe_ratio(s, use_quantstats),
+                            "cr_is": cumulative_return(s, use_quantstats),
+                            "so_is": sortino_ratio(s, use_quantstats)
                         })
                     
                     progress_bar.empty()
@@ -2886,8 +2989,10 @@ def main():
                                    ar_oos, sh_oos, cr_oos, so_oos, reliability, config)
                 
                 # Show calculation method used
-                if QUANTSTATS_AVAILABLE:
-                    st.info("📊 Financial metrics calculated using quantstats for enhanced accuracy")
+                if config.get('use_quantstats', False) and QUANTSTATS_AVAILABLE:
+                    st.success("📊 Financial metrics calculated using quantstats for enhanced accuracy")
+                elif config.get('use_quantstats', False) and not QUANTSTATS_AVAILABLE:
+                    st.warning("📊 quantstats requested but not available - using internal methods")
                 else:
                     st.info("📊 Financial metrics calculated using internal methods")
                 
@@ -2900,7 +3005,8 @@ def main():
                         rolling_results = rolling_oos_analysis(
                             daily_ret, oos_start_dt, is_ret, 
                             config['n_slices'], config['overlap'],
-                            config['window_size'], config['step_size']
+                            config['window_size'], config['step_size'],
+                            use_quantstats=use_quantstats
                         )
                         st.session_state.rolling_results = rolling_results
                     
