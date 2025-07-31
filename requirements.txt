@@ -37,11 +37,13 @@ pymoo==0.6.1.5
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 pytz==2025.2
+quantstats>=0.0.62
 requests==2.32.3
 scipy==1.15.3
 seaborn==0.13.2
 six==1.17.0
 soupsieve==2.7
+streamlit>=1.28.0
 ta==0.11.0
 TatSu==5.13.1
 types-python-dateutil==2.9.0.20241206
@@ -51,3 +53,4 @@ urllib3==2.4.0
 websockets==15.0.1
 wrapt==1.17.2
 yfinance==0.2.59
+ipython>=7.0.0
