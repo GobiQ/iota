@@ -26,53 +26,7 @@ except Exception as e:
 st.set_page_config(page_title="Signal Check", layout="wide")
 
 st.title("Signal Check")
-st.write("RSI Threshold Statistics with QuantStats Integration")
-
-# QuantStats Integration Information
-with st.expander("📊 QuantStats Integration", expanded=False):
-    if QUANTSTATS_AVAILABLE:
-        st.success("✅ QuantStats is available and will be used for enhanced analysis.")
-        st.write("""
-        **QuantStats Integration (Active):**
-        
-        This app uses QuantStats for comprehensive financial analysis. QuantStats provides:
-        
-        **📈 Performance Metrics:**
-        - Sharpe Ratio, Sortino Ratio, Calmar Ratio
-        - Alpha, Beta, Information Ratio, Treynor Ratio
-        - Omega Ratio, Gain-to-Pain Ratio
-        
-        **📊 Risk Metrics:**
-        - Maximum Drawdown, Value at Risk (VaR), Conditional VaR (CVaR)
-        - Volatility, Skewness, Kurtosis, Tail Ratio
-        
-        **🎯 Trading Metrics:**
-        - Win Rate, Win/Loss Ratio, Profit Factor
-        - Average Win/Loss, Best/Worst Day
-        - Consecutive Wins/Losses, Expectancy
-        
-        **📋 Statistical Tests:**
-        - P-values for various statistical comparisons
-        - Common Sense Ratio, MAR Ratio
-        """)
-    else:
-        st.warning("⚠️ QuantStats not available. Using fallback calculations.")
-        st.write("""
-        **QuantStats Integration (Not Available):**
-        
-        The app will use fallback calculations for financial metrics. For enhanced analysis, install QuantStats:
-        
-        ```bash
-        pip install quantstats>=0.0.62
-        ```
-        
-        **Available with QuantStats:**
-        - Enhanced Sharpe/Sortino/Calmar ratios
-        - Value at Risk (VaR) and Conditional VaR
-        - Alpha, Beta, Information Ratio
-        - Comprehensive trading metrics
-        - Statistical significance tests
-        """)
+st.write("RSI Threshold Statistics")
 
 def calculate_rsi(prices: pd.Series, window: int = 14, method: str = "wilders") -> pd.Series:
     """Calculate RSI using specified method (Wilder's smoothing or simple moving average)"""
@@ -105,7 +59,7 @@ def calculate_rsi(prices: pd.Series, window: int = 14, method: str = "wilders") 
     
     return rsi
 
-def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) -> float:
+def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02, use_quantstats: bool = True) -> float:
     """Calculate Sortino ratio using QuantStats or fallback"""
     if len(returns) == 0:
         return 0
@@ -113,7 +67,7 @@ def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) -
     # Convert to pandas Series for QuantStats
     returns_series = pd.Series(returns)
     
-    if QUANTSTATS_AVAILABLE:
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Use QuantStats sortino ratio calculation
             sortino_ratio = qs.stats.sortino(returns_series, rf=risk_free_rate)
@@ -155,7 +109,7 @@ def get_stock_data(ticker: str, start_date=None, end_date=None) -> pd.Series:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
-def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than", rsi_period: int = 14, rsi_method: str = "wilders") -> Dict:
+def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than", rsi_period: int = 14, rsi_method: str = "wilders", use_quantstats: bool = True) -> Dict:
     """Analyze RSI signals for a specific threshold"""
     # Calculate RSI for the SIGNAL ticker using specified period and method
     signal_rsi = calculate_rsi(signal_prices, window=rsi_period, method=rsi_method)
@@ -249,7 +203,7 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
     avg_return = returns.mean()
     median_return = np.median(returns)
     avg_hold_days = np.mean([trade['hold_days'] for trade in trades])
-    sortino_ratio = calculate_sortino_ratio(returns)
+    sortino_ratio = calculate_sortino_ratio(returns, use_quantstats=use_quantstats)
     
     # Calculate annualized return
     total_days = (target_prices.index[-1] - target_prices.index[0]).days
@@ -346,12 +300,12 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
         'power': power
     }
 
-def calculate_max_drawdown(equity_curve: pd.Series) -> float:
+def calculate_max_drawdown(equity_curve: pd.Series, use_quantstats: bool = True) -> float:
     """Calculate maximum drawdown using QuantStats or fallback"""
     if equity_curve.empty:
         return 0.0
     
-    if QUANTSTATS_AVAILABLE:
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Use QuantStats max drawdown calculation
             max_dd = qs.stats.max_drawdown(equity_curve)
@@ -364,7 +318,7 @@ def calculate_max_drawdown(equity_curve: pd.Series) -> float:
     drawdown = (equity_curve - running_max) / running_max
     return abs(drawdown.min())
 
-def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) -> float:
+def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.02, use_quantstats: bool = True) -> float:
     """Calculate Sharpe ratio using QuantStats or fallback"""
     if len(returns) == 0:
         return 0.0
@@ -372,7 +326,7 @@ def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) ->
     # Convert to pandas Series for QuantStats
     returns_series = pd.Series(returns)
     
-    if QUANTSTATS_AVAILABLE:
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Use QuantStats sharpe ratio calculation
             sharpe_ratio = qs.stats.sharpe(returns_series, rf=risk_free_rate)
@@ -387,7 +341,7 @@ def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) ->
         return 0.0 if np.mean(excess_returns) == 0 else np.inf
     return np.mean(excess_returns) / np.std(excess_returns)
 
-def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, annual_return: float) -> Dict:
+def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, annual_return: float, use_quantstats: bool = True) -> Dict:
     """Add more comprehensive risk metrics using QuantStats or fallback"""
     if len(returns) == 0 or equity_curve.empty:
         return {
@@ -405,11 +359,11 @@ def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, a
     returns_series = pd.Series(returns)
     
     # Use QuantStats if available
-    if QUANTSTATS_AVAILABLE:
+    if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Use QuantStats for various metrics
-            max_dd = calculate_max_drawdown(equity_curve)
-            sharpe = calculate_sharpe_ratio(returns)
+            max_dd = calculate_max_drawdown(equity_curve, use_quantstats)
+            sharpe = calculate_sharpe_ratio(returns, use_quantstats=use_quantstats)
             
             # Calculate Calmar ratio using QuantStats
             calmar_ratio = qs.stats.calmar(returns_series) if len(returns) > 0 else 0.0
@@ -439,8 +393,8 @@ def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, a
             pass  # Fall through to fallback calculations
     
     # Fallback to original calculations
-    max_dd = calculate_max_drawdown(equity_curve)
-    sharpe = calculate_sharpe_ratio(returns)
+    max_dd = calculate_max_drawdown(equity_curve, use_quantstats)
+    sharpe = calculate_sharpe_ratio(returns, use_quantstats=use_quantstats)
     
     return {
         'max_drawdown': max_dd,
@@ -482,7 +436,7 @@ def validate_data_quality(data: pd.Series, ticker: str) -> Tuple[bool, List[str]
 # Basic QuantStats metrics are still available in the main analysis functions
 
 def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
-                    start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY") -> Tuple[pd.DataFrame, pd.Series, List[str]]:
+                    start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY", use_quantstats: bool = True) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
     """Run comprehensive RSI analysis across the specified range"""
     
     # Fetch data with quality validation
@@ -534,7 +488,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
     total_thresholds = len(rsi_thresholds)
     
     for i, threshold in enumerate(rsi_thresholds):
-        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method)
+        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method, use_quantstats)
         
         # Calculate statistical significance
         strategy_equity_curve = analysis['equity_curve']
@@ -600,7 +554,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             )
             
             # Calculate additional risk metrics
-            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'])
+            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'], use_quantstats)
         else:
             # Calculate benchmark average and median returns even when strategy has no trades
             signal_rsi = calculate_rsi(signal_data, window=rsi_period, method=rsi_method)
@@ -664,7 +618,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             }
             
             # Calculate additional risk metrics (even when no trades)
-            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'])
+            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'], use_quantstats)
         
         results.append({
             'RSI_Threshold': threshold,
@@ -709,6 +663,9 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
 
 # Streamlit Interface
 st.sidebar.header("📊 Configuration")
+
+# QuantStats Configuration
+use_quantstats = st.sidebar.checkbox("Enable QuantStats Integration", value=True, help="Enable enhanced financial analysis using QuantStats library. When disabled, the app will use fallback calculations.")
 
 # Input fields with help tooltips
 signal_ticker = st.sidebar.text_input("Signal Ticker", value="QQQ", help="The ticker that generates RSI signals. This is the stock/ETF whose RSI we'll use to decide when to buy/sell the target ticker.")
@@ -776,7 +733,7 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_width=True):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
-            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, rsi_method, benchmark_ticker)
+            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, rsi_method, benchmark_ticker, use_quantstats)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
                 # Store analysis results in session state
