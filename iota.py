@@ -2502,11 +2502,8 @@ def main():
     st.markdown('<h1 class="main-header">📊 Iota Calculator</h1>', unsafe_allow_html=True)
     st.markdown('<h2 style="text-align: center; font-size: 1.5rem; color: #666; margin-bottom: 2rem;">Is your strategy\'s performance matching the backtest?</h2>', unsafe_allow_html=True)
     
-    # Show quantstats status
-    if QUANTSTATS_AVAILABLE:
-        st.success("✅ quantstats available for enhanced financial calculations")
-        st.info("💡 You can enable/disable quantstats in the Configuration tab")
-    else:
+    # Show quantstats status (only if not available)
+    if not QUANTSTATS_AVAILABLE:
         st.warning("⚠️ quantstats not available - using internal calculations")
     
     # Create tabs for better organization
@@ -2524,21 +2521,19 @@ def main():
             st.success("✅ Cache cleared! Please re-run your analysis.")
             st.rerun()
         
-        # Show quantstats status in configuration
-        if QUANTSTATS_AVAILABLE:
-            st.success("✅ quantstats available - using enhanced financial calculations")
-            
-            # Add test button for debugging
-            if st.button("🧪 Test quantstats compatibility"):
-                with st.spinner("Testing quantstats compatibility..."):
-                    is_working, message = test_quantstats_compatibility()
-                    if is_working:
-                        st.success(f"✅ {message}")
-                    else:
-                        st.error(f"❌ {message}")
-                        st.info("The app will fall back to internal calculations when quantstats fails")
-        else:
-            st.warning("⚠️ quantstats not available - install with: pip install quantstats")
+                    # Show quantstats status in configuration (only if not available)
+            if not QUANTSTATS_AVAILABLE:
+                st.warning("⚠️ quantstats not available - install with: pip install quantstats")
+            else:
+                # Add test button for debugging (only show if user wants to test)
+                if st.button("🧪 Test quantstats compatibility"):
+                    with st.spinner("Testing quantstats compatibility..."):
+                        is_working, message = test_quantstats_compatibility()
+                        if is_working:
+                            st.success(f"✅ {message}")
+                        else:
+                            st.error(f"❌ {message}")
+                            st.info("The app will fall back to internal calculations when quantstats fails")
         
         st.markdown("---")  # Add divider
         
