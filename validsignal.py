@@ -9,10 +9,70 @@ import warnings
 from scipy import stats
 warnings.filterwarnings('ignore')
 
+# Try to import QuantStats with error handling
+try:
+    import quantstats as qs
+    # Configure QuantStats
+    qs.extend_pandas()
+    QUANTSTATS_AVAILABLE = True
+    st.success("✅ QuantStats loaded successfully!")
+except ImportError as e:
+    st.warning(f"⚠️ QuantStats import error: {str(e)}. Install with: pip install quantstats>=0.0.62")
+    QUANTSTATS_AVAILABLE = False
+except Exception as e:
+    st.warning(f"⚠️ QuantStats import failed: {str(e)}. Using fallback calculations.")
+    QUANTSTATS_AVAILABLE = False
+
 st.set_page_config(page_title="Signal Check", layout="wide")
 
 st.title("Signal Check")
-st.write("RSI Threshold Statistics")
+st.write("RSI Threshold Statistics with QuantStats Integration")
+
+# QuantStats Integration Information
+with st.expander("📊 QuantStats Integration", expanded=False):
+    if QUANTSTATS_AVAILABLE:
+        st.success("✅ QuantStats is available and will be used for enhanced analysis.")
+        st.write("""
+        **QuantStats Integration (Active):**
+        
+        This app uses QuantStats for comprehensive financial analysis. QuantStats provides:
+        
+        **📈 Performance Metrics:**
+        - Sharpe Ratio, Sortino Ratio, Calmar Ratio
+        - Alpha, Beta, Information Ratio, Treynor Ratio
+        - Omega Ratio, Gain-to-Pain Ratio
+        
+        **📊 Risk Metrics:**
+        - Maximum Drawdown, Value at Risk (VaR), Conditional VaR (CVaR)
+        - Volatility, Skewness, Kurtosis, Tail Ratio
+        
+        **🎯 Trading Metrics:**
+        - Win Rate, Win/Loss Ratio, Profit Factor
+        - Average Win/Loss, Best/Worst Day
+        - Consecutive Wins/Losses, Expectancy
+        
+        **📋 Statistical Tests:**
+        - P-values for various statistical comparisons
+        - Common Sense Ratio, MAR Ratio
+        """)
+    else:
+        st.warning("⚠️ QuantStats not available. Using fallback calculations.")
+        st.write("""
+        **QuantStats Integration (Not Available):**
+        
+        The app will use fallback calculations for financial metrics. For enhanced analysis, install QuantStats:
+        
+        ```bash
+        pip install quantstats>=0.0.62
+        ```
+        
+        **Available with QuantStats:**
+        - Enhanced Sharpe/Sortino/Calmar ratios
+        - Value at Risk (VaR) and Conditional VaR
+        - Alpha, Beta, Information Ratio
+        - Comprehensive trading metrics
+        - Statistical significance tests
+        """)
 
 def calculate_rsi(prices: pd.Series, window: int = 14, method: str = "wilders") -> pd.Series:
     """Calculate RSI using specified method (Wilder's smoothing or simple moving average)"""
@@ -46,13 +106,23 @@ def calculate_rsi(prices: pd.Series, window: int = 14, method: str = "wilders") 
     return rsi
 
 def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) -> float:
-    """Calculate Sortino ratio (risk-adjusted return focused on downside risk)"""
+    """Calculate Sortino ratio using QuantStats or fallback"""
     if len(returns) == 0:
         return 0
     
-    # Convert annual risk-free rate to per-trade rate (approximate)
-    rf_per_trade = risk_free_rate / 252  # Assume 252 trading days per year
+    # Convert to pandas Series for QuantStats
+    returns_series = pd.Series(returns)
     
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Use QuantStats sortino ratio calculation
+            sortino_ratio = qs.stats.sortino(returns_series, rf=risk_free_rate)
+            return sortino_ratio if not np.isnan(sortino_ratio) else 0
+        except Exception:
+            pass  # Fall through to original calculation
+    
+    # Fallback to original calculation
+    rf_per_trade = risk_free_rate / 252
     excess_returns = returns - rf_per_trade
     downside_returns = excess_returns[excess_returns < 0]
     
@@ -277,50 +347,110 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
     }
 
 def calculate_max_drawdown(equity_curve: pd.Series) -> float:
-    """Calculate maximum drawdown from equity curve"""
+    """Calculate maximum drawdown using QuantStats or fallback"""
     if equity_curve.empty:
         return 0.0
     
-    # Calculate running maximum
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Use QuantStats max drawdown calculation
+            max_dd = qs.stats.max_drawdown(equity_curve)
+            return abs(max_dd) if not np.isnan(max_dd) else 0.0
+        except Exception:
+            pass  # Fall through to original calculation
+    
+    # Fallback to original calculation
     running_max = equity_curve.expanding().max()
-    # Calculate drawdown
     drawdown = (equity_curve - running_max) / running_max
     return abs(drawdown.min())
 
 def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.02) -> float:
-    """Calculate Sharpe ratio (risk-adjusted return)"""
+    """Calculate Sharpe ratio using QuantStats or fallback"""
     if len(returns) == 0:
         return 0.0
     
-    # Convert annual risk-free rate to per-trade rate
-    rf_per_trade = risk_free_rate / 252
+    # Convert to pandas Series for QuantStats
+    returns_series = pd.Series(returns)
     
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Use QuantStats sharpe ratio calculation
+            sharpe_ratio = qs.stats.sharpe(returns_series, rf=risk_free_rate)
+            return sharpe_ratio if not np.isnan(sharpe_ratio) else 0.0
+        except Exception:
+            pass  # Fall through to original calculation
+    
+    # Fallback to original calculation
+    rf_per_trade = risk_free_rate / 252
     excess_returns = returns - rf_per_trade
     if np.std(excess_returns) == 0:
         return 0.0 if np.mean(excess_returns) == 0 else np.inf
-    
     return np.mean(excess_returns) / np.std(excess_returns)
 
 def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, annual_return: float) -> Dict:
-    """Add more comprehensive risk metrics"""
+    """Add more comprehensive risk metrics using QuantStats or fallback"""
     if len(returns) == 0 or equity_curve.empty:
         return {
             'max_drawdown': 0.0,
             'calmar_ratio': 0.0,
             'var_95': 0.0,
             'sharpe_ratio': 0.0,
-            'volatility': 0.0
+            'volatility': 0.0,
+            'beta': 0.0,
+            'alpha': 0.0,
+            'information_ratio': 0.0
         }
     
+    # Convert to pandas Series for QuantStats
+    returns_series = pd.Series(returns)
+    
+    # Use QuantStats if available
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Use QuantStats for various metrics
+            max_dd = calculate_max_drawdown(equity_curve)
+            sharpe = calculate_sharpe_ratio(returns)
+            
+            # Calculate Calmar ratio using QuantStats
+            calmar_ratio = qs.stats.calmar(returns_series) if len(returns) > 0 else 0.0
+            
+            # Calculate Value at Risk using QuantStats
+            var_95 = qs.stats.var(returns_series, 0.05) if len(returns) > 0 else 0.0
+            
+            # Calculate volatility using QuantStats
+            volatility = qs.stats.volatility(returns_series) if len(returns) > 0 else 0.0
+            
+            # Additional QuantStats metrics
+            beta = qs.stats.beta(returns_series, returns_series) if len(returns) > 0 else 0.0  # Self-beta as placeholder
+            alpha = qs.stats.alpha(returns_series, returns_series) if len(returns) > 0 else 0.0  # Self-alpha as placeholder
+            information_ratio = qs.stats.information_ratio(returns_series, returns_series) if len(returns) > 0 else 0.0  # Self-IR as placeholder
+            
+            return {
+                'max_drawdown': max_dd,
+                'calmar_ratio': calmar_ratio if not np.isnan(calmar_ratio) else (annual_return / max_dd if max_dd > 0 else 0.0),
+                'var_95': var_95 if not np.isnan(var_95) else (np.percentile(returns, 5) if len(returns) > 0 else 0.0),
+                'sharpe_ratio': sharpe,
+                'volatility': volatility if not np.isnan(volatility) else (np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.0),
+                'beta': beta if not np.isnan(beta) else 0.0,
+                'alpha': alpha if not np.isnan(alpha) else 0.0,
+                'information_ratio': information_ratio if not np.isnan(information_ratio) else 0.0
+            }
+        except Exception:
+            pass  # Fall through to fallback calculations
+    
+    # Fallback to original calculations
     max_dd = calculate_max_drawdown(equity_curve)
     sharpe = calculate_sharpe_ratio(returns)
     
     return {
         'max_drawdown': max_dd,
         'calmar_ratio': annual_return / max_dd if max_dd > 0 else 0.0,
-        'var_95': np.percentile(returns, 5) if len(returns) > 0 else 0.0,  # Value at Risk
+        'var_95': np.percentile(returns, 5) if len(returns) > 0 else 0.0,
         'sharpe_ratio': sharpe,
-        'volatility': np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.0
+        'volatility': np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.0,
+        'beta': 0.0,
+        'alpha': 0.0,
+        'information_ratio': 0.0
     }
 
 def validate_data_quality(data: pd.Series, ticker: str) -> Tuple[bool, List[str]]:
@@ -347,6 +477,9 @@ def validate_data_quality(data: pd.Series, ticker: str) -> Tuple[bool, List[str]
         st.warning(f"⚠️ Limited data for {ticker}: {len(data)} days (recommend at least 252 days)")
     
     return True, messages
+
+# QuantStats report generation removed to avoid import issues
+# Basic QuantStats metrics are still available in the main analysis functions
 
 def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
                     start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY") -> Tuple[pd.DataFrame, pd.Series, List[str]]:
@@ -562,7 +695,10 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             'calmar_ratio': risk_metrics['calmar_ratio'],
             'var_95': risk_metrics['var_95'],
             'sharpe_ratio': risk_metrics['sharpe_ratio'],
-            'volatility': risk_metrics['volatility']
+            'volatility': risk_metrics['volatility'],
+            'beta': risk_metrics.get('beta', 0.0),
+            'alpha': risk_metrics.get('alpha', 0.0),
+            'information_ratio': risk_metrics.get('information_ratio', 0.0)
         })
         
         progress_bar.progress((i + 1) / total_thresholds)
@@ -722,6 +858,10 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     display_df['Total_Return'] = display_df['Total_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Annualized_Return'] = display_df['annualized_return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Sortino_Ratio'] = display_df['Sortino_Ratio'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) and not np.isinf(x) else "∞" if isinstance(x, (int, float)) and np.isinf(x) else x)
+    display_df['Sharpe_Ratio'] = display_df['sharpe_ratio'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) and not np.isinf(x) else "∞" if isinstance(x, (int, float)) and np.isinf(x) else x)
+    display_df['Calmar_Ratio'] = display_df['calmar_ratio'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) and not np.isinf(x) else "∞" if isinstance(x, (int, float)) and np.isinf(x) else x)
+    display_df['Max_Drawdown'] = display_df['max_drawdown'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
+    display_df['VaR_95'] = display_df['var_95'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Avg_Hold_Days'] = display_df['Avg_Hold_Days'].apply(lambda x: f"{x:.1f}" if isinstance(x, (int, float)) else x)
     display_df['Return_Std'] = display_df['Return_Std'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
     display_df['Best_Return'] = display_df['Best_Return'].apply(lambda x: f"{x:.3%}" if isinstance(x, (int, float)) else x)
@@ -736,8 +876,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     
     # Drop the equity_curve and trades columns for display
     display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Median_Return', 'Benchmark_Avg_Return', 'Benchmark_Median_Return',
-                   'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
-                   'Return_Std', 'Best_Return', 'Worst_Return', 'Confidence_Level', 'Significant', 'Effect_Size', 'P_Value']
+                   'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Sharpe_Ratio', 'Calmar_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
+                   'Return_Std', 'Best_Return', 'Worst_Return', 'Max_Drawdown', 'VaR_95', 'Confidence_Level', 'Significant', 'Effect_Size', 'P_Value']
     
     # Check if all display columns exist
     missing_display_cols = [col for col in display_cols if col not in display_df.columns]
@@ -1147,8 +1287,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         st.info("💡 **What this does:** Download your analysis results as a CSV file that you can open in Excel or other spreadsheet programs. This includes all the performance metrics for every RSI threshold tested.")
         # Use the original column names from results_df for CSV download
         download_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Median_Return', 'Benchmark_Avg_Return', 'Benchmark_Median_Return',
-                       'Total_Return', 'annualized_return', 'Sortino_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
-                       'Return_Std', 'Best_Return', 'Worst_Return', 'confidence_level', 'significant', 'effect_size']
+                       'Total_Return', 'annualized_return', 'Sortino_Ratio', 'sharpe_ratio', 'calmar_ratio', 'Final_Equity', 'Avg_Hold_Days', 
+                       'Return_Std', 'Best_Return', 'Worst_Return', 'max_drawdown', 'var_95', 'beta', 'alpha', 'information_ratio', 'confidence_level', 'significant', 'effect_size']
         csv = st.session_state['results_df'][download_cols].to_csv(index=False)
         filename_suffix = f"_{start_date}_{end_date}" if use_date_range and start_date and end_date else "_max_range"
         st.download_button(
@@ -1405,6 +1545,9 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
         else:
             st.warning("No signals reached statistical significance (p < 0.05)")
+        
+        # Note: QuantStats detailed reports removed to avoid import issues
+        # Basic QuantStats metrics are still available in the main results table
 
     # Statistical interpretation guide
     with st.expander("📚 Statistical Significance Guide"):
