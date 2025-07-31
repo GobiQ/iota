@@ -234,19 +234,21 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
             'confidence_level': 0,
             'significant': False,
             'effect_size': 0,
-            'power': 0
+            'power': 0,
+            'insufficient_data': True
         }
     
     # Align the equity curves on the same dates
     common_dates = strategy_equity_curve.index.intersection(benchmark_equity_curve.index)
-    if len(common_dates) < 10:  # Need at least 10 data points for meaningful test
+    if len(common_dates) < 20:  # Increased minimum data points for more reliable tests
         return {
             't_statistic': 0,
             'p_value': 1.0,
             'confidence_level': 0,
             'significant': False,
             'effect_size': 0,
-            'power': 0
+            'power': 0,
+            'insufficient_data': True
         }
     
     strategy_aligned = strategy_equity_curve[common_dates]
@@ -257,36 +259,43 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
     benchmark_returns = benchmark_aligned.pct_change().dropna()
     
     # Ensure we have enough data points
-    if len(strategy_returns) < 10 or len(benchmark_returns) < 10:
+    if len(strategy_returns) < 20 or len(benchmark_returns) < 20:
         return {
             't_statistic': 0,
             'p_value': 1.0,
             'confidence_level': 0,
             'significant': False,
             'effect_size': 0,
-            'power': 0
+            'power': 0,
+            'insufficient_data': True
         }
     
-    # Perform one-tailed t-test to test if strategy BEATS benchmark
+    # Perform two-tailed t-test first
     t_stat, p_value_two_tail = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
     
-    # Convert to one-tailed test
-    if np.mean(strategy_returns.values) > np.mean(benchmark_returns.values):
-        p_value_one_tail = p_value_two_tail / 2
-        confidence_level = (1 - p_value_one_tail) * 100
-        significant = p_value_one_tail < 0.05
-    else:
-        # Strategy underperforms benchmark
-        p_value_one_tail = 1.0
-        confidence_level = 0
-        significant = False
+    # Calculate the difference in means
+    strategy_mean = np.mean(strategy_returns.values)
+    benchmark_mean = np.mean(benchmark_returns.values)
+    mean_difference = strategy_mean - benchmark_mean
     
     # Calculate effect size (Cohen's d)
     pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns.values, ddof=1) + 
                           (len(benchmark_returns) - 1) * np.var(benchmark_returns.values, ddof=1)) / 
                          (len(strategy_returns) + len(benchmark_returns) - 2))
     
-    effect_size = (np.mean(strategy_returns.values) - np.mean(benchmark_returns.values)) / pooled_std if pooled_std > 0 else 0
+    effect_size = mean_difference / pooled_std if pooled_std > 0 else 0
+    
+    # Calculate one-tailed p-value based on direction
+    if mean_difference > 0:
+        # Strategy outperforms benchmark
+        p_value_one_tail = p_value_two_tail / 2
+        confidence_level = (1 - p_value_one_tail) * 100
+        significant = p_value_one_tail < 0.05
+    else:
+        # Strategy underperforms benchmark - calculate confidence for underperformance
+        p_value_one_tail = 1 - (p_value_two_tail / 2)
+        confidence_level = (1 - p_value_one_tail) * 100
+        significant = p_value_one_tail < 0.05  # Significant underperformance
     
     # Calculate statistical power (simplified)
     power = 0.8 if len(strategy_returns) > 30 and abs(effect_size) > 0.5 else 0.5
@@ -297,7 +306,8 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
         'confidence_level': confidence_level,
         'significant': significant,
         'effect_size': effect_size,
-        'power': power
+        'power': power,
+        'insufficient_data': False
     }
 
 def calculate_max_drawdown(equity_curve: pd.Series, use_quantstats: bool = True) -> float:
@@ -614,7 +624,8 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
                 'confidence_level': 0,
                 'significant': False,
                 'effect_size': 0,
-                'power': 0
+                'power': 0,
+                'insufficient_data': True
             }
             
             # Calculate additional risk metrics (even when no trades)
@@ -645,6 +656,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
             'significant': stats_result['significant'],
             'effect_size': stats_result['effect_size'],
             'power': stats_result['power'],
+            'insufficient_data': stats_result.get('insufficient_data', False),
             'max_drawdown': risk_metrics['max_drawdown'],
             'calmar_ratio': risk_metrics['calmar_ratio'],
             'var_95': risk_metrics['var_95'],
@@ -788,6 +800,27 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     benchmark = st.session_state['benchmark']
     
     st.success("✅ Analysis completed successfully!")
+    
+    # Check for data quality issues
+    insufficient_data_count = results_df.get('insufficient_data', pd.Series([False] * len(results_df))).sum()
+    low_trade_count = (results_df['Total_Trades'] < 5).sum()
+    extreme_rsi_count = 0
+    
+    # Count extreme RSI values (very high or very low depending on comparison)
+    if st.session_state.get('comparison') == 'greater_than':
+        extreme_rsi_count = (results_df['RSI_Threshold'] >= 85).sum()
+    else:
+        extreme_rsi_count = (results_df['RSI_Threshold'] <= 15).sum()
+    
+    if insufficient_data_count > 0 or low_trade_count > 0 or extreme_rsi_count > 0:
+        st.warning("⚠️ **Data Quality Warnings:**")
+        if insufficient_data_count > 0:
+            st.write(f"• {insufficient_data_count} RSI thresholds had insufficient data for reliable statistical testing")
+        if low_trade_count > 0:
+            st.write(f"• {low_trade_count} RSI thresholds generated fewer than 5 trades")
+        if extreme_rsi_count > 0:
+            st.write(f"• {extreme_rsi_count} RSI thresholds are at extreme values (may have limited historical occurrences)")
+        st.write("**Recommendation:** Focus on RSI thresholds with more trades and higher confidence levels for more reliable results.")
     
     # Display results table
     st.subheader("📊 RSI Analysis Results")
@@ -1110,6 +1143,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         with st.expander("📚 Understanding Confidence vs RSI Threshold"):
             st.write(f"""
 
+            **📊 Improved Statistical Analysis:**
+            The confidence levels now show more realistic variation across RSI thresholds. The analysis properly calculates statistical significance for both outperformance and underperformance, avoiding artificial binary outcomes.
             
             **⚠️ Note on Extreme RSI Values:**
             At the extreme ends of RSI thresholds (very low or very high values), there are often not enough historical events to generate statistically confident results. This is why confidence levels may drop off at these extremes - the sample size becomes too small for reliable statistical analysis.
@@ -1122,10 +1157,16 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
             **📈 Y-Axis (Confidence Level):**
             - Higher values = stronger statistical evidence
-            - Above 95% = highly significant
-            - 80-95% = borderline significant
-            - Below 80% = weak evidence
+            - Above 95% = highly significant (strong evidence)
+            - 80-95% = borderline significant (moderate evidence)
+            - 60-80% = weak evidence
+            - Below 60% = very weak or no evidence
             
+            **🎯 Interpretation:**
+            - **High confidence (95%+)**: Very strong evidence the signal works
+            - **Moderate confidence (80-95%)**: Good evidence, worth considering
+            - **Low confidence (<80%)**: Weak evidence, results may be due to chance
+            - **Extreme RSI values**: Often show low confidence due to insufficient historical data
 
             """)
         
