@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
-    page_title="Iota Calculator Enhanced",
+    page_title="Iota Calculator",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -44,6 +44,18 @@ def check_dependencies():
     except ImportError:
         missing.append("sim.py")
     
+    # Check for quantstats
+    try:
+        import quantstats as qs
+        # Test basic functionality
+        test_returns = pd.Series([0.01, -0.01, 0.02, -0.005])
+        qs.stats.sharpe(test_returns)
+    except ImportError:
+        missing.append("quantstats")
+    except Exception as e:
+        # quantstats is installed but may have issues
+        st.warning(f"quantstats installed but may have issues: {str(e)[:50]}")
+    
     return missing
 
 # Check dependencies at startup
@@ -54,6 +66,7 @@ if missing_deps:
     **Required files:**
     - `sim.py` - Your portfolio calculation module
     - Install scipy: `pip install scipy`
+    - Install quantstats: `pip install quantstats`
     
     Make sure `sim.py` is in the same directory as this Streamlit app.
     """)
@@ -63,12 +76,246 @@ if missing_deps:
 from scipy import stats
 from sim import fetch_backtest, calculate_portfolio_returns
 
+# Import quantstats with fallback
+try:
+    import quantstats as qs
+    QUANTSTATS_AVAILABLE = True
+    # Configure quantstats
+    qs.extend_pandas()
+except ImportError:
+    QUANTSTATS_AVAILABLE = False
+    st.warning("quantstats not available - using internal calculations")
+
 # Add requests import for API calls
 try:
     import requests
 except ImportError:
     st.error("Missing requests library. Install with: pip install requests")
     st.stop()
+
+# ===== QUANTSTATS WRAPPER FUNCTIONS =====
+
+def qs_sharpe_ratio(returns: pd.Series) -> float:
+    """Calculate Sharpe ratio using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats Sharpe calculation
+            sharpe = qs.stats.sharpe(returns_decimal)
+            return float(sharpe) if np.isfinite(sharpe) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats Sharpe calculation failed: {str(e)[:50]}, using internal calculation")
+            return sharpe_ratio_internal(returns)
+    else:
+        return sharpe_ratio_internal(returns)
+
+def qs_sortino_ratio(returns: pd.Series) -> float:
+    """Calculate Sortino ratio using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats Sortino calculation
+            sortino = qs.stats.sortino(returns_decimal)
+            return float(sortino) if np.isfinite(sortino) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats Sortino calculation failed: {str(e)[:50]}, using internal calculation")
+            return sortino_ratio_internal(returns)
+    else:
+        return sortino_ratio_internal(returns)
+
+def qs_cumulative_return(returns: pd.Series) -> float:
+    """Calculate cumulative return using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats cumulative return calculation
+            cum_ret = qs.stats.comp(returns_decimal)
+            return float(cum_ret) if np.isfinite(cum_ret) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats cumulative return calculation failed: {str(e)[:50]}, using internal calculation")
+            return cumulative_return_internal(returns)
+    else:
+        return cumulative_return_internal(returns)
+
+def qs_annualized_return(returns: pd.Series) -> float:
+    """Calculate annualized return using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats annualized return calculation
+            ann_ret = qs.stats.cagr(returns_decimal)
+            return float(ann_ret) if np.isfinite(ann_ret) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats annualized return calculation failed: {str(e)[:50]}, using internal calculation")
+            return window_cagr_internal(returns)
+    else:
+        return window_cagr_internal(returns)
+
+def qs_volatility(returns: pd.Series) -> float:
+    """Calculate volatility using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats volatility calculation
+            vol = qs.stats.volatility(returns_decimal)
+            return float(vol) if np.isfinite(vol) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats volatility calculation failed: {str(e)[:50]}, using internal calculation")
+            return returns.std(ddof=1) * np.sqrt(252)
+    else:
+        return returns.std(ddof=1) * np.sqrt(252)
+
+def qs_max_drawdown(returns: pd.Series) -> float:
+    """Calculate maximum drawdown using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats max drawdown calculation
+            mdd = qs.stats.max_drawdown(returns_decimal)
+            return float(mdd) if np.isfinite(mdd) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats max drawdown calculation failed: {str(e)[:50]}, using internal calculation")
+            return calculate_max_drawdown_internal(returns)
+    else:
+        return calculate_max_drawdown_internal(returns)
+
+def qs_calmar_ratio(returns: pd.Series) -> float:
+    """Calculate Calmar ratio using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Use quantstats Calmar ratio calculation
+            calmar = qs.stats.calmar(returns_decimal)
+            return float(calmar) if np.isfinite(calmar) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats Calmar ratio calculation failed: {str(e)[:50]}, using internal calculation")
+            return calculate_calmar_ratio_internal(returns)
+    else:
+        return calculate_calmar_ratio_internal(returns)
+
+# ===== INTERNAL CALCULATION FUNCTIONS (FALLBACK) =====
+
+def cumulative_return_internal(daily_pct: pd.Series) -> float:
+    """Total compounded return over the period (decimal)."""
+    daily_dec = daily_pct.dropna() / 100.0
+    return float(np.prod(1 + daily_dec) - 1) if not daily_dec.empty else 0.0
+
+def window_cagr_internal(daily_pct: pd.Series) -> float:
+    """Compounded annual growth rate over window."""
+    daily_dec = daily_pct.dropna() / 100.0
+    if daily_dec.empty:
+        return 0.0
+    total_return = np.prod(1 + daily_dec) - 1
+    days = len(daily_dec)
+    if days < 2:
+        return 0.0
+    try:
+        cagr = (1 + total_return) ** (252 / days) - 1
+        return cagr
+    except (FloatingPointError, ValueError):
+        return 0.0
+
+def sharpe_ratio_internal(daily_pct: pd.Series) -> float:
+    daily_dec = daily_pct.dropna() / 100.0
+    if daily_dec.std(ddof=0) == 0:
+        return 0.0
+    return (daily_dec.mean() / daily_dec.std(ddof=0)) * np.sqrt(252)
+
+def sortino_ratio_internal(daily_pct: pd.Series) -> float:
+    """Enhanced Sortino ratio with proper zero-downside handling."""
+    daily_dec = daily_pct.dropna() / 100.0
+    if daily_dec.empty:
+        return 0.0
+    
+    downside = daily_dec[daily_dec < 0]
+    mean_return = daily_dec.mean()
+    
+    if len(downside) == 0:
+        if mean_return > 0:
+            return np.inf
+        else:
+            return 0.0
+    
+    downside_std = downside.std(ddof=0)
+    if downside_std == 0:
+        return 0.0
+    
+    return (mean_return / downside_std) * np.sqrt(252)
+
+def calculate_max_drawdown_internal(returns: pd.Series) -> float:
+    """Calculate maximum drawdown using internal calculation."""
+    if returns.empty:
+        return 0.0
+    
+    # Convert to decimal if needed
+    if returns.max() > 1.0:  # Likely percentage format
+        returns_decimal = returns / 100.0
+    else:
+        returns_decimal = returns
+    
+    # Calculate cumulative returns
+    cum_returns = (1 + returns_decimal).cumprod()
+    
+    # Calculate running maximum
+    running_max = cum_returns.expanding().max()
+    
+    # Calculate drawdown
+    drawdown = (cum_returns - running_max) / running_max
+    
+    # Return maximum drawdown
+    return float(drawdown.min()) if not drawdown.empty else 0.0
+
+def calculate_calmar_ratio_internal(returns: pd.Series) -> float:
+    """Calculate Calmar ratio using internal calculation."""
+    if returns.empty:
+        return 0.0
+    
+    # Get annualized return
+    ann_return = qs_annualized_return(returns)
+    
+    # Get max drawdown
+    max_dd = qs_max_drawdown(returns)
+    
+    # Calculate Calmar ratio
+    if abs(max_dd) < 1e-6:
+        return 0.0
+    
+    return ann_return / abs(max_dd)
 
 # ===== CORE FUNCTIONS (Enhanced from Iota.py) =====
 
@@ -90,51 +337,20 @@ def parse_exclusion_input(user_str: str) -> List[Tuple[date, date]]:
     return out
 
 def cumulative_return(daily_pct: pd.Series) -> float:
-    """Total compounded return over the period (decimal)."""
-    daily_dec = daily_pct.dropna() / 100.0
-    return float(np.prod(1 + daily_dec) - 1) if not daily_dec.empty else 0.0
+    """Total compounded return over the period (decimal) - uses quantstats if available."""
+    return qs_cumulative_return(daily_pct)
 
 def window_cagr(daily_pct: pd.Series) -> float:
-    """Compounded annual growth rate over window."""
-    daily_dec = daily_pct.dropna() / 100.0
-    if daily_dec.empty:
-        return 0.0
-    total_return = np.prod(1 + daily_dec) - 1
-    days = len(daily_dec)
-    if days < 2:
-        return 0.0
-    try:
-        cagr = (1 + total_return) ** (252 / days) - 1
-        return cagr
-    except (FloatingPointError, ValueError):
-        return 0.0
+    """Compounded annual growth rate over window - uses quantstats if available."""
+    return qs_annualized_return(daily_pct)
 
 def sharpe_ratio(daily_pct: pd.Series) -> float:
-    daily_dec = daily_pct.dropna() / 100.0
-    if daily_dec.std(ddof=0) == 0:
-        return 0.0
-    return (daily_dec.mean() / daily_dec.std(ddof=0)) * np.sqrt(252)
+    """Sharpe ratio calculation - uses quantstats if available."""
+    return qs_sharpe_ratio(daily_pct)
 
 def sortino_ratio(daily_pct: pd.Series) -> float:
-    """Enhanced Sortino ratio with proper zero-downside handling."""
-    daily_dec = daily_pct.dropna() / 100.0
-    if daily_dec.empty:
-        return 0.0
-    
-    downside = daily_dec[daily_dec < 0]
-    mean_return = daily_dec.mean()
-    
-    if len(downside) == 0:
-        if mean_return > 0:
-            return np.inf
-        else:
-            return 0.0
-    
-    downside_std = downside.std(ddof=0)
-    if downside_std == 0:
-        return 0.0
-    
-    return (mean_return / downside_std) * np.sqrt(252)
+    """Sortino ratio calculation - uses quantstats if available."""
+    return qs_sortino_ratio(daily_pct)
 
 def assess_sample_reliability(n_is: int, n_oos: int) -> str:
     """Assess statistical reliability based on sample sizes."""
@@ -891,6 +1107,208 @@ def format_sortino_output(sortino_val: float) -> str:
         return "NaN"
     else:
         return f"{sortino_val:.3f}"
+
+def qs_beta(returns: pd.Series, benchmark_returns: pd.Series = None) -> float:
+    """Calculate beta using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and benchmark_returns is not None:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            if benchmark_returns.max() > 1.0:  # Likely percentage format
+                benchmark_decimal = benchmark_returns / 100.0
+            else:
+                benchmark_decimal = benchmark_returns
+            
+            # Use quantstats beta calculation
+            beta = qs.stats.beta(returns_decimal, benchmark_decimal)
+            return float(beta) if np.isfinite(beta) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats beta calculation failed: {str(e)[:50]}, using internal calculation")
+            return calculate_beta_internal(returns, benchmark_returns)
+    else:
+        return calculate_beta_internal(returns, benchmark_returns)
+
+def qs_alpha(returns: pd.Series, benchmark_returns: pd.Series = None) -> float:
+    """Calculate alpha using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and benchmark_returns is not None:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            if benchmark_returns.max() > 1.0:  # Likely percentage format
+                benchmark_decimal = benchmark_returns / 100.0
+            else:
+                benchmark_decimal = benchmark_returns
+            
+            # Use quantstats alpha calculation
+            alpha = qs.stats.alpha(returns_decimal, benchmark_decimal)
+            return float(alpha) if np.isfinite(alpha) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats alpha calculation failed: {str(e)[:50]}, using internal calculation")
+            return calculate_alpha_internal(returns, benchmark_returns)
+    else:
+        return calculate_alpha_internal(returns, benchmark_returns)
+
+def qs_information_ratio(returns: pd.Series, benchmark_returns: pd.Series = None) -> float:
+    """Calculate information ratio using quantstats if available, fallback to internal calculation."""
+    if QUANTSTATS_AVAILABLE and benchmark_returns is not None:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            if benchmark_returns.max() > 1.0:  # Likely percentage format
+                benchmark_decimal = benchmark_returns / 100.0
+            else:
+                benchmark_decimal = benchmark_returns
+            
+            # Use quantstats information ratio calculation
+            ir = qs.stats.information_ratio(returns_decimal, benchmark_decimal)
+            return float(ir) if np.isfinite(ir) else 0.0
+        except Exception as e:
+            st.warning(f"quantstats information ratio calculation failed: {str(e)[:50]}, using internal calculation")
+            return calculate_information_ratio_internal(returns, benchmark_returns)
+    else:
+        return calculate_information_ratio_internal(returns, benchmark_returns)
+
+def calculate_beta_internal(returns: pd.Series, benchmark_returns: pd.Series) -> float:
+    """Calculate beta using internal calculation."""
+    if returns.empty or benchmark_returns.empty:
+        return 0.0
+    
+    # Align the series
+    aligned_data = pd.concat([returns, benchmark_returns], axis=1).dropna()
+    if len(aligned_data) < 2:
+        return 0.0
+    
+    strategy_returns = aligned_data.iloc[:, 0]
+    benchmark_returns = aligned_data.iloc[:, 1]
+    
+    # Convert to decimal if needed
+    if strategy_returns.max() > 1.0:
+        strategy_returns = strategy_returns / 100.0
+    if benchmark_returns.max() > 1.0:
+        benchmark_returns = benchmark_returns / 100.0
+    
+    # Calculate covariance and variance
+    covariance = np.cov(strategy_returns, benchmark_returns)[0, 1]
+    benchmark_variance = np.var(benchmark_returns)
+    
+    if benchmark_variance == 0:
+        return 0.0
+    
+    return covariance / benchmark_variance
+
+def calculate_alpha_internal(returns: pd.Series, benchmark_returns: pd.Series) -> float:
+    """Calculate alpha using internal calculation."""
+    if returns.empty or benchmark_returns.empty:
+        return 0.0
+    
+    # Get beta
+    beta = calculate_beta_internal(returns, benchmark_returns)
+    
+    # Get average returns
+    strategy_avg = returns.mean() / 100.0 if returns.max() > 1.0 else returns.mean()
+    benchmark_avg = benchmark_returns.mean() / 100.0 if benchmark_returns.max() > 1.0 else benchmark_returns.mean()
+    
+    # Calculate alpha (annualized)
+    alpha = (strategy_avg - beta * benchmark_avg) * 252
+    return alpha
+
+def calculate_information_ratio_internal(returns: pd.Series, benchmark_returns: pd.Series) -> float:
+    """Calculate information ratio using internal calculation."""
+    if returns.empty or benchmark_returns.empty:
+        return 0.0
+    
+    # Align the series
+    aligned_data = pd.concat([returns, benchmark_returns], axis=1).dropna()
+    if len(aligned_data) < 2:
+        return 0.0
+    
+    strategy_returns = aligned_data.iloc[:, 0]
+    benchmark_returns = aligned_data.iloc[:, 1]
+    
+    # Convert to decimal if needed
+    if strategy_returns.max() > 1.0:
+        strategy_returns = strategy_returns / 100.0
+    if benchmark_returns.max() > 1.0:
+        benchmark_returns = benchmark_returns / 100.0
+    
+    # Calculate excess returns
+    excess_returns = strategy_returns - benchmark_returns
+    
+    # Calculate information ratio
+    if excess_returns.std() == 0:
+        return 0.0
+    
+    return excess_returns.mean() / excess_returns.std() * np.sqrt(252)
+
+def get_comprehensive_stats(returns: pd.Series) -> Dict[str, float]:
+    """Get comprehensive statistics using quantstats when available."""
+    stats = {}
+    
+    if QUANTSTATS_AVAILABLE:
+        try:
+            # Convert percentage returns to decimal if needed
+            if returns.max() > 1.0:  # Likely percentage format
+                returns_decimal = returns / 100.0
+            else:
+                returns_decimal = returns
+            
+            # Get comprehensive stats from quantstats
+            stats = {
+                'sharpe': float(qs.stats.sharpe(returns_decimal)) if np.isfinite(qs.stats.sharpe(returns_decimal)) else 0.0,
+                'sortino': float(qs.stats.sortino(returns_decimal)) if np.isfinite(qs.stats.sortino(returns_decimal)) else 0.0,
+                'calmar': float(qs.stats.calmar(returns_decimal)) if np.isfinite(qs.stats.calmar(returns_decimal)) else 0.0,
+                'volatility': float(qs.stats.volatility(returns_decimal)) if np.isfinite(qs.stats.volatility(returns_decimal)) else 0.0,
+                'max_drawdown': float(qs.stats.max_drawdown(returns_decimal)) if np.isfinite(qs.stats.max_drawdown(returns_decimal)) else 0.0,
+                'cagr': float(qs.stats.cagr(returns_decimal)) if np.isfinite(qs.stats.cagr(returns_decimal)) else 0.0,
+                'comp': float(qs.stats.comp(returns_decimal)) if np.isfinite(qs.stats.comp(returns_decimal)) else 0.0,
+                'win_rate': float(qs.stats.win_rate(returns_decimal)) if np.isfinite(qs.stats.win_rate(returns_decimal)) else 0.0,
+                'avg_win': float(qs.stats.avg_win(returns_decimal)) if np.isfinite(qs.stats.avg_win(returns_decimal)) else 0.0,
+                'avg_loss': float(qs.stats.avg_loss(returns_decimal)) if np.isfinite(qs.stats.avg_loss(returns_decimal)) else 0.0,
+                'best': float(qs.stats.best(returns_decimal)) if np.isfinite(qs.stats.best(returns_decimal)) else 0.0,
+                'worst': float(qs.stats.worst(returns_decimal)) if np.isfinite(qs.stats.worst(returns_decimal)) else 0.0,
+            }
+        except Exception as e:
+            st.warning(f"quantstats comprehensive stats failed: {str(e)[:50]}, using basic stats")
+            stats = get_basic_stats(returns)
+    else:
+        stats = get_basic_stats(returns)
+    
+    return stats
+
+def get_basic_stats(returns: pd.Series) -> Dict[str, float]:
+    """Get basic statistics using internal calculations."""
+    if returns.empty:
+        return {}
+    
+    # Convert to decimal if needed
+    if returns.max() > 1.0:  # Likely percentage format
+        returns_decimal = returns / 100.0
+    else:
+        returns_decimal = returns
+    
+    stats = {
+        'sharpe': sharpe_ratio_internal(returns),
+        'sortino': sortino_ratio_internal(returns),
+        'volatility': returns_decimal.std() * np.sqrt(252),
+        'cagr': window_cagr_internal(returns),
+        'comp': cumulative_return_internal(returns),
+        'max_drawdown': calculate_max_drawdown_internal(returns),
+        'calmar': calculate_calmar_ratio_internal(returns),
+    }
+    
+    return stats
 
 # ===== ROLLING WINDOW ANALYSIS FUNCTIONS =====
 
@@ -1940,6 +2358,12 @@ def main():
     st.markdown('<h1 class="main-header">📊 Iota Calculator</h1>', unsafe_allow_html=True)
     st.markdown('<h2 style="text-align: center; font-size: 1.5rem; color: #666; margin-bottom: 2rem;">Is your strategy\'s performance matching the backtest?</h2>', unsafe_allow_html=True)
     
+    # Show quantstats status
+    if QUANTSTATS_AVAILABLE:
+        st.success("✅ Using quantstats for enhanced financial calculations")
+    else:
+        st.warning("⚠️ quantstats not available - using internal calculations")
+    
     # Create tabs for better organization
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔧 Configuration", "🔢 Results", "📊 Distributions", "📈 Rolling Analysis", "📚 Help"])
     
@@ -1954,6 +2378,12 @@ def main():
                 del st.session_state[key]
             st.success("✅ Cache cleared! Please re-run your analysis.")
             st.rerun()
+        
+        # Show quantstats status in configuration
+        if QUANTSTATS_AVAILABLE:
+            st.success("✅ quantstats available - using enhanced financial calculations")
+        else:
+            st.warning("⚠️ quantstats not available - install with: pip install quantstats")
         
         st.markdown("---")  # Add divider
         
@@ -2049,7 +2479,7 @@ def main():
                     min_value=10,
                     max_value=500,
                     value=default_n_slices,
-                    help="How many historical periods to compare against (more = better statistics, slower analysis)"
+                    help="How many historical periods to compare against"
                 )
             
             with col2:
@@ -2378,6 +2808,12 @@ def main():
                 # Display core results
                 display_core_results(sym_name, ar_stats, sh_stats, cr_stats, so_stats, 
                                    ar_oos, sh_oos, cr_oos, so_oos, reliability, config)
+                
+                # Show calculation method used
+                if QUANTSTATS_AVAILABLE:
+                    st.info("📊 Financial metrics calculated using quantstats for enhanced accuracy")
+                else:
+                    st.info("📊 Financial metrics calculated using internal methods")
                 
                 st.markdown("---")  # Add divider before rolling analysis
                 
@@ -2776,6 +3212,7 @@ def show_comprehensive_help():
         - 🔄 **Rolling Window Analysis**: Time-specific performance analysis with rolling windows
         - 📈 **Interactive Visualizations**: Track performance trends with Plotly charts
         - 🎯 **Statistical Analysis**: Autocorrelation-adjusted analysis and confidence intervals
+        - 📈 **Enhanced Metrics**: Uses quantstats for professional-grade financial calculations (when available)
         
         ## Step-by-Step Guide
         
@@ -2992,6 +3429,8 @@ def show_comprehensive_help():
         2. **SHARPE RATIO**: Risk-adjusted return measure (return per unit of total volatility)
         3. **CUMULATIVE RETURN**: Total return over the entire period - **Used in core analysis and distributions**
         4. **SORTINO RATIO**: Downside risk-adjusted return (return per unit of downside volatility)
+        
+        **Note**: All financial metrics are calculated using quantstats when available, providing professional-grade calculations with industry-standard methodologies. When quantstats is not available, the app falls back to internal calculations.
         
         ## AUTOCORRELATION ADJUSTMENT
         
@@ -3461,6 +3900,18 @@ def show_comprehensive_help():
         
         ### Q: Can I use this for non-Composer strategies?
         **A:** The tool is designed for Composer symphonies, but the statistical methodology can be adapted for any return series with appropriate modifications to the data input module.
+        
+        ### Q: What is quantstats and why does the app use it?
+        **A:** quantstats is a professional Python library for quantitative analysis of financial portfolios. The Iota Calculator uses quantstats when available to provide:
+        
+        - **Industry-standard calculations**: Uses widely-accepted methodologies for financial metrics
+        - **Enhanced accuracy**: Professional-grade implementations of Sharpe, Sortino, and other ratios
+        - **Additional metrics**: Access to beta, alpha, information ratio, and other advanced metrics
+        - **Robust error handling**: Better handling of edge cases and data quality issues
+        
+        The app automatically detects if quantstats is installed and uses it for calculations. If not available, it falls back to internal calculations that provide the same core functionality.
+        
+        **Installation**: `pip install quantstats`
         """)
     
     # Add footer with version info
