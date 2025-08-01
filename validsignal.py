@@ -1636,3 +1636,4 @@ if 'data_messages' in st.session_state and st.session_state['data_messages']:
     st.subheader("📊 Data Quality Information")
     for message in st.session_state['data_messages']:
         st.info(message)
+
