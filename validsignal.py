@@ -90,8 +90,8 @@ def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02, u
     
     return excess_returns.mean() / downside_deviation
 
-def get_stock_data(ticker: str, start_date=None, end_date=None) -> pd.Series:
-    """Fetch stock data using yfinance with optional date range"""
+def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None) -> pd.Series:
+    """Fetch stock data using yfinance with optional date range and exclusions"""
     try:
         stock = yf.Ticker(ticker)
         
@@ -104,6 +104,15 @@ def get_stock_data(ticker: str, start_date=None, end_date=None) -> pd.Series:
         if data.empty:
             st.error(f"No data found for ticker: {ticker}")
             return None
+        
+        # Apply exclusions if provided
+        if exclusions:
+            for exclusion in exclusions:
+                exclusion_start = pd.Timestamp(exclusion['start'])
+                exclusion_end = pd.Timestamp(exclusion['end'])
+                # Remove data within exclusion period
+                data = data[~((data.index >= exclusion_start) & (data.index <= exclusion_end))]
+        
         return data['Close']
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
@@ -487,22 +496,22 @@ def validate_data_quality(data: pd.Series, ticker: str) -> Tuple[bool, List[str]
 # QuantStats report generation removed to avoid import issues
 # Basic QuantStats metrics are still available in the main analysis functions
 
-def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi_max: float, comparison: str, 
-                    start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY", use_quantstats: bool = True, preconditions: List[Dict] = None) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
-    """Run comprehensive RSI analysis across the specified range with optional preconditions"""
+def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: float, comparison: str, 
+                    start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY", use_quantstats: bool = True, preconditions: List[Dict] = None, exclusions: List[Dict] = None) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
+    """Run comprehensive RSI analysis across the specified range with optional preconditions and exclusions"""
     
     # Fetch data with quality validation
     all_messages = []
     
     with st.spinner(f"Fetching data for {signal_ticker}..."):
-        signal_data = get_stock_data(signal_ticker, start_date, end_date)
+        signal_data = get_stock_data(signal_ticker, start_date, end_date, exclusions)
         is_valid, messages = validate_data_quality(signal_data, signal_ticker)
         all_messages.extend(messages)
         if not is_valid:
             return None, None
     
     with st.spinner(f"Fetching data for {target_ticker}..."):
-        target_data = get_stock_data(target_ticker, start_date, end_date)
+        target_data = get_stock_data(target_ticker, start_date, end_date, exclusions)
         is_valid, messages = validate_data_quality(target_data, target_ticker)
         all_messages.extend(messages)
         if not is_valid:
@@ -510,7 +519,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
     
     # Fetch benchmark data for comparison - use user-selected benchmark
     with st.spinner(f"Fetching benchmark data ({benchmark_ticker})..."):
-        benchmark_data = get_stock_data(benchmark_ticker, start_date, end_date)
+        benchmark_data = get_stock_data(benchmark_ticker, start_date, end_date, exclusions)
         is_valid, messages = validate_data_quality(benchmark_data, benchmark_ticker)
         all_messages.extend(messages)
         if not is_valid:
@@ -523,7 +532,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
         for ticker in unique_precondition_tickers:
             if ticker != signal_ticker:  # Don't fetch again if it's the same as main signal
                 with st.spinner(f"Fetching precondition data for {ticker}..."):
-                    ticker_data = get_stock_data(ticker, start_date, end_date)
+                    ticker_data = get_stock_data(ticker, start_date, end_date, exclusions)
                     is_valid, messages = validate_data_quality(ticker_data, ticker)
                     all_messages.extend(messages)
                     if not is_valid:
@@ -548,7 +557,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
     # Calculate benchmark returns for statistical testing
     benchmark_returns = benchmark_data.pct_change().dropna()
     
-    # Generate RSI thresholds (every 0.5)
+    # Generate RSI thresholds based on the specified range
     rsi_thresholds = np.arange(rsi_min, rsi_max + 0.5, 0.5)
     
     results = []
@@ -879,22 +888,46 @@ benchmark_ticker = st.sidebar.selectbox("Benchmark",
                                        help="Choose your benchmark for comparison: SPY represents the S&P 500 index, BIL represents cash (money market), TQQQ represents 3x leveraged Nasdaq-100. This is what your signal will be compared against.")
 
 # Allow custom benchmark input
-custom_benchmark = st.sidebar.text_input("Custom Benchmark Ticker (optional)", 
-                                        placeholder="e.g., QQQ, VTI, etc.",
-                                        help="Enter a custom ticker symbol to use as benchmark. Leave empty to use the selected benchmark above.")
+use_custom_benchmark = st.sidebar.checkbox("Use custom benchmark ticker", help="Check this to specify a custom ticker symbol instead of using the selected benchmark above.")
 
+if use_custom_benchmark:
+    custom_benchmark = st.sidebar.text_input("Custom Benchmark Ticker", 
+                                            placeholder="e.g., QQQ, VTI, etc.",
+                                            help="Enter a custom ticker symbol to use as benchmark.")
+else:
+    custom_benchmark = ""
+
+# Set default RSI threshold based on condition
 if comparison == "less_than":
-    default_min, default_max = 5, 37
+    default_threshold = 40.0
     st.sidebar.write("Buy signals: Signal RSI ≤ threshold")
 else:
-    default_min, default_max = 70, 100
+    default_threshold = 60.0
     st.sidebar.write("Buy signals: Signal RSI ≥ threshold")
 
-rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5, help="The lowest RSI threshold to test. For 'RSI ≤ threshold', try 20-40. For 'RSI ≥ threshold', try 60-80.")
-rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5, help="The highest RSI threshold to test. The app will test every 0.5 between min and max.")
+rsi_threshold = st.sidebar.number_input("RSI Threshold", min_value=0.0, max_value=100.0, value=float(default_threshold), step=0.5, help="The RSI threshold to test. For 'RSI ≤ threshold', try 20-40. For 'RSI ≥ threshold', try 60-80.")
 
-if rsi_min >= rsi_max:
-    st.sidebar.error("RSI Min must be less than RSI Max")
+# RSI Range options
+st.sidebar.subheader("📊 RSI Range Options")
+use_custom_range = st.sidebar.checkbox("Use custom RSI range", help="Check this to specify a custom range of RSI values to test instead of the default range.")
+
+# Set default ranges based on condition
+if comparison == "less_than":
+    default_min, default_max = 0.0, 50.0  # Test from 0 to 50 for less than conditions
+else:
+    default_min, default_max = 50.0, 100.0  # Test from 50 to 100 for greater than conditions
+
+if use_custom_range:
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        rsi_min = st.sidebar.number_input("RSI Range Min", min_value=0.0, max_value=100.0, value=float(default_min), step=0.5, help="The lowest RSI threshold to test.")
+    with col2:
+        rsi_max = st.sidebar.number_input("RSI Range Max", min_value=0.0, max_value=100.0, value=float(default_max), step=0.5, help="The highest RSI threshold to test.")
+    
+    if rsi_min >= rsi_max:
+        st.sidebar.error("RSI Min must be less than RSI Max")
+else:
+    rsi_min, rsi_max = default_min, default_max
 
 # Date range selection
 st.sidebar.subheader("📅 Date Range")
@@ -914,6 +947,66 @@ else:
     start_date, end_date = None, None
     st.sidebar.info("Using maximum available data")
 
+# Exclude date windows
+st.sidebar.subheader("🚫 Exclude Date Windows")
+use_exclusions = st.sidebar.checkbox("Exclude specific date windows", help="Check this to exclude specific periods like the COVID crash from your analysis.")
+
+if use_exclusions:
+    # Initialize exclusions in session state if not exists
+    if 'date_exclusions' not in st.session_state:
+        st.session_state.date_exclusions = []
+    
+    # Display existing exclusions
+    if st.session_state.date_exclusions:
+        st.sidebar.write("**Current Exclusions:**")
+        for i, exclusion in enumerate(st.session_state.date_exclusions):
+            with st.sidebar.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"• {exclusion['start']} to {exclusion['end']}")
+                with col2:
+                    if st.button(f"🗑️", key=f"remove_exclusion_{i}"):
+                        st.session_state.date_exclusions.pop(i)
+                        st.rerun()
+    
+    # Add new exclusion
+    with st.sidebar.expander("➕ Add Exclusion Window", expanded=False):
+        st.write("**Add a new date exclusion:**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            exclusion_start = st.date_input("Exclusion Start Date", 
+                                          value=datetime(2020, 2, 20), 
+                                          key="exclusion_start",
+                                          help="Start date of the period to exclude.")
+        with col2:
+            exclusion_end = st.date_input("Exclusion End Date", 
+                                        value=datetime(2020, 4, 7), 
+                                        key="exclusion_end",
+                                        help="End date of the period to exclude.")
+        
+        # Add exclusion button
+        if st.button("➕ Add Exclusion", key="add_exclusion"):
+            if exclusion_start < exclusion_end:
+                new_exclusion = {
+                    'start': exclusion_start,
+                    'end': exclusion_end
+                }
+                st.session_state.date_exclusions.append(new_exclusion)
+                st.rerun()
+            else:
+                st.error("Start date must be before end date")
+    
+    # Clear all exclusions button
+    if st.session_state.date_exclusions:
+        if st.sidebar.button("🗑️ Clear All Exclusions", type="secondary"):
+            st.session_state.date_exclusions = []
+            st.rerun()
+else:
+    # Clear exclusions if feature is disabled
+    if 'date_exclusions' in st.session_state:
+        st.session_state.date_exclusions = []
+
 # Add the Run Analysis button to the sidebar
 st.sidebar.markdown("---")
 
@@ -921,16 +1014,17 @@ st.sidebar.markdown("---")
 final_benchmark_ticker = custom_benchmark.strip() if custom_benchmark.strip() else benchmark_ticker
 
 if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_width=True):
-    if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
+    if (not use_date_range or (start_date and end_date and start_date < end_date)) and (not use_custom_range or (rsi_min and rsi_max and rsi_min < rsi_max)):
         try:
-            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, rsi_method, final_benchmark_ticker, use_quantstats, st.session_state.get('preconditions', []))
+            exclusions = st.session_state.get('date_exclusions', []) if use_exclusions else None
+            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_threshold, comparison, start_date, end_date, rsi_period, rsi_method, final_benchmark_ticker, use_quantstats, st.session_state.get('preconditions', []), exclusions)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
                 # Store analysis results in session state
                 st.session_state['results_df'] = results_df
                 st.session_state['benchmark'] = benchmark
-                st.session_state['signal_data'] = get_stock_data(signal_ticker, start_date, end_date)
-                st.session_state['benchmark_data'] = get_stock_data(final_benchmark_ticker, start_date, end_date)
+                st.session_state['signal_data'] = get_stock_data(signal_ticker, start_date, end_date, exclusions)
+                st.session_state['benchmark_data'] = get_stock_data(final_benchmark_ticker, start_date, end_date, exclusions)
                 st.session_state['rsi_period'] = rsi_period
                 st.session_state['comparison'] = comparison
                 st.session_state['benchmark_ticker'] = final_benchmark_ticker
@@ -942,10 +1036,10 @@ if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_widt
         except Exception as e:
             st.sidebar.error(f"❌ Error during analysis: {str(e)}")
     else:
-        if rsi_min >= rsi_max:
-            st.sidebar.error("Please ensure RSI Min is less than RSI Max")
         if use_date_range and (not start_date or not end_date or start_date >= end_date):
             st.sidebar.error("Please ensure start date is before end date")
+        if use_custom_range and (not rsi_min or not rsi_max or rsi_min >= rsi_max):
+            st.sidebar.error("Please ensure RSI Min is less than RSI Max")
 
 # Main content
 col1, col2 = st.columns([2, 1])
@@ -977,13 +1071,21 @@ with col1:
     
     st.write(f"**Benchmark:** {benchmark_display} ({benchmark_description})")
     st.write(f"**RSI Period:** {rsi_period}-day RSI")
-    st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
-    st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
+    if use_custom_range:
+        st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {rsi_threshold} (testing {rsi_min} to {rsi_max})")
+    else:
+        st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} {rsi_threshold} (testing {rsi_min} to {rsi_max})")
     
     if use_date_range and start_date and end_date:
         st.write(f"**Date Range:** {start_date} to {end_date}")
     else:
         st.write(f"**Date Range:** Maximum available data")
+    
+    # Display exclusions
+    if use_exclusions and st.session_state.get('date_exclusions'):
+        st.write("**Excluded Periods:**")
+        for exclusion in st.session_state.date_exclusions:
+            st.write(f"  • {exclusion['start']} to {exclusion['end']}")
 
 with col2:
     st.subheader("📋 Signal Logic")
@@ -1346,7 +1448,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 yaxis_title="Confidence Level (%)",
                 hovermode='closest',
                 showlegend=True,
-                xaxis=dict(range=[rsi_min, rsi_max]),  # Set x-axis range to match RSI range
+                xaxis=dict(range=[0, 100]),  # Set x-axis range to show full RSI scale
                 yaxis=dict(range=[0, 100])  # Set y-axis range to show full confidence scale
             )
             
@@ -1554,7 +1656,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             xaxis_title="RSI Threshold",
             yaxis_title="Sortino Ratio",
             hovermode='closest',
-            xaxis=dict(range=[rsi_min, rsi_max]),
+            xaxis=dict(range=[0, 100]),
             showlegend=True
         )
         
@@ -1608,7 +1710,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             xaxis_title="RSI Threshold",
             yaxis_title="Cumulative Return (%)",
             hovermode='closest',
-            xaxis=dict(range=[rsi_min, rsi_max]),
+            xaxis=dict(range=[0, 100]),
             yaxis=dict(tickformat='.1%'),
             showlegend=True
         )
@@ -1658,7 +1760,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             xaxis_title="RSI Threshold",
             yaxis_title="Max Drawdown (%)",
             hovermode='closest',
-            xaxis=dict(range=[rsi_min, rsi_max]),
+            xaxis=dict(range=[0, 100]),
             showlegend=True
         )
         
@@ -1680,7 +1782,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             # Create comparison chart with all significant signals
             fig_comparison = go.Figure()
             
-            # Add benchmark
+            # Add benchmark buy-and-hold
             fig_comparison.add_trace(go.Scatter(
                 x=benchmark.index,
                 y=benchmark.values,
@@ -1689,28 +1791,110 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 line=dict(color='red', width=2, dash='dash')
             ))
             
-            # Add significant signals
+            # Add significant signals with their corresponding benchmark curves
             colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
             for i, (idx, row) in enumerate(top_significant.iterrows()):
                 # Debug: Check if equity curve exists
                 if 'equity_curve' in row and row['equity_curve'] is not None:
                     color = colors[i % len(colors)]
+                    
+                    # Add strategy equity curve
                     fig_comparison.add_trace(go.Scatter(
                         x=row['equity_curve'].index,
                         y=row['equity_curve'].values,
                         mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} (Cumulative: {row['Total_Return']:.3%}, Annualized: {row['annualized_return']:.3%})",
+                        name=f"RSI {row['RSI_Threshold']} Strategy (Cumulative: {row['Total_Return']:.3%}, Annualized: {row['annualized_return']:.3%})",
                         line=dict(color=color, width=2)
                     ))
+                    
+                    # Add corresponding benchmark equity curve under same conditions
+                    # We need to calculate the benchmark equity curve for this specific RSI threshold
+                    signal_data = st.session_state.get('signal_data')
+                    benchmark_data = st.session_state.get('benchmark_data')
+                    rsi_period = st.session_state.get('rsi_period', 14)
+                    comparison = st.session_state.get('comparison', 'less_than')
+                    
+                    if signal_data is not None and benchmark_data is not None:
+                        # Calculate RSI for the signal
+                        signal_rsi = calculate_rsi(signal_data, window=rsi_period, method="wilders")
+                        
+                        # Generate buy signals for benchmark (same as strategy)
+                        if comparison == "less_than":
+                            benchmark_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
+                        else:  # greater_than
+                            benchmark_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
+                        
+                        # Calculate benchmark equity curve using benchmark prices (same logic as strategy)
+                        benchmark_equity_curve = pd.Series(1.0, index=benchmark_data.index)
+                        current_equity = 1.0
+                        in_position = False
+                        entry_equity = 1.0
+                        entry_price = None
+                        
+                        for date in benchmark_data.index:
+                            current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
+                            current_price = benchmark_data[date]
+                            
+                            if current_signal == 1 and not in_position:
+                                # Enter position
+                                in_position = True
+                                entry_equity = current_equity
+                                entry_price = current_price
+                                
+                            elif current_signal == 0 and in_position:
+                                # Exit position
+                                trade_return = (current_price - entry_price) / entry_price
+                                current_equity = entry_equity * (1 + trade_return)
+                                in_position = False
+                            
+                            # Update equity curve
+                            if in_position:
+                                current_equity = entry_equity * (current_price / entry_price)
+                            
+                            benchmark_equity_curve[date] = current_equity
+                        
+                        # Handle case where we're still in position at the end
+                        if in_position:
+                            final_price = benchmark_data.iloc[-1]
+                            trade_return = (final_price - entry_price) / entry_price
+                            current_equity = entry_equity * (1 + trade_return)
+                            benchmark_equity_curve.iloc[-1] = current_equity
+                        
+                        # Add benchmark equity curve under same conditions
+                        fig_comparison.add_trace(go.Scatter(
+                            x=benchmark_equity_curve.index,
+                            y=benchmark_equity_curve.values,
+                            mode='lines',
+                            name=f"RSI {row['RSI_Threshold']} Benchmark (same conditions)",
+                            line=dict(color=color, width=1, dash='dot'),
+                            visible='legendonly'  # Hidden by default
+                        ))
                 else:
                     st.warning(f"No equity curve found for RSI {row['RSI_Threshold']}")
+            
+            # Find the shortest time period among visible curves for default scaling
+            shortest_period = None
+            shortest_duration = float('inf')
+            
+            # Check strategy curves (these are always visible)
+            for i, (idx, row) in enumerate(top_significant.iterrows()):
+                if 'equity_curve' in row and row['equity_curve'] is not None:
+                    curve_duration = (row['equity_curve'].index[-1] - row['equity_curve'].index[0]).days
+                    if curve_duration < shortest_duration:
+                        shortest_duration = curve_duration
+                        shortest_period = row['equity_curve']
+            
+            # If no strategy curves found, use benchmark
+            if shortest_period is None:
+                shortest_period = benchmark
             
             fig_comparison.update_layout(
                 title=f"Highest Cumulative Return Significant Signals Comparison vs {benchmark_name}",
                 xaxis_title="Date",
                 yaxis_title="Equity Value",
                 hovermode='x unified',
-                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                xaxis=dict(range=[shortest_period.index[0], shortest_period.index[-1]])  # Scale to shortest period
             )
             st.plotly_chart(fig_comparison, use_container_width=True, key="most_profitable_comparison")
             
@@ -1726,7 +1910,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             # Create comparison chart with highest Sortino signals
             fig_sortino_comparison = go.Figure()
             
-            # Add benchmark
+            # Add benchmark buy-and-hold
             fig_sortino_comparison.add_trace(go.Scatter(
                 x=benchmark.index,
                 y=benchmark.values,
@@ -1735,28 +1919,110 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
                 line=dict(color='red', width=2, dash='dash')
             ))
             
-            # Add significant signals with highest Sortino ratios
+            # Add significant signals with highest Sortino ratios and their corresponding benchmark curves
             colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
             for i, (idx, row) in enumerate(top_sortino_significant.iterrows()):
                 # Debug: Check if equity curve exists
                 if 'equity_curve' in row and row['equity_curve'] is not None:
                     color = colors[i % len(colors)]
+                    
+                    # Add strategy equity curve
                     fig_sortino_comparison.add_trace(go.Scatter(
                         x=row['equity_curve'].index,
                         y=row['equity_curve'].values,
                         mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} (Cumulative: {row['Total_Return']:.3%}, Annualized: {row['annualized_return']:.3%}, Sortino: {row['Sortino_Ratio']:.2f})",
+                        name=f"RSI {row['RSI_Threshold']} Strategy (Cumulative: {row['Total_Return']:.3%}, Annualized: {row['annualized_return']:.3%}, Sortino: {row['Sortino_Ratio']:.2f})",
                         line=dict(color=color, width=2)
                     ))
+                    
+                    # Add corresponding benchmark equity curve under same conditions
+                    # We need to calculate the benchmark equity curve for this specific RSI threshold
+                    signal_data = st.session_state.get('signal_data')
+                    benchmark_data = st.session_state.get('benchmark_data')
+                    rsi_period = st.session_state.get('rsi_period', 14)
+                    comparison = st.session_state.get('comparison', 'less_than')
+                    
+                    if signal_data is not None and benchmark_data is not None:
+                        # Calculate RSI for the signal
+                        signal_rsi = calculate_rsi(signal_data, window=rsi_period, method="wilders")
+                        
+                        # Generate buy signals for benchmark (same as strategy)
+                        if comparison == "less_than":
+                            benchmark_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
+                        else:  # greater_than
+                            benchmark_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
+                        
+                        # Calculate benchmark equity curve using benchmark prices (same logic as strategy)
+                        benchmark_equity_curve = pd.Series(1.0, index=benchmark_data.index)
+                        current_equity = 1.0
+                        in_position = False
+                        entry_equity = 1.0
+                        entry_price = None
+                        
+                        for date in benchmark_data.index:
+                            current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
+                            current_price = benchmark_data[date]
+                            
+                            if current_signal == 1 and not in_position:
+                                # Enter position
+                                in_position = True
+                                entry_equity = current_equity
+                                entry_price = current_price
+                                
+                            elif current_signal == 0 and in_position:
+                                # Exit position
+                                trade_return = (current_price - entry_price) / entry_price
+                                current_equity = entry_equity * (1 + trade_return)
+                                in_position = False
+                            
+                            # Update equity curve
+                            if in_position:
+                                current_equity = entry_equity * (current_price / entry_price)
+                            
+                            benchmark_equity_curve[date] = current_equity
+                        
+                        # Handle case where we're still in position at the end
+                        if in_position:
+                            final_price = benchmark_data.iloc[-1]
+                            trade_return = (final_price - entry_price) / entry_price
+                            current_equity = entry_equity * (1 + trade_return)
+                            benchmark_equity_curve.iloc[-1] = current_equity
+                        
+                        # Add benchmark equity curve under same conditions
+                        fig_sortino_comparison.add_trace(go.Scatter(
+                            x=benchmark_equity_curve.index,
+                            y=benchmark_equity_curve.values,
+                            mode='lines',
+                            name=f"RSI {row['RSI_Threshold']} Benchmark (same conditions)",
+                            line=dict(color=color, width=1, dash='dot'),
+                            visible='legendonly'  # Hidden by default
+                        ))
                 else:
                     st.warning(f"No equity curve found for RSI {row['RSI_Threshold']}")
+            
+            # Find the shortest time period among visible curves for default scaling
+            shortest_period = None
+            shortest_duration = float('inf')
+            
+            # Check strategy curves (these are always visible)
+            for i, (idx, row) in enumerate(top_sortino_significant.iterrows()):
+                if 'equity_curve' in row and row['equity_curve'] is not None:
+                    curve_duration = (row['equity_curve'].index[-1] - row['equity_curve'].index[0]).days
+                    if curve_duration < shortest_duration:
+                        shortest_duration = curve_duration
+                        shortest_period = row['equity_curve']
+            
+            # If no strategy curves found, use benchmark
+            if shortest_period is None:
+                shortest_period = benchmark
             
             fig_sortino_comparison.update_layout(
                 title=f"Highest Sortino Significant Signals Comparison vs {benchmark_name}",
                 xaxis_title="Date",
                 yaxis_title="Equity Value",
                 hovermode='x unified',
-                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                xaxis=dict(range=[shortest_period.index[0], shortest_period.index[-1]])  # Scale to shortest period
             )
             st.plotly_chart(fig_sortino_comparison, use_container_width=True, key="highest_sortino_comparison")
             
@@ -1825,3 +2091,12 @@ if 'data_messages' in st.session_state and st.session_state['data_messages']:
     st.subheader("📊 Data Quality Information")
     for message in st.session_state['data_messages']:
         st.info(message)
+
+# Footer
+st.write("---")
+st.markdown("""
+<div style='text-align: center; padding: 20px; color: #666;'>
+    <strong>RSI Threshold Validation Tool</strong><br>
+    Questions? Reach out to @Gobi on Discord
+</div>
+""", unsafe_allow_html=True)
