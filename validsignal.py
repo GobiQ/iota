@@ -704,10 +704,20 @@ else:
 target_ticker = st.sidebar.text_input("Target Ticker", value=default_target, help="The ticker to buy/sell based on the signal ticker's RSI. This is what you'll actually be trading.")
 
 # Benchmark selection
+benchmark_options = ["SPY", "BIL", "TQQQ"]
 benchmark_ticker = st.sidebar.selectbox("Benchmark", 
-                                       ["SPY", "BIL"], 
-                                       format_func=lambda x: "SPY (S&P 500)" if x == "SPY" else "BIL (Cash Equivalent)",
-                                       help="Choose your benchmark for comparison: SPY represents the S&P 500 index, BIL represents cash (money market). This is what your signal will be compared against.")
+                                       benchmark_options, 
+                                       format_func=lambda x: {
+                                           "SPY": "SPY (S&P 500)",
+                                           "BIL": "BIL (Cash Equivalent)", 
+                                           "TQQQ": "TQQQ (3x Nasdaq-100)"
+                                       }.get(x, x),
+                                       help="Choose your benchmark for comparison: SPY represents the S&P 500 index, BIL represents cash (money market), TQQQ represents 3x leveraged Nasdaq-100. This is what your signal will be compared against.")
+
+# Allow custom benchmark input
+custom_benchmark = st.sidebar.text_input("Custom Benchmark Ticker (optional)", 
+                                        placeholder="e.g., QQQ, VTI, etc.",
+                                        help="Enter a custom ticker symbol to use as benchmark. Leave empty to use the selected benchmark above.")
 
 # Date range selection
 st.sidebar.subheader("📅 Date Range")
@@ -742,20 +752,24 @@ if rsi_min >= rsi_max:
 
 # Add the Run Analysis button to the sidebar
 st.sidebar.markdown("---")
+
+# Determine which benchmark to use
+final_benchmark_ticker = custom_benchmark.strip() if custom_benchmark.strip() else benchmark_ticker
+
 if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_width=True):
     if rsi_min < rsi_max and (not use_date_range or (start_date and end_date and start_date < end_date)):
         try:
-            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, rsi_method, benchmark_ticker, use_quantstats)
+            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_min, rsi_max, comparison, start_date, end_date, rsi_period, rsi_method, final_benchmark_ticker, use_quantstats)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
                 # Store analysis results in session state
                 st.session_state['results_df'] = results_df
                 st.session_state['benchmark'] = benchmark
                 st.session_state['signal_data'] = get_stock_data(signal_ticker, start_date, end_date)
-                st.session_state['benchmark_data'] = get_stock_data(benchmark_ticker, start_date, end_date)
+                st.session_state['benchmark_data'] = get_stock_data(final_benchmark_ticker, start_date, end_date)
                 st.session_state['rsi_period'] = rsi_period
                 st.session_state['comparison'] = comparison
-                st.session_state['benchmark_ticker'] = benchmark_ticker
+                st.session_state['benchmark_ticker'] = final_benchmark_ticker
                 st.session_state['analysis_completed'] = True
                 st.session_state['data_messages'] = data_messages
                 
@@ -776,7 +790,20 @@ with col1:
     st.subheader("🎯 Analysis Configuration")
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
     st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
-    st.write(f"**Benchmark:** {benchmark_ticker} ({'S&P 500' if benchmark_ticker == 'SPY' else 'Cash Equivalent'})")
+    
+    # Display benchmark information
+    if custom_benchmark.strip():
+        benchmark_display = custom_benchmark.strip()
+        benchmark_description = "Custom Benchmark"
+    else:
+        benchmark_display = benchmark_ticker
+        benchmark_description = {
+            "SPY": "S&P 500",
+            "BIL": "Cash Equivalent", 
+            "TQQQ": "3x Nasdaq-100"
+        }.get(benchmark_ticker, benchmark_ticker)
+    
+    st.write(f"**Benchmark:** {benchmark_display} ({benchmark_description})")
     st.write(f"**RSI Period:** {rsi_period}-day RSI")
     st.write(f"**RSI Method:** Wilder's Smoothing")
     st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
@@ -1032,7 +1059,12 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     with st.expander("📊 Statistical Significance Analysis", expanded=True):
         st.subheader("📊 Statistical Significance Analysis")
         stored_benchmark_ticker = st.session_state.get('benchmark_ticker', 'SPY')
-        benchmark_name = f"{stored_benchmark_ticker} ({'S&P 500' if stored_benchmark_ticker == 'SPY' else 'Cash Equivalent'})"
+        benchmark_description = {
+            "SPY": "S&P 500",
+            "BIL": "Cash Equivalent", 
+            "TQQQ": "3x Nasdaq-100"
+        }.get(stored_benchmark_ticker, "Custom Benchmark")
+        benchmark_name = f"{stored_benchmark_ticker} ({benchmark_description})"
         
         # Use all signals for the chart (including those with 0 trades)
         valid_signals = filtered_df.copy()
