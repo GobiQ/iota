@@ -794,7 +794,7 @@ st.sidebar.header("⚙️ Configuration")
 use_quantstats = st.sidebar.checkbox("Enable QuantStats Integration", value=True, help="Enable use of QuantStats library. When disabled, the app will use fallback calculations.")
 
 # Preconditions System
-st.sidebar.subheader("Preconditions", help="Preconditions add additional RSI conditions that must ALL be true before the main signal is considered. This allows for more complex multi-condition strategies.")
+st.sidebar.subheader("Preconditions", help="Preconditions add additional RSI conditions that must ALL be true before the main signal is considered. This allows for multi-condition signal validation.")
 
 # Initialize preconditions in session state if not exists
 if 'preconditions' not in st.session_state:
