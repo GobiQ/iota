@@ -952,6 +952,14 @@ col1, col2 = st.columns([2, 1])
 
 with col1:
     st.subheader("⚙️ Analysis Configuration")
+    
+    # Display preconditions first
+    if st.session_state.get('preconditions'):
+        st.write("**Preconditions:**")
+        for i, precondition in enumerate(st.session_state.preconditions):
+            comparison_symbol = "≤" if precondition['comparison'] == "less_than" else "≥"
+            st.write(f"  • {precondition['signal_ticker']} RSI {comparison_symbol} {precondition['threshold']}")
+    
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
     st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
     
@@ -969,16 +977,8 @@ with col1:
     
     st.write(f"**Benchmark:** {benchmark_display} ({benchmark_description})")
     st.write(f"**RSI Period:** {rsi_period}-day RSI")
-    st.write(f"**RSI Method:** Wilder's Smoothing")
     st.write(f"**RSI Condition:** {signal_ticker} RSI {'≤' if comparison == 'less_than' else '≥'} threshold")
     st.write(f"**RSI Range:** {rsi_min} - {rsi_max}")
-    
-    # Display preconditions
-    if st.session_state.get('preconditions'):
-        st.write("**Preconditions:**")
-        for i, precondition in enumerate(st.session_state.preconditions):
-            comparison_symbol = "≤" if precondition['comparison'] == "less_than" else "≥"
-            st.write(f"  • {precondition['signal_ticker']} RSI {comparison_symbol} {precondition['threshold']}")
     
     if use_date_range and start_date and end_date:
         st.write(f"**Date Range:** {start_date} to {end_date}")
