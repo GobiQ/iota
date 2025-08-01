@@ -885,7 +885,7 @@ benchmark_ticker = st.sidebar.selectbox("Benchmark",
                                            "BIL": "BIL (Cash Equivalent)", 
                                            "TQQQ": "TQQQ (3x Nasdaq-100)"
                                        }.get(x, x),
-                                       help="Choose your benchmark for comparison: SPY represents the S&P 500 index, BIL represents cash (money market), TQQQ represents 3x leveraged Nasdaq-100. This is what your signal will be compared against.")
+                                       help="Choose your benchmark for comparison. This is what your signal will be compared against under the RSI conditions you specify.")
 
 # Allow custom benchmark input
 use_custom_benchmark = st.sidebar.checkbox("Use custom benchmark ticker", help="Check this to specify a custom ticker symbol instead of using the selected benchmark above.")
