@@ -779,7 +779,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_min: float, rsi
 
 
 # Streamlit Interface
-st.sidebar.header("📊 Configuration")
+st.sidebar.header("⚙️ Configuration")
 
 # QuantStats Configuration
 use_quantstats = st.sidebar.checkbox("Enable QuantStats Integration", value=True, help="Enable use of QuantStats library. When disabled, the app will use fallback calculations.")
@@ -951,7 +951,7 @@ if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_widt
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.subheader("🎯 Analysis Configuration")
+    st.subheader("⚙️ Analysis Configuration")
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
     st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
     
