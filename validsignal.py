@@ -1664,7 +1664,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         
         # RSI vs Cumulative Return Chart
         st.subheader("📊 RSI Threshold vs Cumulative Return")
-        st.info("💡 **What this shows:** This chart displays how the total cumulative return varies across different RSI thresholds. Higher cumulative returns indicate better overall performance. Look for peaks in the chart to identify optimal RSI thresholds.")
+        st.info("💡 **What this shows:** This chart displays how the total cumulative return varies across different RSI thresholds. Higher cumulative returns may indicate better overall performance. Look for peaks in the chart to identify optimal RSI thresholds.")
         
         # Use original numerical data for consistency
         original_filtered_data = st.session_state['results_df'][st.session_state['results_df']['RSI_Threshold'].isin(filtered_df['RSI_Threshold'])]
