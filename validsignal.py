@@ -1611,6 +1611,129 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             mime="text/csv"
         )
         
+        # Calculate delta for all signals
+        original_filtered_data = st.session_state['results_df'][st.session_state['results_df']['RSI_Threshold'].isin(filtered_df['RSI_Threshold'])]
+        
+        # Calculate delta (target return - benchmark return)
+        original_filtered_data['Return_Delta'] = original_filtered_data['Avg_Return'] - original_filtered_data['Benchmark_Avg_Return']
+        
+        # Return Delta (Average) vs RSI Threshold Chart
+        st.subheader("📊 Return Delta (Average) vs RSI Threshold")
+        st.info("💡 **What this shows:** This chart compares the **average** returns of holding the target ticker versus the benchmark ticker under the same RSI conditions. It displays the **difference** between target ticker **average** return and benchmark **average** return across different RSI thresholds. Positive values mean the target outperforms the benchmark, negative values mean the benchmark outperforms the target.")
+        
+        fig_delta_rsi = go.Figure()
+        
+        # Add points for significant signals (green)
+        significant_data = original_filtered_data[original_filtered_data['significant'] == True]
+        if not significant_data.empty:
+            fig_delta_rsi.add_trace(go.Scatter(
+                x=significant_data['RSI_Threshold'],
+                y=significant_data['Return_Delta'],
+                mode='markers',
+                name='Significant Signals',
+                marker=dict(color='green', size=8),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Return Delta (Avg): %{y:.3%}<br>' +
+                            'Target Avg: %{customdata[0]:.3%}<br>' +
+                            'Benchmark Avg: %{customdata[1]:.3%}<br>' +
+                            'Significant: ✓<extra></extra>',
+                customdata=significant_data[['Avg_Return', 'Benchmark_Avg_Return']].values
+            ))
+        
+        # Add points for non-significant signals (red)
+        non_significant_data = original_filtered_data[original_filtered_data['significant'] == False]
+        if not non_significant_data.empty:
+            fig_delta_rsi.add_trace(go.Scatter(
+                x=non_significant_data['RSI_Threshold'],
+                y=non_significant_data['Return_Delta'],
+                mode='markers',
+                name='Non-Significant Signals',
+                marker=dict(color='red', size=8),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Return Delta (Avg): %{y:.3%}<br>' +
+                            'Target Avg: %{customdata[0]:.3%}<br>' +
+                            'Benchmark Avg: %{customdata[1]:.3%}<br>' +
+                            'Significant: ✗<extra></extra>',
+                customdata=non_significant_data[['Avg_Return', 'Benchmark_Avg_Return']].values
+            ))
+        
+        # Add reference line at y=0
+        fig_delta_rsi.add_hline(y=0, line_dash="dash", line_color="gray", 
+                               annotation_text="No Difference")
+        
+        fig_delta_rsi.update_layout(
+            title="Return Delta (Average: Target - Benchmark) vs RSI Threshold",
+            xaxis_title="RSI Threshold",
+            yaxis_title="Return Delta (Average) (%)",
+            hovermode='closest',
+            xaxis=dict(range=[0, 100]),
+            yaxis=dict(tickformat='.1%'),
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_delta_rsi, use_container_width=True, key="delta_rsi_chart")
+        
+        # Return Delta (Median) vs RSI Threshold Chart
+        st.subheader("📊 Return Delta (Median) vs RSI Threshold")
+        st.info("💡 **What this shows:** This chart compares the **median** returns of holding the target ticker versus the benchmark ticker under the same RSI conditions. It displays the **difference** between target ticker **median** return and benchmark **median** return across different RSI thresholds. Median returns are less affected by extreme outliers than averages, providing a more robust measure of typical performance.")
+        
+        # Calculate median delta
+        original_filtered_data['Median_Return_Delta'] = original_filtered_data['Median_Return'] - original_filtered_data['Benchmark_Median_Return']
+        
+        fig_median_delta_rsi = go.Figure()
+        
+        # Add points for significant signals (green)
+        significant_data = original_filtered_data[original_filtered_data['significant'] == True]
+        if not significant_data.empty:
+            fig_median_delta_rsi.add_trace(go.Scatter(
+                x=significant_data['RSI_Threshold'],
+                y=significant_data['Median_Return_Delta'],
+                mode='markers',
+                name='Significant Signals',
+                marker=dict(color='green', size=8),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Return Delta (Median): %{y:.3%}<br>' +
+                            'Target Median: %{customdata[0]:.3%}<br>' +
+                            'Benchmark Median: %{customdata[1]:.3%}<br>' +
+                            'Significant: ✓<extra></extra>',
+                customdata=significant_data[['Median_Return', 'Benchmark_Median_Return']].values
+            ))
+        
+        # Add points for non-significant signals (red)
+        non_significant_data = original_filtered_data[original_filtered_data['significant'] == False]
+        if not non_significant_data.empty:
+            fig_median_delta_rsi.add_trace(go.Scatter(
+                x=non_significant_data['RSI_Threshold'],
+                y=non_significant_data['Median_Return_Delta'],
+                mode='markers',
+                name='Non-Significant Signals',
+                marker=dict(color='red', size=8),
+                hovertemplate='<b>RSI %{x}</b><br>' +
+                            'Return Delta (Median): %{y:.3%}<br>' +
+                            'Target Median: %{customdata[0]:.3%}<br>' +
+                            'Benchmark Median: %{customdata[1]:.3%}<br>' +
+                            'Significant: ✗<extra></extra>',
+                customdata=non_significant_data[['Median_Return', 'Benchmark_Median_Return']].values
+            ))
+        
+        # Add reference line at y=0
+        fig_median_delta_rsi.add_hline(y=0, line_dash="dash", line_color="gray", 
+                                      annotation_text="No Difference")
+        
+        fig_median_delta_rsi.update_layout(
+            title="Return Delta (Median: Target - Benchmark) vs RSI Threshold",
+            xaxis_title="RSI Threshold",
+            yaxis_title="Return Delta (Median) (%)",
+            hovermode='closest',
+            xaxis=dict(range=[0, 100]),
+            yaxis=dict(tickformat='.1%'),
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_median_delta_rsi, use_container_width=True, key="median_delta_rsi_chart")
+        
+
+        
         # RSI vs Sortino Ratio Chart
         st.subheader("📊 RSI Threshold vs Sortino Ratio")
         st.info("💡 **What this shows:** This chart displays how the Sortino ratio (risk-adjusted return) varies across different RSI thresholds. Higher Sortino ratios indicate better risk-adjusted performance. Look for peaks in the chart to identify optimal RSI thresholds.")
@@ -1775,128 +1898,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             original_significant_signals = st.session_state['results_df'][st.session_state['results_df']['significant'] == True].copy()
             top_significant = original_significant_signals.nlargest(5, 'Total_Return')
             
-            # Multiple Signal Comparison for Significant Signals
-            st.subheader("📊 Highest Cumulative Return Significant Signals Comparison")
-            st.info(f"💡 **What this shows:** This chart compares the top 5 signals with the highest cumulative returns among statistically significant signals against {benchmark_name} buy-and-hold. Each line represents a different RSI threshold that showed significant outperformance. The signals are ranked by total return, showing the highest cumulative return signals first.")
-            
-            # Create comparison chart with all significant signals
-            fig_comparison = go.Figure()
-            
-            # Add benchmark buy-and-hold
-            fig_comparison.add_trace(go.Scatter(
-                x=benchmark.index,
-                y=benchmark.values,
-                mode='lines',
-                name=f"{benchmark_name} Buy & Hold",
-                line=dict(color='red', width=2, dash='dash')
-            ))
-            
-            # Add significant signals with their corresponding benchmark curves
-            colors = ['blue', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive']
-            for i, (idx, row) in enumerate(top_significant.iterrows()):
-                # Debug: Check if equity curve exists
-                if 'equity_curve' in row and row['equity_curve'] is not None:
-                    color = colors[i % len(colors)]
-                    
-                    # Add strategy equity curve
-                    fig_comparison.add_trace(go.Scatter(
-                        x=row['equity_curve'].index,
-                        y=row['equity_curve'].values,
-                        mode='lines',
-                        name=f"RSI {row['RSI_Threshold']} Strategy (Cumulative: {row['Total_Return']:.3%}, Annualized: {row['annualized_return']:.3%})",
-                        line=dict(color=color, width=2)
-                    ))
-                    
-                    # Add corresponding benchmark equity curve under same conditions
-                    # We need to calculate the benchmark equity curve for this specific RSI threshold
-                    signal_data = st.session_state.get('signal_data')
-                    benchmark_data = st.session_state.get('benchmark_data')
-                    rsi_period = st.session_state.get('rsi_period', 14)
-                    comparison = st.session_state.get('comparison', 'less_than')
-                    
-                    if signal_data is not None and benchmark_data is not None:
-                        # Calculate RSI for the signal
-                        signal_rsi = calculate_rsi(signal_data, window=rsi_period, method="wilders")
-                        
-                        # Generate buy signals for benchmark (same as strategy)
-                        if comparison == "less_than":
-                            benchmark_signals = (signal_rsi <= row['RSI_Threshold']).astype(int)
-                        else:  # greater_than
-                            benchmark_signals = (signal_rsi >= row['RSI_Threshold']).astype(int)
-                        
-                        # Calculate benchmark equity curve using benchmark prices (same logic as strategy)
-                        benchmark_equity_curve = pd.Series(1.0, index=benchmark_data.index)
-                        current_equity = 1.0
-                        in_position = False
-                        entry_equity = 1.0
-                        entry_price = None
-                        
-                        for date in benchmark_data.index:
-                            current_signal = benchmark_signals[date] if date in benchmark_signals.index else 0
-                            current_price = benchmark_data[date]
-                            
-                            if current_signal == 1 and not in_position:
-                                # Enter position
-                                in_position = True
-                                entry_equity = current_equity
-                                entry_price = current_price
-                                
-                            elif current_signal == 0 and in_position:
-                                # Exit position
-                                trade_return = (current_price - entry_price) / entry_price
-                                current_equity = entry_equity * (1 + trade_return)
-                                in_position = False
-                            
-                            # Update equity curve
-                            if in_position:
-                                current_equity = entry_equity * (current_price / entry_price)
-                            
-                            benchmark_equity_curve[date] = current_equity
-                        
-                        # Handle case where we're still in position at the end
-                        if in_position:
-                            final_price = benchmark_data.iloc[-1]
-                            trade_return = (final_price - entry_price) / entry_price
-                            current_equity = entry_equity * (1 + trade_return)
-                            benchmark_equity_curve.iloc[-1] = current_equity
-                        
-                        # Add benchmark equity curve under same conditions
-                        fig_comparison.add_trace(go.Scatter(
-                            x=benchmark_equity_curve.index,
-                            y=benchmark_equity_curve.values,
-                            mode='lines',
-                            name=f"RSI {row['RSI_Threshold']} Benchmark (same conditions)",
-                            line=dict(color=color, width=1, dash='dot'),
-                            visible='legendonly'  # Hidden by default
-                        ))
-                else:
-                    st.warning(f"No equity curve found for RSI {row['RSI_Threshold']}")
-            
-            # Find the shortest time period among visible curves for default scaling
-            shortest_period = None
-            shortest_duration = float('inf')
-            
-            # Check strategy curves (these are always visible)
-            for i, (idx, row) in enumerate(top_significant.iterrows()):
-                if 'equity_curve' in row and row['equity_curve'] is not None:
-                    curve_duration = (row['equity_curve'].index[-1] - row['equity_curve'].index[0]).days
-                    if curve_duration < shortest_duration:
-                        shortest_duration = curve_duration
-                        shortest_period = row['equity_curve']
-            
-            # If no strategy curves found, use benchmark
-            if shortest_period is None:
-                shortest_period = benchmark
-            
-            fig_comparison.update_layout(
-                title=f"Highest Cumulative Return Significant Signals Comparison vs {benchmark_name}",
-                xaxis_title="Date",
-                yaxis_title="Equity Value",
-                hovermode='x unified',
-                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                xaxis=dict(range=[shortest_period.index[0], shortest_period.index[-1]])  # Scale to shortest period
-            )
-            st.plotly_chart(fig_comparison, use_container_width=True, key="most_profitable_comparison")
+
             
             # Highest Sortino Significant Signals Comparison
             st.subheader("📊 Highest Sortino Significant Signals Comparison")
@@ -2028,6 +2030,8 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             
         else:
             st.warning("No signals reached statistical significance (p < 0.05)")
+        
+
         
         # Note: QuantStats detailed reports removed to avoid import issues
         # Basic QuantStats metrics are still available in the main results table
