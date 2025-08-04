@@ -100,21 +100,69 @@ class SignalDiscovery:
         
         return all_signals
     
-    def split_data_non_continuous(self, data, train_size=0.8, random_state=42):
-        """Split data into non-continuous train/test sets"""
-        dates = data.index.tolist()
+    def split_data_advanced(self, data, method='walk_forward', train_size=0.8, random_state=42):
+        """Advanced data splitting methods for time series"""
         
-        # Randomly split dates
-        train_dates, test_dates = train_test_split(
-            dates, train_size=train_size, random_state=random_state, shuffle=True
-        )
-        
-        train_data = data.loc[train_dates].sort_index()
-        test_data = data.loc[test_dates].sort_index()
+        if method == 'chronological':
+            # Traditional chronological split
+            split_idx = int(len(data) * train_size)
+            train_data = data.iloc[:split_idx]
+            test_data = data.iloc[split_idx:]
+            
+        elif method == 'walk_forward':
+            # Walk-forward analysis (expanding window)
+            split_idx = int(len(data) * train_size)
+            train_data = data.iloc[:split_idx]
+            test_data = data.iloc[split_idx:]
+            
+        elif method == 'rolling_window':
+            # Rolling window (fixed window size)
+            window_size = int(len(data) * train_size)
+            split_idx = int(len(data) * 0.5)  # Start from middle
+            train_data = data.iloc[split_idx-window_size:split_idx]
+            test_data = data.iloc[split_idx:]
+            
+        elif method == 'purged_cv':
+            # Purged cross-validation (gaps between train/test)
+            gap_size = int(len(data) * 0.1)  # 10% gap
+            split_idx = int(len(data) * train_size)
+            train_data = data.iloc[:split_idx-gap_size]
+            test_data = data.iloc[split_idx+gap_size:]
+            
+        elif method == 'blocked_cv':
+            # Block-based cross validation
+            block_size = len(data) // 10  # 10 blocks
+            np.random.seed(random_state)
+            blocks = np.arange(10)
+            train_blocks = np.random.choice(blocks, size=8, replace=False)
+            
+            train_indices = []
+            test_indices = []
+            
+            for i in range(10):
+                start_idx = i * block_size
+                end_idx = min((i + 1) * block_size, len(data))
+                block_indices = list(range(start_idx, end_idx))
+                
+                if i in train_blocks:
+                    train_indices.extend(block_indices)
+                else:
+                    test_indices.extend(block_indices)
+            
+            train_data = data.iloc[train_indices].sort_index()
+            test_data = data.iloc[test_indices].sort_index()
+            
+        else:  # 'random' - original method (not recommended)
+            dates = data.index.tolist()
+            train_dates, test_dates = train_test_split(
+                dates, train_size=train_size, random_state=random_state, shuffle=True
+            )
+            train_data = data.loc[train_dates].sort_index()
+            test_data = data.loc[test_dates].sort_index()
         
         return train_data, test_data
     
-    def backtest_strategy(self, signals, allocations, initial_capital=100000):
+    def backtest_strategy(self, signals, allocations, split_method='walk_forward', initial_capital=100000):
         """Backtest the trading strategy"""
         results = {}
         
@@ -129,7 +177,7 @@ class SignalDiscovery:
                 continue
             
             # Split into train/test
-            train_data, test_data = self.split_data_non_continuous(df)
+            train_data, test_data = self.split_data_advanced(df, method=split_method)
             
             # Backtest on test data
             capital = initial_capital * (allocation_pct / 100)
@@ -211,6 +259,22 @@ def main():
         start_date = st.date_input("Start Date", datetime.now() - timedelta(days=365*2))
     with col2:
         end_date = st.date_input("End Date", datetime.now())
+
+    # Data splitting method selection
+    st.sidebar.subheader("📊 Data Splitting Method")
+    split_method = st.sidebar.selectbox(
+        "Choose splitting method:",
+        options=['chronological', 'walk_forward', 'rolling_window', 'purged_cv', 'blocked_cv', 'random'],
+        index=1,  # Default to walk_forward
+        help="""
+        - Chronological: Traditional train→test split
+        - Walk Forward: Expanding window (recommended)
+        - Rolling Window: Fixed window size
+        - Purged CV: Gap between train/test
+        - Blocked CV: Random blocks (better than random)
+        - Random: Not recommended for time series
+        """
+    )
     
     # Ticker input
     st.sidebar.subheader("📊 Tickers")
@@ -297,7 +361,7 @@ def main():
             
             # Run backtest
             backtest_results = st.session_state.signal_discovery.backtest_strategy(
-                signals, allocations
+                signals, allocations, split_method
             )
             
             # Display results
