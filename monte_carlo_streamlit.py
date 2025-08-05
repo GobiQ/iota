@@ -430,9 +430,9 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                start_date = st.date_input("Start Date", value=datetime(2020, 1, 1))
+                start_date = st.date_input("Start Date", value=date(2020, 1, 1))
             with col2:
-                end_date = st.date_input("End Date", value=datetime.now())
+                end_date = st.date_input("End Date", value=date.today())
             
             if st.button("Fetch Data"):
                 with st.spinner("Fetching data from Composer..."):
@@ -1230,7 +1230,6 @@ def main():
             ax.plot([], [], color='gray', alpha=0.5, linewidth=1, label=f'{num_samples} Sample Paths')
             
             # Calculate approximate end date
-            from datetime import datetime, timedelta
             last_date = datetime.strptime(dates[-1], '%Y-%m-%d')
             forecast_calendar_days = int(forecast_days * 1.4)
             forecast_end_date = (last_date + timedelta(days=forecast_calendar_days)).strftime('%Y-%m-%d')
