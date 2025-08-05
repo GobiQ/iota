@@ -522,6 +522,73 @@ def main():
             ax.set_ylabel("Cumulative Return (%)")
             ax.grid(True, alpha=0.3)
             st.pyplot(fig)
+            
+            # Additional data visualizations
+            st.subheader("Data Analysis")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Daily returns distribution
+                fig_hist, ax_hist = plt.subplots(figsize=(10, 6))
+                ax_hist.hist(data['returns'], bins=50, alpha=0.7, color='skyblue', edgecolor='black')
+                ax_hist.axvline(x=np.mean(data['returns']), color='red', linestyle='--', 
+                               label=f'Mean: {np.mean(data['returns']):.4f}%')
+                ax_hist.set_title("Daily Returns Distribution")
+                ax_hist.set_xlabel("Daily Return (%)")
+                ax_hist.set_ylabel("Frequency")
+                ax_hist.legend()
+                ax_hist.grid(True, alpha=0.3)
+                st.pyplot(fig_hist)
+            
+            with col2:
+                # Rolling volatility
+                fig_vol, ax_vol = plt.subplots(figsize=(10, 6))
+                window = min(30, len(data['returns']) // 4)
+                rolling_vol = pd.Series(data['returns']).rolling(window=window).std() * np.sqrt(252)
+                ax_vol.plot(rolling_vol * 100, color='orange')
+                ax_vol.set_title(f"Rolling Volatility ({window}-day window)")
+                ax_vol.set_xlabel("Trading Days")
+                ax_vol.set_ylabel("Annualized Volatility (%)")
+                ax_vol.grid(True, alpha=0.3)
+                st.pyplot(fig_vol)
+            
+            # Key statistics
+            st.subheader("Portfolio Statistics")
+            returns_array = np.array(data['returns'])
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Return", f"{cumulative_returns[-1] * 100:.2f}%")
+            with col2:
+                st.metric("Annualized Return", f"{np.mean(returns_array) * 252:.2f}%")
+            with col3:
+                st.metric("Annualized Volatility", f"{np.std(returns_array) * np.sqrt(252):.2f}%")
+            with col4:
+                sharpe = (np.mean(returns_array) * 252) / (np.std(returns_array) * np.sqrt(252)) if np.std(returns_array) > 0 else 0
+                st.metric("Sharpe Ratio", f"{sharpe:.2f}")
+            
+            # Drawdown analysis
+            st.subheader("Drawdown Analysis")
+            peak = 0
+            drawdown = []
+            for ret in cumulative_returns * 100:
+                if ret > peak:
+                    peak = ret
+                dd = (peak - ret) / (1 + peak / 100) if peak > 0 else 0
+                drawdown.append(dd)
+            
+            fig_dd, ax_dd = plt.subplots(figsize=(12, 6))
+            ax_dd.fill_between(range(len(drawdown)), drawdown, alpha=0.3, color='red')
+            ax_dd.plot(drawdown, color='red', linewidth=1)
+            ax_dd.set_title("Portfolio Drawdown")
+            ax_dd.set_xlabel("Trading Days")
+            ax_dd.set_ylabel("Drawdown (%)")
+            ax_dd.grid(True, alpha=0.3)
+            st.pyplot(fig_dd)
+            
+            max_dd = max(drawdown)
+            st.metric("Maximum Drawdown", f"{max_dd:.2f}%")
 
     elif page == "Walk-Forward Analysis":
         st.header("Walk-Forward Analysis")
@@ -792,6 +859,53 @@ def main():
                         })
                     
                     st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+                    
+                    # Create aggregate visualizations
+                    st.subheader("Rolling Test Analysis")
+                    
+                    # Plot forecast accuracy over time
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    iterations = [r['iteration'] for r in results]
+                    actual_returns = [r['actual_return'] for r in results]
+                    forecast_returns = [r['forecast_return'] for r in results]
+                    errors = [r['actual_return'] - r['forecast_return'] for r in results]
+                    
+                    ax.plot(iterations, actual_returns, 'o-', label='Actual Returns', color='blue')
+                    ax.plot(iterations, forecast_returns, 's-', label='Forecast Returns', color='red')
+                    ax.fill_between(iterations, [a-e for a, e in zip(actual_returns, errors)], 
+                                  [a+e for a, e in zip(actual_returns, errors)], 
+                                  alpha=0.2, color='gray', label='Error Range')
+                    
+                    ax.set_title("Rolling Walk-Forward Test Results")
+                    ax.set_xlabel("Test Iteration")
+                    ax.set_ylabel("Return (%)")
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
+                    
+                    # Plot percentile ranks over time
+                    fig2, ax2 = plt.subplots(figsize=(12, 6))
+                    percentiles = [r['percentile'] for r in results]
+                    ax2.plot(iterations, percentiles, 'o-', color='green')
+                    ax2.axhline(y=50, color='red', linestyle='--', alpha=0.7, label='50th Percentile')
+                    ax2.set_title("Percentile Ranks Over Time")
+                    ax2.set_xlabel("Test Iteration")
+                    ax2.set_ylabel("Percentile Rank")
+                    ax2.legend()
+                    ax2.grid(True, alpha=0.3)
+                    st.pyplot(fig2)
+                    
+                    # Error distribution
+                    fig3, ax3 = plt.subplots(figsize=(10, 6))
+                    ax3.hist(errors, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+                    ax3.axvline(x=np.mean(errors), color='red', linestyle='--', 
+                               label=f'Mean Error: {np.mean(errors):.2f}%')
+                    ax3.set_title("Forecast Error Distribution")
+                    ax3.set_xlabel("Forecast Error (%)")
+                    ax3.set_ylabel("Frequency")
+                    ax3.legend()
+                    ax3.grid(True, alpha=0.3)
+                    st.pyplot(fig3)
 
     elif page == "Forward Forecast":
         st.header("Forward Forecast")
@@ -922,6 +1036,22 @@ def main():
                 st.write(f"- 5th Percentile: {np.percentile(final_returns, 5):.2f}%")
                 st.write(f"- 95th Percentile: {np.percentile(final_returns, 95):.2f}%")
                 st.write(f"- Probability of Loss: {np.mean(final_returns < 0) * 100:.1f}%")
+                
+                # Create summary visualization
+                fig_summary, ax_summary = plt.subplots(figsize=(10, 6))
+                ax_summary.hist(final_returns, bins=50, alpha=0.7, color='lightblue', edgecolor='black')
+                ax_summary.axvline(x=np.median(final_returns), color='red', linestyle='--', 
+                                  label=f'Median: {np.median(final_returns):.2f}%')
+                ax_summary.axvline(x=np.percentile(final_returns, 5), color='orange', linestyle='--', 
+                                  label=f'5th Percentile: {np.percentile(final_returns, 5):.2f}%')
+                ax_summary.axvline(x=np.percentile(final_returns, 95), color='green', linestyle='--', 
+                                  label=f'95th Percentile: {np.percentile(final_returns, 95):.2f}%')
+                ax_summary.set_title("Forward Forecast Distribution Summary")
+                ax_summary.set_xlabel("Cumulative Return (%)")
+                ax_summary.set_ylabel("Frequency")
+                ax_summary.legend()
+                ax_summary.grid(True, alpha=0.3)
+                st.pyplot(fig_summary)
 
 if __name__ == "__main__":
     main()
