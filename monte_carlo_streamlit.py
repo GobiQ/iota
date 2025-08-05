@@ -1275,7 +1275,7 @@ def main():
             import datetime as dt
             last_date = dt.datetime.strptime(dates[-1], '%Y-%m-%d')
             forecast_calendar_days = int(forecast_days * 1.4)
-            forecast_end_date = (last_date + timedelta(days=forecast_calendar_days)).strftime('%Y-%m-%d')
+            forecast_end_date = (last_date + dt.timedelta(days=forecast_calendar_days)).strftime('%Y-%m-%d')
             
             ax.set_title(f'Forward Return Forecast: {forecast_days} trading days\n({dates[-1]} to ~{forecast_end_date})', 
                         fontsize=14)
