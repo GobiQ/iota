@@ -430,9 +430,11 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                start_date = st.date_input("Start Date", value=date(2020, 1, 1))
+                start_date = st.date_input("Start Date", value=date(2000, 1, 1), 
+                                         help="Default: 2000-01-01 (matches original script)")
             with col2:
-                end_date = st.date_input("End Date", value=date.today())
+                end_date = st.date_input("End Date", value=date.today(),
+                                       help="Default: Today's date")
             
             if st.button("Fetch Data"):
                 with st.spinner("Fetching data from Composer..."):
@@ -448,15 +450,40 @@ def main():
                         with st.spinner("Calculating portfolio returns..."):
                             daily_returns, dates = calculate_portfolio_returns(allocations_df, tickers)
                             
-                            # Store in session state
+                            # Convert dates to strings for easier handling (matching original script)
+                            date_strs = [d.strftime('%Y-%m-%d') for d in dates]
+                            
+                            # Check if we have enough data (matching original script validation)
+                            if len(daily_returns) < 60:  # Need at least 60 days of data
+                                st.error("Error: Not enough historical data for Monte Carlo analysis (minimum 60 days required).")
+                                return
+                            
+                            # Make sure date_strs and daily_returns have the same length (matching original script)
+                            if len(date_strs) != len(daily_returns):
+                                st.warning(f"Warning: Length mismatch - date_strs: {len(date_strs)}, daily_returns: {len(daily_returns)}")
+                                # Trim to the shorter length
+                                min_length = min(len(date_strs), len(daily_returns))
+                                date_strs = date_strs[:min_length]
+                                # For daily_returns, we need to handle it as a pandas Series
+                                if isinstance(daily_returns, pd.Series):
+                                    daily_returns = daily_returns.iloc[:min_length]
+                                else:
+                                    daily_returns = daily_returns[:min_length]
+                            
+                            # Store in session state (matching original script data structure)
                             st.session_state.returns_data = {
-                                'returns': daily_returns.tolist(),
-                                'dates': [d.strftime('%Y-%m-%d') for d in dates[1:]],  # Skip first date
+                                'returns': daily_returns.tolist() if not isinstance(daily_returns, list) else daily_returns,
+                                'dates': date_strs,
                                 'name': symphony_name
                             }
                             st.session_state.portfolio_name = symphony_name
                             
                             st.success(f"Calculated returns for {len(daily_returns)} trading days")
+                            
+                            # Display portfolio information (matching original script output)
+                            st.info(f"**Analyzing portfolio:** {symphony_name}")
+                            st.info(f"**Historical data period:** {date_strs[0]} to {date_strs[-1]}")
+                            st.info(f"**Total trading days:** {len(daily_returns)}")
                             
                             # Show basic statistics
                             col1, col2, col3, col4 = st.columns(4)
@@ -606,9 +633,15 @@ def main():
         
         col1, col2 = st.columns(2)
         with col1:
+            # Define test periods matching original script
+            available_periods = [63, 126, 252]  # 3m, 6m, 1y
+            # Add 2-year test if we have enough data (matching original script logic)
+            if len(returns) >= (504 + 60):  # Need at least 60 days of training data
+                available_periods.append(504)
+            
             test_periods = st.multiselect(
                 "Select test periods (trading days):",
-                [63, 126, 252, 504],
+                available_periods,
                 default=[63, 126, 252],
                 help="63 days ≈ 3 months, 126 days ≈ 6 months, 252 days ≈ 1 year, 504 days ≈ 2 years"
             )
@@ -619,7 +652,8 @@ def main():
                 min_value=1000,
                 max_value=50000,
                 value=10000,
-                step=1000
+                step=1000,
+                help="Default: 10,000 simulations"
             )
         
         if st.button("Run Walk-Forward Analysis"):
@@ -791,15 +825,18 @@ def main():
             with col1:
                 train_length = st.number_input("Training Period (days):", 
                                              min_value=60, max_value=len(returns)//2, 
-                                             value=252)
+                                             value=252,
+                                             help="Default: 252 days (1 year)")
             with col2:
                 test_length = st.number_input("Test Period (days):", 
                                             min_value=20, max_value=504, 
-                                            value=126)
+                                            value=252,
+                                            help="Default: 252 days (1 year)")
             with col3:
                 step_size = st.number_input("Step Size (days):", 
                                           min_value=1, max_value=test_length, 
-                                          value=63)
+                                          value=63,
+                                          help="Default: 63 days (quarterly)")
             
             allow_overlap = st.checkbox("Allow test windows to overlap with training data")
             
@@ -813,16 +850,19 @@ def main():
             with col3:
                 test_length = st.number_input("Test Period (days):", 
                                             min_value=20, max_value=504, 
-                                            value=126)
+                                            value=252,
+                                            help="Default: 252 days (1 year)")
             
             step_size = st.number_input("Step Size (days):", 
                                       min_value=1, max_value=test_length, 
-                                      value=63)
+                                      value=63,
+                                      help="Default: 63 days (quarterly)")
             allow_overlap = st.checkbox("Allow test windows to overlap with training data")
         
         num_simulations = st.number_input("Number of simulations:", 
                                         min_value=1000, max_value=20000, 
-                                        value=5000)
+                                        value=10000,
+                                        help="Default: 10,000 simulations")
         
         if st.button("Run Rolling Walk Tests"):
             if test_type == "Sliding Window":
@@ -972,7 +1012,7 @@ def main():
                 min_value=60,
                 max_value=len(returns)//2,
                 value=252,
-                help="Length of initial training window"
+                help="Default: 252 days (1 year) - Length of initial training window"
             )
         
         with col2:
@@ -981,7 +1021,7 @@ def main():
                 min_value=20,
                 max_value=504,
                 value=252,
-                help="Length of each test period"
+                help="Default: 252 days (1 year) - Length of each test period"
             )
         
         with col3:
@@ -990,14 +1030,15 @@ def main():
                 min_value=20,
                 max_value=252,
                 value=252,
-                help="Days to expand training window by each iteration"
+                help="Default: 252 days (1 year) - Days to expand training window by each iteration"
             )
         
         num_simulations = st.number_input(
             "Number of simulations:",
             min_value=1000,
             max_value=20000,
-            value=10000
+            value=10000,
+            help="Default: 10,000 simulations"
         )
         
         if st.button("Run Expanding Window Tests"):
@@ -1169,8 +1210,8 @@ def main():
                 "Forecast period (trading days):",
                 min_value=30,
                 max_value=1000,
-                value=252,
-                help="Number of trading days to forecast"
+                value=126,
+                help="Default: 126 days (~6 months) - Number of trading days to forecast"
             )
         
         with col2:
@@ -1179,7 +1220,8 @@ def main():
                 min_value=1000,
                 max_value=50000,
                 value=10000,
-                step=1000
+                step=1000,
+                help="Default: 10,000 simulations"
             )
         
         if st.button("Run Forward Forecast"):
@@ -1208,10 +1250,10 @@ def main():
             fig, ax = plt.subplots(figsize=(12, 8))
             x = range(len(percentiles['50']))
             
-            # Select random sample paths
+            # Select random sample paths (matching original script default of 200)
             all_paths = simulation_results['paths']
             num_paths = all_paths.shape[0]
-            num_samples = min(200, num_paths)
+            num_samples = min(200, num_paths)  # Default from original script
             sample_indices = np.random.choice(num_paths, num_samples, replace=False)
             
             # Plot random sample paths with very light opacity
@@ -1230,7 +1272,8 @@ def main():
             ax.plot([], [], color='gray', alpha=0.5, linewidth=1, label=f'{num_samples} Sample Paths')
             
             # Calculate approximate end date
-            last_date = datetime.strptime(dates[-1], '%Y-%m-%d')
+            import datetime as dt
+            last_date = dt.datetime.strptime(dates[-1], '%Y-%m-%d')
             forecast_calendar_days = int(forecast_days * 1.4)
             forecast_end_date = (last_date + timedelta(days=forecast_calendar_days)).strftime('%Y-%m-%d')
             
