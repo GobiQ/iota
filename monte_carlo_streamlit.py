@@ -1,251 +1,4 @@
-    elif page == "Walk-Forward Analysis":
-        st.header("Walk-Forward Analysis")
-        
-        if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
-            return
-        
-        data = st.session_state.returns_data
-        returns = data['returns']
-        dates = data['dates']
-        
-        st.subheader("Test Configuration")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            test_periods = st.multiselect(
-                "Select test periods (trading days):",
-                [63, 126, 252, 504],
-                default=[63, 126, 252],
-                help="63 days ≈ 3 months, 126 days ≈ 6 months, 252 days ≈ 1 year, 504 days ≈ 2 years"
-            )
-        
-        with col2:
-            num_simulations = st.number_input(
-                "Number of simulations:",
-                min_value=1000,
-                max_value=50000,
-                value=10000,
-                step=1000
-            )
-        
-        if st.button("Run Walk-Forward Analysis"):
-            results = {}
-            
-            for period_length in test_periods:
-                if period_length >= len(returns):
-                    st.warning(f"Skipping {period_length}-day test: not enough historical data")
-                    continue
-                
-                st.subheader(f"Walk-Forward Test: {period_length} Days")
-                
-                # Split data
-                train_returns = returns[:-period_length]
-                test_returns = returns[-period_length:]
-                test_dates = dates[-period_length:]
-                
-                with st.spinner(f"Running {num_simulations:,} simulations for {period_length} days..."):
-                    simulation_results = run_monte_carlo_simulation(
-                        train_returns, num_simulations, period_length
-                    )
-                
-                # Calculate actual path
-                actual_path = [0.0]
-                cumulative_return = 0.0
-                
-                for r in test_returns:
-                    r_decimal = r / 100.0
-                    cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
-                    actual_path.append(cumulative_return)
-                
-                actual_final_return = actual_path[-1]
-                final_returns = simulation_results['final_returns']
-                actual_percentile = stats.percentileofscore(final_returns, actual_final_return)
-                
-                # Store results
-                results[period_length] = {
-                    'actual_return': actual_final_return,
-                    'forecast_return': simulation_results['percentiles']['50'][-1],
-                    'percentile': actual_percentile,
-                    'simulation_results': simulation_results,
-                    'actual_path': actual_path,
-                    'test_dates': test_dates
-                }
-                
-                # Display results
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Actual Return", f"{actual_final_return:.2f}%")
-                with col2:
-                    st.metric("Forecast Return", f"{simulation_results['percentiles']['50'][-1]:.2f}%")
-                with col3:
-                    st.metric("Percentile Rank", f"{actual_percentile:.1f}%")
-                with col4:
-                    error = actual_final_return - simulation_results['percentiles']['50'][-1]
-                    st.metric("Forecast Error", f"{error:.2f}%")
-                
-                # Create simulation plot
-                fig = create_simulation_plot(
-                    simulation_results, 
-                    actual_path,
-                    f"Walk-Forward Test: {period_length} Days ({test_dates[0]} to {test_dates[-1]})"
-                )
-                st.pyplot(fig)
-                
-                # Create distribution plots
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    fig_dist = create_distribution_plot(
-                        final_returns,
-                        f"Return Distribution - {period_length} Days",
-                        "Cumulative Return (%)",
-                        actual_final_return
-                    )
-                    st.pyplot(fig_dist)
-                
-                with col2:
-                    fig_dd = create_distribution_plot(
-                        simulation_results['max_drawdowns'],
-                        f"Max Drawdown Distribution - {period_length} Days",
-                        "Maximum Drawdown (%)"
-                    )
-                    st.pyplot(fig_dd)
-            
-            st.session_state.analysis_results['walk_forward'] = results
-            
-            # Summary table
-            if results:
-                st.subheader("Walk-Forward Test Summary")
-                
-                summary_data = []
-                for period, result in results.items():
-                    summary_data.append({
-                        'Period (Days)': period,
-                        'Actual Return (%)': f"{result['actual_return']:.2f}",
-                        'Forecast Return (%)': f"{result['forecast_return']:.2f}",
-                        'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
-                        'Percentile Rank': f"{result['percentile']:.1f}%"
-                    })
-                
-                st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
-    
-    elif page == "Rolling Walk Tests":
-        st.header("Rolling Walk-Forward Tests")
-        
-        if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
-            return
-        
-        data = st.session_state.returns_data
-        returns = data['returns']
-        dates = data['dates']
-        
-        st.subheader("Test Configuration")
-        
-        test_type = st.radio("Test Type:", [
-            "Sliding Window", 
-            "Fixed Training Window"
-        ])
-        
-        col1, col2, col3 = st.columns(3)
-        
-        if test_type == "Sliding Window":
-            with col1:
-                train_length = st.number_input("Training Period (days):", 
-                                             min_value=60, max_value=len(returns)//2, 
-                                             value=252)
-            with col2:
-                test_length = st.number_input("Test Period (days):", 
-                                            min_value=20, max_value=504, 
-                                            value=126)
-            with col3:
-                step_size = st.number_input("Step Size (days):", 
-                                          min_value=1, max_value=test_length, 
-                                          value=63)
-            
-            allow_overlap = st.checkbox("Allow test windows to overlap with training data")
-            
-        else:  # Fixed Training Window
-            with col1:
-                train_start = st.date_input("Training Start:", 
-                                          value=pd.to_datetime(dates[0]))
-            with col2:
-                train_end = st.date_input("Training End:", 
-                                        value=pd.to_datetime(dates[len(dates)//2]))
-            with col3:
-                test_length = st.number_input("Test Period (days):", 
-                                            min_value=20, max_value=504, 
-                                            value=126)
-            
-            step_size = st.number_input("Step Size (days):", 
-                                      min_value=1, max_value=test_length, 
-                                      value=63)
-            allow_overlap = st.checkbox("Allow test windows to overlap with training data")
-        
-        num_simulations = st.number_input("Number of simulations:", 
-                                        min_value=1000, max_value=20000, 
-                                        value=5000)
-        
-        if st.button("Run Rolling Walk Tests"):
-            if test_type == "Sliding Window":
-                if len(returns) < (train_length + test_length) and not allow_overlap:
-                    st.error(f"Not enough data for non-overlapping test. Need at least {train_length + test_length} days.")
-                    return
-                
-                available_test_days = len(returns) - (0 if allow_overlap else train_length)
-                num_iterations = max(1, (available_test_days - test_length) // step_size + 1)
-                
-                st.info(f"Running {num_iterations} iterations with sliding window approach")
-                
-                results = []
-                progress_bar = st.progress(0)
-                
-                for i in range(num_iterations):
-                    progress_bar.progress((i + 1) / num_iterations)
-                    
-                    if allow_overlap:
-                        test_start_idx = i * step_size
-                        train_start_idx = max(0, test_start_idx - train_length)
-                        train_end_idx = test_start_idx
-                    else:
-                        train_start_idx = i * step_size
-                        train_end_idx = train_start_idx + train_length
-                        test_start_idx = train_end_idx
-                    
-                    test_end_idx = min(test_start_idx + test_length, len(returns))
-                    
-                    if test_end_idx - test_start_idx < 20:
-                        continue
-                    
-                    train_data = returns[train_start_idx:train_end_idx]
-                    test_data = returns[test_start_idx:test_end_idx]
-                    
-                    simulation_results = run_monte_carlo_simulation(
-                        train_data, num_simulations, len(test_data)
-                    )
-                    
-                    # Calculate actual path
-                    actual_path = [0.0]
-                    cumulative_return = 0.0
-                    
-                    for r in test_data:
-                        r_decimal = r / 100.0
-                        cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
-                        actual_path.append(cumulative_return)
-                    
-                    actual_final_return = actual_path[-1]
-                    final_returns = simulation_results['final_returns']
-                    percentile = stats.percentileofscore(final_returns, actual_final_return)
-                    
-                    results.append({
-                        'iteration': i + 1,
-                        'test_start_date': dates[test_start_idx],
-                        'test_end_date': dates[test_end_idx - 1],
-                        'actual_return': actual_final_return,
-                        'forecast_return': simulation_results['percentiles']['50'][-1],
-                        'percentile': percentile,
-                        'max_drawdown': np.mean(simulationimport streamlit as st
+import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -769,3 +522,406 @@ def main():
             ax.set_ylabel("Cumulative Return (%)")
             ax.grid(True, alpha=0.3)
             st.pyplot(fig)
+
+    elif page == "Walk-Forward Analysis":
+        st.header("Walk-Forward Analysis")
+        
+        if st.session_state.returns_data is None:
+            st.warning("Please load portfolio data first from the Data Input page.")
+            return
+        
+        data = st.session_state.returns_data
+        returns = data['returns']
+        dates = data['dates']
+        
+        st.subheader("Test Configuration")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            test_periods = st.multiselect(
+                "Select test periods (trading days):",
+                [63, 126, 252, 504],
+                default=[63, 126, 252],
+                help="63 days ≈ 3 months, 126 days ≈ 6 months, 252 days ≈ 1 year, 504 days ≈ 2 years"
+            )
+        
+        with col2:
+            num_simulations = st.number_input(
+                "Number of simulations:",
+                min_value=1000,
+                max_value=50000,
+                value=10000,
+                step=1000
+            )
+        
+        if st.button("Run Walk-Forward Analysis"):
+            results = {}
+            
+            for period_length in test_periods:
+                if period_length >= len(returns):
+                    st.warning(f"Skipping {period_length}-day test: not enough historical data")
+                    continue
+                
+                st.subheader(f"Walk-Forward Test: {period_length} Days")
+                
+                # Split data
+                train_returns = returns[:-period_length]
+                test_returns = returns[-period_length:]
+                test_dates = dates[-period_length:]
+                
+                with st.spinner(f"Running {num_simulations:,} simulations for {period_length} days..."):
+                    simulation_results = run_monte_carlo_simulation(
+                        train_returns, num_simulations, period_length
+                    )
+                
+                # Calculate actual path
+                actual_path = [0.0]
+                cumulative_return = 0.0
+                
+                for r in test_returns:
+                    r_decimal = r / 100.0
+                    cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
+                    actual_path.append(cumulative_return)
+                
+                actual_final_return = actual_path[-1]
+                final_returns = simulation_results['final_returns']
+                actual_percentile = stats.percentileofscore(final_returns, actual_final_return)
+                
+                # Store results
+                results[period_length] = {
+                    'actual_return': actual_final_return,
+                    'forecast_return': simulation_results['percentiles']['50'][-1],
+                    'percentile': actual_percentile,
+                    'simulation_results': simulation_results,
+                    'actual_path': actual_path,
+                    'test_dates': test_dates
+                }
+                
+                # Display results
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Actual Return", f"{actual_final_return:.2f}%")
+                with col2:
+                    st.metric("Forecast Return", f"{simulation_results['percentiles']['50'][-1]:.2f}%")
+                with col3:
+                    st.metric("Percentile Rank", f"{actual_percentile:.1f}%")
+                with col4:
+                    error = actual_final_return - simulation_results['percentiles']['50'][-1]
+                    st.metric("Forecast Error", f"{error:.2f}%")
+                
+                # Create simulation plot
+                fig = create_simulation_plot(
+                    simulation_results, 
+                    actual_path,
+                    f"Walk-Forward Test: {period_length} Days ({test_dates[0]} to {test_dates[-1]})"
+                )
+                st.pyplot(fig)
+                
+                # Create distribution plots
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    fig_dist = create_distribution_plot(
+                        final_returns,
+                        f"Return Distribution - {period_length} Days",
+                        "Cumulative Return (%)",
+                        actual_final_return
+                    )
+                    st.pyplot(fig_dist)
+                
+                with col2:
+                    fig_dd = create_distribution_plot(
+                        simulation_results['max_drawdowns'],
+                        f"Max Drawdown Distribution - {period_length} Days",
+                        "Maximum Drawdown (%)"
+                    )
+                    st.pyplot(fig_dd)
+            
+            st.session_state.analysis_results['walk_forward'] = results
+            
+            # Summary table
+            if results:
+                st.subheader("Walk-Forward Test Summary")
+                
+                summary_data = []
+                for period, result in results.items():
+                    summary_data.append({
+                        'Period (Days)': period,
+                        'Actual Return (%)': f"{result['actual_return']:.2f}",
+                        'Forecast Return (%)': f"{result['forecast_return']:.2f}",
+                        'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
+                        'Percentile Rank': f"{result['percentile']:.1f}%"
+                    })
+                
+                st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+    
+    elif page == "Rolling Walk Tests":
+        st.header("Rolling Walk-Forward Tests")
+        
+        if st.session_state.returns_data is None:
+            st.warning("Please load portfolio data first from the Data Input page.")
+            return
+        
+        data = st.session_state.returns_data
+        returns = data['returns']
+        dates = data['dates']
+        
+        st.subheader("Test Configuration")
+        
+        test_type = st.radio("Test Type:", [
+            "Sliding Window", 
+            "Fixed Training Window"
+        ])
+        
+        col1, col2, col3 = st.columns(3)
+        
+        if test_type == "Sliding Window":
+            with col1:
+                train_length = st.number_input("Training Period (days):", 
+                                             min_value=60, max_value=len(returns)//2, 
+                                             value=252)
+            with col2:
+                test_length = st.number_input("Test Period (days):", 
+                                            min_value=20, max_value=504, 
+                                            value=126)
+            with col3:
+                step_size = st.number_input("Step Size (days):", 
+                                          min_value=1, max_value=test_length, 
+                                          value=63)
+            
+            allow_overlap = st.checkbox("Allow test windows to overlap with training data")
+            
+        else:  # Fixed Training Window
+            with col1:
+                train_start = st.date_input("Training Start:", 
+                                          value=pd.to_datetime(dates[0]))
+            with col2:
+                train_end = st.date_input("Training End:", 
+                                        value=pd.to_datetime(dates[len(dates)//2]))
+            with col3:
+                test_length = st.number_input("Test Period (days):", 
+                                            min_value=20, max_value=504, 
+                                            value=126)
+            
+            step_size = st.number_input("Step Size (days):", 
+                                      min_value=1, max_value=test_length, 
+                                      value=63)
+            allow_overlap = st.checkbox("Allow test windows to overlap with training data")
+        
+        num_simulations = st.number_input("Number of simulations:", 
+                                        min_value=1000, max_value=20000, 
+                                        value=5000)
+        
+        if st.button("Run Rolling Walk Tests"):
+            if test_type == "Sliding Window":
+                if len(returns) < (train_length + test_length) and not allow_overlap:
+                    st.error(f"Not enough data for non-overlapping test. Need at least {train_length + test_length} days.")
+                    return
+                
+                available_test_days = len(returns) - (0 if allow_overlap else train_length)
+                num_iterations = max(1, (available_test_days - test_length) // step_size + 1)
+                
+                st.info(f"Running {num_iterations} iterations with sliding window approach")
+                
+                results = []
+                progress_bar = st.progress(0)
+                
+                for i in range(num_iterations):
+                    progress_bar.progress((i + 1) / num_iterations)
+                    
+                    if allow_overlap:
+                        test_start_idx = i * step_size
+                        train_start_idx = max(0, test_start_idx - train_length)
+                        train_end_idx = test_start_idx
+                    else:
+                        train_start_idx = i * step_size
+                        train_end_idx = train_start_idx + train_length
+                        test_start_idx = train_end_idx
+                    
+                    test_end_idx = min(test_start_idx + test_length, len(returns))
+                    
+                    if test_end_idx - test_start_idx < 20:
+                        continue
+                    
+                    train_data = returns[train_start_idx:train_end_idx]
+                    test_data = returns[test_start_idx:test_end_idx]
+                    
+                    simulation_results = run_monte_carlo_simulation(
+                        train_data, num_simulations, len(test_data)
+                    )
+                    
+                    # Calculate actual path
+                    actual_path = [0.0]
+                    cumulative_return = 0.0
+                    
+                    for r in test_data:
+                        r_decimal = r / 100.0
+                        cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
+                        actual_path.append(cumulative_return)
+                    
+                    actual_final_return = actual_path[-1]
+                    final_returns = simulation_results['final_returns']
+                    percentile = stats.percentileofscore(final_returns, actual_final_return)
+                    
+                    results.append({
+                        'iteration': i + 1,
+                        'test_start_date': dates[test_start_idx],
+                        'test_end_date': dates[test_end_idx - 1],
+                        'actual_return': actual_final_return,
+                        'forecast_return': simulation_results['percentiles']['50'][-1],
+                        'percentile': percentile,
+                        'max_drawdown': np.mean(simulation_results['max_drawdowns']) # Use mean of max_drawdowns for rolling
+                    })
+                
+                st.session_state.analysis_results['rolling_walk'] = results
+                
+                # Summary table
+                if results:
+                    st.subheader("Rolling Walk-Forward Test Summary")
+                    
+                    summary_data = []
+                    for result in results:
+                        summary_data.append({
+                            'Iteration': result['iteration'],
+                            'Test Period': f"{result['test_start_date']} to {result['test_end_date']}",
+                            'Actual Return (%)': f"{result['actual_return']:.2f}",
+                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
+                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
+                            'Percentile Rank': f"{result['percentile']:.1f}%",
+                            'Max Drawdown (%)': f"{result['max_drawdown']:.2f}"
+                        })
+                    
+                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+
+    elif page == "Forward Forecast":
+        st.header("Forward Forecast")
+        
+        if st.session_state.returns_data is None:
+            st.warning("Please load portfolio data first from the Data Input page.")
+            return
+        
+        data = st.session_state.returns_data
+        returns = data['returns']
+        
+        st.subheader("Forecast Configuration")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            forecast_days = st.number_input(
+                "Forecast period (trading days):",
+                min_value=30,
+                max_value=1000,
+                value=252,
+                help="Number of trading days to forecast"
+            )
+        
+        with col2:
+            num_simulations = st.number_input(
+                "Number of simulations:",
+                min_value=1000,
+                max_value=50000,
+                value=10000,
+                step=1000
+            )
+        
+        if st.button("Run Forward Forecast"):
+            with st.spinner(f"Running {num_simulations:,} simulations for {forecast_days} days..."):
+                simulation_results = run_monte_carlo_simulation(
+                    returns, num_simulations, forecast_days
+                )
+            
+            st.subheader("Forecast Results")
+            
+            # Key metrics
+            final_returns = simulation_results['final_returns']
+            percentiles = simulation_results['percentiles']
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Median Forecast", f"{np.median(final_returns):.2f}%")
+            with col2:
+                st.metric("5th Percentile", f"{np.percentile(final_returns, 5):.2f}%")
+            with col3:
+                st.metric("95th Percentile", f"{np.percentile(final_returns, 95):.2f}%")
+            with col4:
+                st.metric("Probability of Loss", f"{np.mean(final_returns < 0) * 100:.1f}%")
+            
+            # Create simulation plot
+            fig = create_simulation_plot(
+                simulation_results, 
+                title=f"Forward Forecast: {forecast_days} Days"
+            )
+            st.pyplot(fig)
+            
+            # Create distribution plots
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fig_dist = create_distribution_plot(
+                    final_returns,
+                    f"Return Distribution - {forecast_days} Days",
+                    "Cumulative Return (%)"
+                )
+                st.pyplot(fig_dist)
+            
+            with col2:
+                fig_dd = create_distribution_plot(
+                    simulation_results['max_drawdowns'],
+                    f"Max Drawdown Distribution - {forecast_days} Days",
+                    "Maximum Drawdown (%)"
+                )
+                st.pyplot(fig_dd)
+            
+            st.session_state.analysis_results['forward_forecast'] = simulation_results
+
+    elif page == "Results Summary":
+        st.header("Analysis Results Summary")
+        
+        if not st.session_state.analysis_results:
+            st.info("No analysis results available. Run analyses from other pages first.")
+            return
+        
+        # Summary of all available results
+        for analysis_type, results in st.session_state.analysis_results.items():
+            st.subheader(f"{analysis_type.replace('_', ' ').title()}")
+            
+            if analysis_type == 'walk_forward':
+                if results:
+                    summary_data = []
+                    for period, result in results.items():
+                        summary_data.append({
+                            'Period (Days)': period,
+                            'Actual Return (%)': f"{result['actual_return']:.2f}",
+                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
+                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
+                            'Percentile Rank': f"{result['percentile']:.1f}%"
+                        })
+                    
+                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+            
+            elif analysis_type == 'rolling_walk':
+                if results:
+                    summary_data = []
+                    for result in results:
+                        summary_data.append({
+                            'Iteration': result['iteration'],
+                            'Test Period': f"{result['test_start_date']} to {result['test_end_date']}",
+                            'Actual Return (%)': f"{result['actual_return']:.2f}",
+                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
+                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
+                            'Percentile Rank': f"{result['percentile']:.1f}%",
+                            'Max Drawdown (%)': f"{result['max_drawdown']:.2f}"
+                        })
+                    
+                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+            
+            elif analysis_type == 'forward_forecast':
+                final_returns = results['final_returns']
+                st.write(f"**Forecast Statistics:**")
+                st.write(f"- Median: {np.median(final_returns):.2f}%")
+                st.write(f"- 5th Percentile: {np.percentile(final_returns, 5):.2f}%")
+                st.write(f"- 95th Percentile: {np.percentile(final_returns, 95):.2f}%")
+                st.write(f"- Probability of Loss: {np.mean(final_returns < 0) * 100:.1f}%")
+
+if __name__ == "__main__":
+    main()
