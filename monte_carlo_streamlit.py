@@ -403,6 +403,7 @@ def main():
         "Data Input",
         "Walk-Forward Analysis", 
         "Rolling Walk Tests",
+        "Expanding Window Tests",
         "Forward Forecast",
         "Results Summary"
     ])
@@ -703,6 +704,50 @@ def main():
                         "Maximum Drawdown (%)"
                     )
                     st.pyplot(fig_dd)
+                
+                # Generate CAGR distribution plot for longer periods
+                if period_length >= 252:  # Only for 1-year or longer periods
+                    years = period_length / 252
+                    cagr_values = [((1 + ret / 100) ** (1 / years) - 1) * 100 for ret in final_returns]
+                    actual_cagr = ((1 + actual_final_return / 100) ** (1 / years) - 1) * 100
+                    
+                    fig_cagr, ax_cagr = plt.subplots(figsize=(10, 6))
+                    ax_cagr.hist(cagr_values, bins=50, alpha=0.7, color='lightgreen', edgecolor='black')
+                    ax_cagr.axvline(x=actual_cagr, color='r', linestyle='--', 
+                                   label=f'Actual CAGR: {actual_cagr:.2f}%')
+                    
+                    # Add percentile information
+                    cagr_percentile = stats.percentileofscore(cagr_values, actual_cagr)
+                    ax_cagr.text(0.05, 0.95, f'Actual CAGR Percentile: {cagr_percentile:.1f}%',
+                                transform=ax_cagr.transAxes, fontsize=12,
+                                verticalalignment='top', 
+                                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                    
+                    ax_cagr.set_title(f'CAGR Distribution - {period_length} Days Forward Test', fontsize=14)
+                    ax_cagr.set_xlabel('CAGR (%)', fontsize=12)
+                    ax_cagr.set_ylabel('Frequency', fontsize=12)
+                    ax_cagr.grid(True, alpha=0.3)
+                    ax_cagr.legend()
+                    st.pyplot(fig_cagr)
+                    
+                    # Display CAGR statistics
+                    cagr_mean = np.mean(cagr_values)
+                    cagr_median = np.median(cagr_values)
+                    cagr_std = np.std(cagr_values)
+                    cagr_5th = np.percentile(cagr_values, 5)
+                    cagr_95th = np.percentile(cagr_values, 95)
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Mean CAGR", f"{cagr_mean:.2f}%")
+                    with col2:
+                        st.metric("Median CAGR", f"{cagr_median:.2f}%")
+                    with col3:
+                        st.metric("CAGR Std Dev", f"{cagr_std:.2f}%")
+                    with col4:
+                        st.metric("5th Percentile", f"{cagr_5th:.2f}%")
+                    with col5:
+                        st.metric("95th Percentile", f"{cagr_95th:.2f}%")
             
             st.session_state.analysis_results['walk_forward'] = results
             
@@ -907,6 +952,205 @@ def main():
                     ax3.grid(True, alpha=0.3)
                     st.pyplot(fig3)
 
+    elif page == "Expanding Window Tests":
+        st.header("Expanding Window Tests")
+        
+        if st.session_state.returns_data is None:
+            st.warning("Please load portfolio data first from the Data Input page.")
+            return
+        
+        data = st.session_state.returns_data
+        returns = data['returns']
+        dates = data['dates']
+        
+        st.subheader("Test Configuration")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            initial_train_period = st.number_input(
+                "Initial Training Period (days):",
+                min_value=60,
+                max_value=len(returns)//2,
+                value=252,
+                help="Length of initial training window"
+            )
+        
+        with col2:
+            test_period_length = st.number_input(
+                "Test Period Length (days):",
+                min_value=20,
+                max_value=504,
+                value=252,
+                help="Length of each test period"
+            )
+        
+        with col3:
+            expansion_size = st.number_input(
+                "Expansion Size (days):",
+                min_value=20,
+                max_value=252,
+                value=252,
+                help="Days to expand training window by each iteration"
+            )
+        
+        num_simulations = st.number_input(
+            "Number of simulations:",
+            min_value=1000,
+            max_value=20000,
+            value=10000
+        )
+        
+        if st.button("Run Expanding Window Tests"):
+            if len(returns) < (initial_train_period + test_period_length):
+                st.error(f"Not enough data for expanding window test. Need at least {initial_train_period + test_period_length} days.")
+                return
+            
+            # Determine number of iterations
+            available_days = len(returns) - initial_train_period
+            num_iterations = available_days // test_period_length
+            
+            if num_iterations == 0:
+                st.error("Not enough data for any complete test periods after initial training window.")
+                return
+            
+            st.info(f"Running {num_iterations} iterations with expanding window approach")
+            
+            results = []
+            progress_bar = st.progress(0)
+            
+            for i in range(num_iterations):
+                progress_bar.progress((i + 1) / num_iterations)
+                
+                # Calculate indices for this iteration
+                train_start_idx = 0  # Always start from beginning
+                train_size = initial_train_period + (i * expansion_size)
+                train_end_idx = train_size
+                test_start_idx = train_end_idx
+                test_end_idx = min(test_start_idx + test_period_length, len(returns))
+                
+                if test_end_idx - test_start_idx < 5:
+                    continue
+                
+                # Extract data
+                train_data = returns[train_start_idx:train_end_idx]
+                test_data = returns[test_start_idx:test_end_idx]
+                test_dates = dates[test_start_idx:test_end_idx]
+                
+                train_start_date = dates[train_start_idx]
+                train_end_date = dates[train_end_idx - 1]
+                test_start_date = dates[test_start_idx]
+                test_end_date = dates[test_end_idx - 1]
+                
+                # Run simulation
+                simulation_results = run_monte_carlo_simulation(
+                    train_data, num_simulations, len(test_data)
+                )
+                
+                # Calculate actual path
+                actual_path = [0.0]
+                cumulative_return = 0.0
+                
+                for r in test_data:
+                    r_decimal = r / 100.0
+                    cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
+                    actual_path.append(cumulative_return)
+                
+                actual_final_return = actual_path[-1]
+                final_returns = simulation_results['final_returns']
+                percentile = stats.percentileofscore(final_returns, actual_final_return)
+                
+                # Calculate CAGR for longer periods
+                if len(test_data) >= 252:
+                    years = len(test_data) / 252
+                    actual_cagr = ((1 + actual_final_return / 100) ** (1 / years) - 1) * 100
+                    cagr_values = [((1 + ret / 100) ** (1 / years) - 1) * 100 for ret in final_returns]
+                    cagr_percentile = stats.percentileofscore(cagr_values, actual_cagr)
+                else:
+                    actual_cagr = actual_final_return
+                    cagr_percentile = percentile
+                
+                results.append({
+                    'iteration': i + 1,
+                    'train_size': train_size,
+                    'train_period': f"{train_start_date} to {train_end_date}",
+                    'test_period': f"{test_start_date} to {test_end_date}",
+                    'actual_return': actual_final_return,
+                    'forecast_return': simulation_results['percentiles']['50'][-1],
+                    'percentile': percentile,
+                    'actual_cagr': actual_cagr,
+                    'cagr_percentile': cagr_percentile,
+                    'max_drawdown': np.mean(simulation_results['max_drawdowns'])
+                })
+            
+            st.session_state.analysis_results['expanding_window'] = results
+            
+            # Summary table
+            if results:
+                st.subheader("Expanding Window Test Summary")
+                
+                summary_data = []
+                for result in results:
+                    summary_data.append({
+                        'Iteration': result['iteration'],
+                        'Train Size': result['train_size'],
+                        'Test Period': result['test_period'],
+                        'Actual Return (%)': f"{result['actual_return']:.2f}",
+                        'Forecast Return (%)': f"{result['forecast_return']:.2f}",
+                        'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
+                        'Percentile Rank': f"{result['percentile']:.1f}%",
+                        'CAGR (%)': f"{result['actual_cagr']:.2f}",
+                        'CAGR Percentile': f"{result['cagr_percentile']:.1f}%"
+                    })
+                
+                st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+                
+                # Visualizations
+                st.subheader("Expanding Window Analysis")
+                
+                # Plot training size vs performance
+                fig1, ax1 = plt.subplots(figsize=(12, 6))
+                train_sizes = [r['train_size'] for r in results]
+                actual_returns = [r['actual_return'] for r in results]
+                forecast_returns = [r['forecast_return'] for r in results]
+                
+                ax1.plot(train_sizes, actual_returns, 'o-', label='Actual Returns', color='blue')
+                ax1.plot(train_sizes, forecast_returns, 's-', label='Forecast Returns', color='red')
+                ax1.set_title("Performance vs Training Window Size")
+                ax1.set_xlabel("Training Window Size (days)")
+                ax1.set_ylabel("Return (%)")
+                ax1.legend()
+                ax1.grid(True, alpha=0.3)
+                st.pyplot(fig1)
+                
+                # Plot percentile ranks over time
+                fig2, ax2 = plt.subplots(figsize=(12, 6))
+                iterations = [r['iteration'] for r in results]
+                percentiles = [r['percentile'] for r in results]
+                cagr_percentiles = [r['cagr_percentile'] for r in results]
+                
+                ax2.plot(iterations, percentiles, 'o-', label='Return Percentile', color='green')
+                ax2.plot(iterations, cagr_percentiles, 's-', label='CAGR Percentile', color='orange')
+                ax2.axhline(y=50, color='red', linestyle='--', alpha=0.7, label='50th Percentile')
+                ax2.set_title("Percentile Ranks Over Time")
+                ax2.set_xlabel("Iteration")
+                ax2.set_ylabel("Percentile Rank")
+                ax2.legend()
+                ax2.grid(True, alpha=0.3)
+                st.pyplot(fig2)
+                
+                # Error analysis
+                fig3, ax3 = plt.subplots(figsize=(10, 6))
+                errors = [r['actual_return'] - r['forecast_return'] for r in results]
+                ax3.hist(errors, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+                ax3.axvline(x=np.mean(errors), color='red', linestyle='--', 
+                           label=f'Mean Error: {np.mean(errors):.2f}%')
+                ax3.set_title("Forecast Error Distribution")
+                ax3.set_xlabel("Forecast Error (%)")
+                ax3.set_ylabel("Frequency")
+                ax3.legend()
+                ax3.grid(True, alpha=0.3)
+                st.pyplot(fig3)
+
     elif page == "Forward Forecast":
         st.header("Forward Forecast")
         
@@ -960,22 +1204,95 @@ def main():
             with col4:
                 st.metric("Probability of Loss", f"{np.mean(final_returns < 0) * 100:.1f}%")
             
-            # Create simulation plot
-            fig = create_simulation_plot(
-                simulation_results, 
-                title=f"Forward Forecast: {forecast_days} Days"
-            )
+            # Create enhanced simulation plot with sample paths
+            fig, ax = plt.subplots(figsize=(12, 8))
+            x = range(len(percentiles['50']))
+            
+            # Select random sample paths
+            all_paths = simulation_results['paths']
+            num_paths = all_paths.shape[0]
+            num_samples = min(200, num_paths)
+            sample_indices = np.random.choice(num_paths, num_samples, replace=False)
+            
+            # Plot random sample paths with very light opacity
+            for idx in sample_indices:
+                path = all_paths[idx, :]
+                ax.plot(x, path, color='gray', alpha=0.3, linewidth=0.5)
+            
+            # Plot percentile bands
+            ax.fill_between(x, percentiles['5'], percentiles['95'], 
+                           color='lightblue', alpha=0.3, label='5th-95th Percentile')
+            ax.fill_between(x, percentiles['25'], percentiles['75'], 
+                           color='blue', alpha=0.3, label='25th-75th Percentile')
+            ax.plot(x, percentiles['50'], 'b-', linewidth=2, label='Median Forecast')
+            
+            # Add sample paths label
+            ax.plot([], [], color='gray', alpha=0.5, linewidth=1, label=f'{num_samples} Sample Paths')
+            
+            # Calculate approximate end date
+            from datetime import datetime, timedelta
+            last_date = datetime.strptime(dates[-1], '%Y-%m-%d')
+            forecast_calendar_days = int(forecast_days * 1.4)
+            forecast_end_date = (last_date + timedelta(days=forecast_calendar_days)).strftime('%Y-%m-%d')
+            
+            ax.set_title(f'Forward Return Forecast: {forecast_days} trading days\n({dates[-1]} to ~{forecast_end_date})', 
+                        fontsize=14)
+            ax.set_xlabel('Trading Days', fontsize=12)
+            ax.set_ylabel('Cumulative Return (%)', fontsize=12)
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc='best')
+            
+            # Add key metrics as text
+            final_50th = percentiles['50'][-1]
+            final_5th = percentiles['5'][-1]
+            final_25th = percentiles['25'][-1]
+            final_75th = percentiles['75'][-1]
+            final_95th = percentiles['95'][-1]
+            
+            info_text = (f"Median Forecast: {final_50th:.2f}%\n"
+                        f"5th-95th Range: {final_5th:.2f}% to {final_95th:.2f}%\n"
+                        f"25th-75th Range: {final_25th:.2f}% to {final_75th:.2f}%\n"
+                        f"Expected Max Drawdown: {np.mean(simulation_results['max_drawdowns']):.2f}%")
+            
+            # Add CAGR if forecast period is meaningful
+            if forecast_days >= 60:
+                years = forecast_days / 252
+                cagr_values = [((1 + ret / 100) ** (1 / years) - 1) * 100 for ret in final_returns]
+                cagr_median = np.median(cagr_values)
+                cagr_5th = np.percentile(cagr_values, 5)
+                cagr_95th = np.percentile(cagr_values, 95)
+                info_text += f"\n\nMedian CAGR: {cagr_median:.2f}%\n5th-95th CAGR: {cagr_5th:.2f}% to {cagr_95th:.2f}%"
+            
+            ax.text(0.98, 0.98, info_text, transform=ax.transAxes, fontsize=12,
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                   verticalalignment='top', horizontalalignment='right')
+            
             st.pyplot(fig)
             
             # Create distribution plots
             col1, col2 = st.columns(2)
             
             with col1:
-                fig_dist = create_distribution_plot(
-                    final_returns,
-                    f"Return Distribution - {forecast_days} Days",
-                    "Cumulative Return (%)"
-                )
+                # Enhanced return distribution plot
+                fig_dist, ax_dist = plt.subplots(figsize=(10, 6))
+                sns.histplot(final_returns, kde=True, bins=50, color='blue', ax=ax_dist)
+                
+                # Add vertical lines for key percentiles
+                final_5th = np.percentile(final_returns, 5)
+                final_25th = np.percentile(final_returns, 25)
+                final_50th = np.percentile(final_returns, 50)
+                final_75th = np.percentile(final_returns, 75)
+                final_95th = np.percentile(final_returns, 95)
+                
+                ax_dist.axvline(x=final_5th, color='red', linestyle='--', alpha=0.7, label=f'5th: {final_5th:.2f}%')
+                ax_dist.axvline(x=final_50th, color='green', linestyle='--', linewidth=2, label=f'Median: {final_50th:.2f}%')
+                ax_dist.axvline(x=final_95th, color='purple', linestyle='--', alpha=0.7, label=f'95th: {final_95th:.2f}%')
+                
+                ax_dist.set_title(f'Return Distribution - {forecast_days} Day Forward Forecast', fontsize=14)
+                ax_dist.set_xlabel('Cumulative Return (%)', fontsize=12)
+                ax_dist.set_ylabel('Frequency', fontsize=12)
+                ax_dist.grid(True, alpha=0.3)
+                ax_dist.legend()
                 st.pyplot(fig_dist)
             
             with col2:
@@ -1025,6 +1342,24 @@ def main():
                             'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
                             'Percentile Rank': f"{result['percentile']:.1f}%",
                             'Max Drawdown (%)': f"{result['max_drawdown']:.2f}"
+                        })
+                    
+                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+            
+            elif analysis_type == 'expanding_window':
+                if results:
+                    summary_data = []
+                    for result in results:
+                        summary_data.append({
+                            'Iteration': result['iteration'],
+                            'Train Size': result['train_size'],
+                            'Test Period': result['test_period'],
+                            'Actual Return (%)': f"{result['actual_return']:.2f}",
+                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
+                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
+                            'Percentile Rank': f"{result['percentile']:.1f}%",
+                            'CAGR (%)': f"{result['actual_cagr']:.2f}",
+                            'CAGR Percentile': f"{result['cagr_percentile']:.1f}%"
                         })
                     
                     st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
