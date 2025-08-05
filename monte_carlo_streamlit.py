@@ -1101,14 +1101,16 @@ def main():
                 percentile = stats.percentileofscore(final_returns, actual_final_return)
                 
                 # Calculate CAGR for longer periods
-                if len(test_data) >= 252:
+                if len(test_data) >= 20:  # Calculate CAGR for periods >= 20 days
                     years = len(test_data) / 252
                     actual_cagr = ((1 + actual_final_return / 100) ** (1 / years) - 1) * 100
                     cagr_values = [((1 + ret / 100) ** (1 / years) - 1) * 100 for ret in final_returns]
                     cagr_percentile = stats.percentileofscore(cagr_values, actual_cagr)
+                    forecast_cagr = ((1 + simulation_results['percentiles']['50'][-1] / 100) ** (1 / years) - 1) * 100
                 else:
                     actual_cagr = actual_final_return
                     cagr_percentile = percentile
+                    forecast_cagr = simulation_results['percentiles']['50'][-1]
                 
                 results.append({
                     'iteration': i + 1,
@@ -1119,6 +1121,7 @@ def main():
                     'forecast_return': simulation_results['percentiles']['50'][-1],
                     'percentile': percentile,
                     'actual_cagr': actual_cagr,
+                    'forecast_cagr': forecast_cagr,
                     'cagr_percentile': cagr_percentile,
                     'max_drawdown': np.mean(simulation_results['max_drawdowns'])
                 })
@@ -1140,6 +1143,7 @@ def main():
                         'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
                         'Percentile Rank': f"{result['percentile']:.1f}%",
                         'CAGR (%)': f"{result['actual_cagr']:.2f}",
+                        'Forecast CAGR (%)': f"{result['forecast_cagr']:.2f}",
                         'CAGR Percentile': f"{result['cagr_percentile']:.1f}%"
                     })
                 
@@ -1148,49 +1152,183 @@ def main():
                 # Visualizations
                 st.subheader("Expanding Window Analysis")
                 
-                # Plot training size vs performance
-                fig1, ax1 = plt.subplots(figsize=(12, 6))
-                train_sizes = [r['train_size'] for r in results]
-                actual_returns = [r['actual_return'] for r in results]
-                forecast_returns = [r['forecast_return'] for r in results]
+                # Create date labels for x-axis (convert to month/year format)
+                date_labels = []
+                for result in results:
+                    test_start_date = result['test_period'].split(" to ")[0]  # Extract start date
+                    try:
+                        dt = datetime.strptime(test_start_date, '%Y-%m-%d')
+                        date_labels.append(dt.strftime('%b %Y'))  # Format as "Jan 2023"
+                    except:
+                        # Fallback to iteration number if date conversion fails
+                        date_labels.append(f"Period {len(date_labels) + 1}")
                 
-                ax1.plot(train_sizes, actual_returns, 'o-', label='Actual Returns', color='blue')
-                ax1.plot(train_sizes, forecast_returns, 's-', label='Forecast Returns', color='red')
-                ax1.set_title("Performance vs Training Window Size")
-                ax1.set_xlabel("Training Window Size (days)")
-                ax1.set_ylabel("Return (%)")
-                ax1.legend()
+                # 1. Scatter plot for "Forecast Error vs Training Window Size" with date-labeled points
+                fig1, ax1 = plt.subplots(figsize=(14, 7))
+                
+                train_sizes = [r['train_size'] for r in results]
+                forecast_errors = [r['actual_return'] - r['forecast_return'] for r in results]
+                abs_errors = [abs(err) for err in forecast_errors]
+                
+                # Create scatter plot with training size on x-axis and absolute error on y-axis
+                scatter = ax1.scatter(train_sizes, abs_errors, s=80, alpha=0.7, c=train_sizes, cmap='viridis')
+                
+                # Fit a trend line
+                if len(train_sizes) > 1:
+                    z = np.polyfit(train_sizes, abs_errors, 1)
+                    p = np.poly1d(z)
+                    x_range = np.linspace(min(train_sizes), max(train_sizes), 100)
+                    ax1.plot(x_range, p(x_range), 'r--', linewidth=2)
+                    
+                    # Add correlation text
+                    corr = np.corrcoef(train_sizes, abs_errors)[0, 1]
+                    ax1.text(0.05, 0.95, f'Correlation: {corr:.2f}',
+                             transform=ax1.transAxes, fontsize=12,
+                             verticalalignment='top',
+                             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                # Add test period labels to points
+                for i, (x, y, lbl) in enumerate(zip(train_sizes, abs_errors, date_labels)):
+                    ax1.annotate(lbl, (x, y), xytext=(5, 5), textcoords='offset points')
+                
+                ax1.set_title('Forecast Error vs Training Window Size', fontsize=14)
+                ax1.set_xlabel('Training Window Size (Trading Days)', fontsize=12)
+                ax1.set_ylabel('Absolute Forecast Error (%)', fontsize=12)
                 ax1.grid(True, alpha=0.3)
                 st.pyplot(fig1)
                 
-                # Plot percentile ranks over time
-                fig2, ax2 = plt.subplots(figsize=(12, 6))
-                iterations = [r['iteration'] for r in results]
-                percentiles = [r['percentile'] for r in results]
-                cagr_percentiles = [r['cagr_percentile'] for r in results]
+                # 2. Bar chart for "Actual vs Forecast Returns"
+                fig2, ax2 = plt.subplots(figsize=(14, 7))
                 
-                ax2.plot(iterations, percentiles, 'o-', label='Return Percentile', color='green')
-                ax2.plot(iterations, cagr_percentiles, 's-', label='CAGR Percentile', color='orange')
-                ax2.axhline(y=50, color='red', linestyle='--', alpha=0.7, label='50th Percentile')
-                ax2.set_title("Percentile Ranks Over Time")
-                ax2.set_xlabel("Iteration")
-                ax2.set_ylabel("Percentile Rank")
+                # Set up index for bars
+                indices = np.arange(len(results))
+                width = 0.35
+                
+                actual_returns = [r['actual_return'] for r in results]
+                forecast_returns = [r['forecast_return'] for r in results]
+                percentiles = [r['percentile'] for r in results]
+                
+                # Create bar chart of actual vs forecasted returns
+                ax2.bar(indices - width / 2, actual_returns, width, label='Actual Return', color='green', alpha=0.7)
+                ax2.bar(indices + width / 2, forecast_returns, width, label='Forecast Return', color='blue', alpha=0.7)
+                
+                # Add value labels on bars
+                for i, v in enumerate(actual_returns):
+                    ax2.text(i - width / 2, v + 1, f"{v:.1f}%", ha='center', fontsize=9, 
+                             rotation=90 if abs(v) > 20 else 0)
+                
+                for i, v in enumerate(forecast_returns):
+                    ax2.text(i + width / 2, v + 1, f"{v:.1f}%", ha='center', fontsize=9, 
+                             rotation=90 if abs(v) > 20 else 0)
+                
+                # Customize plot
+                ax2.set_xlabel('Test Period Start')
+                ax2.set_ylabel('Cumulative Return (%)')
+                ax2.set_title(f'Expanding Window Test: Actual vs Forecast Returns - {data["name"]}')
+                ax2.set_xticks(indices)
+                ax2.set_xticklabels(date_labels, rotation=45)
+                ax2.grid(True, alpha=0.3, axis='y')
                 ax2.legend()
-                ax2.grid(True, alpha=0.3)
+                
+                # Add percentile labels
+                for i, pct in enumerate(percentiles):
+                    ax2.text(i, max(actual_returns[i], forecast_returns[i]) + 5, f"{pct:.0f}%ile",
+                             ha='center', fontsize=9, color='red')
+                
+                # Add training window size labels
+                for i, size in enumerate(train_sizes):
+                    ax2.text(i, min(actual_returns[i], forecast_returns[i]) - 5, f"{size} days",
+                             ha='center', fontsize=8, color='blue')
+                
                 st.pyplot(fig2)
                 
-                # Error analysis
-                fig3, ax3 = plt.subplots(figsize=(10, 6))
-                errors = [r['actual_return'] - r['forecast_return'] for r in results]
-                ax3.hist(errors, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
-                ax3.axvline(x=np.mean(errors), color='red', linestyle='--', 
-                           label=f'Mean Error: {np.mean(errors):.2f}%')
-                ax3.set_title("Forecast Error Distribution")
-                ax3.set_xlabel("Forecast Error (%)")
-                ax3.set_ylabel("Frequency")
-                ax3.legend()
-                ax3.grid(True, alpha=0.3)
-                st.pyplot(fig3)
+                # 3. Bar chart for "Actual vs Forecast CAGR" (if we have CAGR data)
+                if any('actual_cagr' in r and r['actual_cagr'] != r['actual_return'] for r in results):
+                    fig3, ax3 = plt.subplots(figsize=(14, 7))
+                    
+                    actual_cagrs = [r['actual_cagr'] for r in results if r['actual_cagr'] != r['actual_return']]
+                    forecast_cagrs = [r['forecast_cagr'] for r in results if r['actual_cagr'] != r['actual_return']]
+                    
+                    # Create filtered indices for CAGR data
+                    cagr_indices = np.arange(len(actual_cagrs))
+                    cagr_date_labels = [date_labels[i] for i, r in enumerate(results) if r['actual_cagr'] != r['actual_return']]
+                    
+                    # Create bar chart of actual vs forecasted CAGR
+                    ax3.bar(cagr_indices - width / 2, actual_cagrs, width, label='Actual CAGR', color='green', alpha=0.7)
+                    ax3.bar(cagr_indices + width / 2, forecast_cagrs, width, label='Forecast CAGR', color='blue', alpha=0.7)
+                    
+                    # Add value labels on bars
+                    for i, v in enumerate(actual_cagrs):
+                        ax3.text(i - width / 2, v + 1, f"{v:.1f}%", ha='center', fontsize=9, 
+                                 rotation=90 if abs(v) > 20 else 0)
+                    
+                    for i, v in enumerate(forecast_cagrs):
+                        ax3.text(i + width / 2, v + 1, f"{v:.1f}%", ha='center', fontsize=9, 
+                                 rotation=90 if abs(v) > 20 else 0)
+                    
+                    # Customize plot
+                    ax3.set_xlabel('Test Period Start')
+                    ax3.set_ylabel('Annualized Return (%)')
+                    ax3.set_title(f'Expanding Window Test: Actual vs Forecast CAGR - {data["name"]}')
+                    ax3.set_xticks(cagr_indices)
+                    ax3.set_xticklabels(cagr_date_labels, rotation=45)
+                    ax3.grid(True, alpha=0.3, axis='y')
+                    ax3.legend()
+                    
+                    st.pyplot(fig3)
+                
+                # 4. Bar chart for "Maximum Drawdowns"
+                fig4, ax4 = plt.subplots(figsize=(14, 7))
+                max_drawdowns = [r['max_drawdown'] for r in results]
+                
+                ax4.bar(indices, max_drawdowns, color='red', alpha=0.7)
+                
+                # Add value labels on bars
+                for i, v in enumerate(max_drawdowns):
+                    ax4.text(i, v + 0.5, f"{v:.1f}%", ha='center', fontsize=9)
+                
+                # Customize plot
+                ax4.set_xlabel('Test Period Start')
+                ax4.set_ylabel('Maximum Drawdown (%)')
+                ax4.set_title(f'Expanding Window Test: Maximum Drawdowns - {data["name"]}')
+                ax4.set_xticks(indices)
+                ax4.set_xticklabels(date_labels, rotation=45)
+                ax4.grid(True, alpha=0.3, axis='y')
+                
+                st.pyplot(fig4)
+                
+                # 5. Additional analysis plots
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Plot percentile ranks over time
+                    fig5, ax5 = plt.subplots(figsize=(10, 6))
+                    iterations = [r['iteration'] for r in results]
+                    cagr_percentiles = [r['cagr_percentile'] for r in results]
+                    
+                    ax5.plot(iterations, percentiles, 'o-', label='Return Percentile', color='green')
+                    ax5.plot(iterations, cagr_percentiles, 's-', label='CAGR Percentile', color='orange')
+                    ax5.axhline(y=50, color='red', linestyle='--', alpha=0.7, label='50th Percentile')
+                    ax5.set_title("Percentile Ranks Over Time")
+                    ax5.set_xlabel("Iteration")
+                    ax5.set_ylabel("Percentile Rank")
+                    ax5.legend()
+                    ax5.grid(True, alpha=0.3)
+                    st.pyplot(fig5)
+                
+                with col2:
+                    # Error analysis
+                    fig6, ax6 = plt.subplots(figsize=(10, 6))
+                    errors = [r['actual_return'] - r['forecast_return'] for r in results]
+                    ax6.hist(errors, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+                    ax6.axvline(x=np.mean(errors), color='red', linestyle='--', 
+                               label=f'Mean Error: {np.mean(errors):.2f}%')
+                    ax6.set_title("Forecast Error Distribution")
+                    ax6.set_xlabel("Forecast Error (%)")
+                    ax6.set_ylabel("Frequency")
+                    ax6.legend()
+                    ax6.grid(True, alpha=0.3)
+                    st.pyplot(fig6)
 
     elif page == "Forward Forecast":
         st.header("Forward Forecast")
