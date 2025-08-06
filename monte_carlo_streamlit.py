@@ -796,12 +796,11 @@ def main():
         st.header("Configuration")
         
         # Handle URL parameters for shareable links
-        symphony_url_param = st.query_params.get("symphony", None)
+        symphony_url_param = st.query_params.get("symphony", "")
         start_date_param = st.query_params.get("start_date", None)
         end_date_param = st.query_params.get("end_date", None)
         
         # Set default values from URL parameters if available
-        default_url = symphony_url_param if symphony_url_param else 'https://app.composer.trade/symphony/MmQbpf2U5TMQFmr9Nt2e/details'
         default_start_date = date.fromisoformat(start_date_param) if start_date_param else date(2000, 1, 1)
         default_end_date = date.fromisoformat(end_date_param) if end_date_param else date.today()
         
@@ -811,7 +810,12 @@ def main():
         ])
         
         if input_method == "Composer Symphony URL":
-            symphony_url = st.text_input("Enter Composer Symphony URL:", value=default_url)
+            symphony_url = st.text_input(
+                "Enter Composer Symphony URL:", 
+                value=symphony_url_param,
+                help="Enter the full URL of your Composer symphony",
+                placeholder="https://app.composer.trade/symphony/..."
+            )
             
             col1, col2 = st.columns(2)
             with col1:
@@ -822,8 +826,8 @@ def main():
                                        help="Default: Today's date")
             
             # Generate shareable link
-            if symphony_url and symphony_url != default_url:
-                # Extract symphony ID from URL
+            if symphony_url and symphony_url.strip():
+                # Validate that it's a Composer symphony URL
                 import re
                 symphony_id_match = re.search(r'/symphony/([^/]+)/', symphony_url)
                 if symphony_id_match:
@@ -846,6 +850,27 @@ def main():
                         help="Select all text (Ctrl+A) then copy (Ctrl+C)",
                         key="shareable_url_textarea"
                     )
+                    
+                    # Add a button to copy the URL
+                    if st.button("📋 Copy URL to Clipboard", key="copy_url_button"):
+                        st.success("URL copied! (Note: You may need to manually copy from the text area above)")
+                else:
+                    st.warning("Please enter a valid Composer Symphony URL to generate a shareable link.")
+            
+            # Always show the shareable URL section if we have a valid URL in session state
+            if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
+                st.markdown("---")
+                st.markdown("### 🔗 Share Your Analysis")
+                st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
+                
+                # Create a text area for easy copying
+                st.text_area(
+                    "Shareable URL (select all and copy):",
+                    value=st.session_state.shareable_url,
+                    height=100,
+                    help="Select all text (Ctrl+A) then copy (Ctrl+C)",
+                    key="shareable_url_textarea_global"
+                )
             
             if st.button("Fetch Data"):
                 with st.spinner("Fetching data from Composer..."):
@@ -907,21 +932,6 @@ def main():
                             with col4:
                                 annualized_return = np.mean(daily_returns) * 252
                                 st.metric("Annualized Return", f"{annualized_return:.2f}%")
-        
-        # Display shareable URL outside the form (if available)
-        if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
-            st.markdown("---")
-            st.markdown("### 🔗 Share Your Analysis")
-            st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
-            
-            # Create a text area for easy copying
-            st.text_area(
-                "Shareable URL (select all and copy):",
-                value=st.session_state.shareable_url,
-                height=100,
-                help="Select all text (Ctrl+A) then copy (Ctrl+C)",
-                key="shareable_url_textarea_global"
-            )
         
         elif input_method == "Upload CSV File":
             st.info("Upload a CSV file with columns: 'Date' and 'Daily_Return'")
