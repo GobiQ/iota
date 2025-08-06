@@ -852,7 +852,7 @@ def main():
         ])
         
         if input_method == "Composer Symphony URL":
-            default_url = 'https://app.composer.trade/symphony/BrnnCuy0Dhz3DjaAZbFt/details'
+            default_url = 'https://app.composer.trade/symphony/MmQbpf2U5TMQFmr9Nt2e/details'
             symphony_url = st.text_input("Enter Composer Symphony URL:", value=default_url)
             
             col1, col2 = st.columns(2)
