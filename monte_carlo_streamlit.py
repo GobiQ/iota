@@ -2082,12 +2082,6 @@ def main():
         
         This webtool is based on code originally developed and shared by **@prairie** - Huge thanks to him for sharing this analysis framework.
         """)
-        
-        # Add some styling
-        st.markdown("---")
-        st.markdown("*This tool is designed for educational and research purposes. Past performance does not guarantee future results.*")
-
-        st.markdown("*This tool is designed for educational and research purposes. Past performance does not guarantee future results.*")
 
 if __name__ == "__main__":
     main()
