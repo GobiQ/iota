@@ -773,12 +773,6 @@ def analyze_drawdowns_comprehensive(returns, dates, period_length, test_start_da
 def main():
     st.title("Monte Carlo Symphony Analysis")
     
-    # Add brief credits in the sidebar
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("**Credits:** Based on original work by @prairie")
-        st.markdown("---")
-    
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox("Choose a page", [
