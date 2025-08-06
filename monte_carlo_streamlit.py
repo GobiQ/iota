@@ -2182,7 +2182,7 @@ def main():
         
         # Add some styling
         st.markdown("---")
-        st.markdown("*This tool is designed for educational and research purposes. Past performance does not guarantee future results.*")
+        st.markdown("*This tool is designed for educational and research purposes.*")
 
 if __name__ == "__main__":
     main()
