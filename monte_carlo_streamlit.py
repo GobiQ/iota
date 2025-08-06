@@ -1029,7 +1029,7 @@ def main():
                 max_value=50000,
                 value=10000,
                 step=1000,
-                help="Default: 10,000 simulations"
+                help="Default: 10,000 simulations. Reduce number of simulations to hasten analyses."
             )
         
         if st.button("Run Walk-Forward Analysis"):
@@ -1278,7 +1278,7 @@ def main():
         num_simulations = st.number_input("Number of simulations:", 
                                         min_value=1000, max_value=20000, 
                                         value=10000,
-                                        help="Default: 10,000 simulations")
+                                        help="Default: 10,000 simulations. Reduce number of simulations to hasten analyses.")
         
         if st.button("Run Rolling Walk Tests"):
             if test_type == "Sliding Window":
@@ -1528,7 +1528,7 @@ def main():
             min_value=1000,
             max_value=20000,
             value=10000,
-            help="Default: 10,000 simulations"
+            help="Default: 10,000 simulations. Reduce number of simulations to hasten analyses."
         )
         
         if st.button("Run Expanding Window Tests"):
@@ -1910,7 +1910,7 @@ def main():
                 max_value=50000,
                 value=10000,
                 step=1000,
-                help="Default: 10,000 simulations"
+                help="Default: 10,000 simulations. Reduce number of simulations to hasten analyses."
             )
         
         with col3:
