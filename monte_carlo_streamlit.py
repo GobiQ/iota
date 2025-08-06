@@ -2070,6 +2070,10 @@ def main():
 
     elif page == "Credits":
         st.header("Credits")
+        
+        st.markdown("""
+        This webtool is based on code originally developed and shared by **@prairie** - Huge thanks to him for sharing this analysis framework.
+        """)
 
 if __name__ == "__main__":
     main()
