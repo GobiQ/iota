@@ -944,7 +944,7 @@ def main():
             st.pyplot(fig)
             
             # Additional data visualizations
-            st.subheader("Data Analysis")
+            st.subheader("Returns Distribution and Volatility Visualizations")
             
             col1, col2 = st.columns(2)
             
