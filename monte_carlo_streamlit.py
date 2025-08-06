@@ -830,8 +830,9 @@ def main():
                 if symphony_id_match:
                     symphony_id = symphony_id_match.group(1)
                     
-                    # Create shareable URL
-                    shareable_url = f"?symphony={symphony_url}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
+                    # Create shareable URL with full base URL
+                    base_url = "https://monte-carlo-symphony.streamlit.app/"
+                    shareable_url = f"{base_url}?symphony={symphony_url}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
                     
                     # Store the shareable URL in session state for display outside the form
                     st.session_state.shareable_url = shareable_url
@@ -849,27 +850,12 @@ def main():
                     )
                     
                     # Add a button to copy the URL
-                    if st.button("📋 Copy URL to Clipboard", key="copy_url_button"):
+                    if st.button("Copy URL to Clipboard", key="copy_url_button"):
                         st.success("URL copied! (Note: You may need to manually copy from the text area above)")
                 else:
                     st.warning("Please enter a valid Composer Symphony URL to generate a shareable link.")
             
-            # Always show the shareable URL section if we have a valid URL in session state
-            if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
-                st.markdown("---")
-                st.markdown("### 🔗 Share Your Analysis")
-                st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
-                
-                # Create a text area for easy copying
-                st.text_area(
-                    "Shareable URL (select all and copy):",
-                    value=st.session_state.shareable_url,
-                    height=100,
-                    help="Select all text (Ctrl+A) then copy (Ctrl+C)",
-                    key="shareable_url_textarea_global"
-                )
-            
-            if st.button("Fetch Data"):
+                                    if st.button("Fetch Data", key="fetch_data_button", use_container_width=True, type="primary"):
                 with st.spinner("Fetching data from Composer..."):
                     allocations_df, symphony_name, tickers = fetch_backtest(
                         symphony_url, 
@@ -893,7 +879,6 @@ def main():
                             
                             # Make sure date_strs and daily_returns have the same length (matching original script)
                             if len(date_strs) != len(daily_returns):
-                                st.warning(f"Warning: Length mismatch - date_strs: {len(date_strs)}, daily_returns: {len(daily_returns)}")
                                 # Trim to the shorter length
                                 min_length = min(len(date_strs), len(daily_returns))
                                 date_strs = date_strs[:min_length]
