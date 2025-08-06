@@ -776,7 +776,7 @@ def main():
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox("Choose a page", [
-        "Data Input",
+        "Configuration",
         "Walk-Forward Analysis", 
         "Rolling Walk Tests",
         "Expanding Window Tests",
@@ -792,8 +792,19 @@ def main():
     if 'analysis_results' not in st.session_state:
         st.session_state.analysis_results = {}
     
-    if page == "Data Input":
-        st.header("Portfolio Data Input")
+    if page == "Configuration":
+        st.header("Configuration")
+        
+        # Handle URL parameters for shareable links
+        params = st.experimental_get_query_params()
+        symphony_url_param = params.get("symphony", [None])[0]
+        start_date_param = params.get("start_date", [None])[0]
+        end_date_param = params.get("end_date", [None])[0]
+        
+        # Set default values from URL parameters if available
+        default_url = symphony_url_param if symphony_url_param else 'https://app.composer.trade/symphony/MmQbpf2U5TMQFmr9Nt2e/details'
+        default_start_date = date.fromisoformat(start_date_param) if start_date_param else date(2000, 1, 1)
+        default_end_date = date.fromisoformat(end_date_param) if end_date_param else date.today()
         
         input_method = st.radio("Choose input method:", [
             "Composer Symphony URL",
@@ -801,16 +812,34 @@ def main():
         ])
         
         if input_method == "Composer Symphony URL":
-            default_url = 'https://app.composer.trade/symphony/MmQbpf2U5TMQFmr9Nt2e/details'
             symphony_url = st.text_input("Enter Composer Symphony URL:", value=default_url)
             
             col1, col2 = st.columns(2)
             with col1:
-                start_date = st.date_input("Start Date", value=date(2000, 1, 1), 
+                start_date = st.date_input("Start Date", value=default_start_date, 
                                          help="Default: 2000-01-01 (defaults to oldest possible date)")
             with col2:
-                end_date = st.date_input("End Date", value=date.today(),
+                end_date = st.date_input("End Date", value=default_end_date,
                                        help="Default: Today's date")
+            
+            # Generate shareable link
+            if symphony_url and symphony_url != default_url:
+                # Extract symphony ID from URL
+                import re
+                symphony_id_match = re.search(r'/symphony/([^/]+)/', symphony_url)
+                if symphony_id_match:
+                    symphony_id = symphony_id_match.group(1)
+                    
+                    # Create shareable URL
+                    shareable_url = f"?symphony={symphony_url}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
+                    
+                    st.subheader("Shareable Link")
+                    st.info("Share this link to load the same configuration:")
+                    st.code(shareable_url, language=None)
+                    
+                    # Copy to clipboard button
+                    if st.button("Copy Link to Clipboard"):
+                        st.write("Link copied! (Note: You may need to manually copy from the code block above)")
             
             if st.button("Fetch Data"):
                 with st.spinner("Fetching data from Composer..."):
@@ -998,7 +1027,7 @@ def main():
         st.header("Walk-Forward Analysis")
         
         if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
+            st.warning("Please load portfolio data first from the Configuration page.")
             return
         
         data = st.session_state.returns_data
@@ -1221,7 +1250,7 @@ def main():
         st.header("Rolling Walk-Forward Tests")
         
         if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
+            st.warning("Please load portfolio data first from the Configuration page.")
             return
         
         data = st.session_state.returns_data
@@ -1486,7 +1515,7 @@ def main():
         st.header("Expanding Window Tests")
         
         if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
+            st.warning("Please load portfolio data first from the Configuration page.")
             return
         
         data = st.session_state.returns_data
@@ -1884,7 +1913,7 @@ def main():
         st.header("Forward Forecast")
         
         if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
+            st.warning("Please load portfolio data first from the Configuration page.")
             return
         
         data = st.session_state.returns_data
