@@ -874,20 +874,6 @@ def main():
             
             exclusion_ranges = []
             if exclude_dates:
-                # Default option to exclude all of 2020
-                exclude_2020 = st.checkbox("Exclude entire year 2020", value=True,
-                                         help="Automatically excludes all data from 2020-01-01 to 2020-12-31")
-                
-                # Store 2020 exclusion setting in session state
-                st.session_state.exclude_2020 = exclude_2020
-                
-                if exclude_2020:
-                    exclusion_ranges.append({
-                        'start': date(2020, 1, 1),
-                        'end': date(2020, 12, 31),
-                        'description': 'Entire year 2020'
-                    })
-                
                 # Custom date range exclusion
                 st.write("**Add custom exclusion ranges:**")
                 
@@ -1032,14 +1018,6 @@ def main():
                         if 'exclude_dates' in st.session_state and st.session_state.exclude_dates:
                             if 'custom_exclusions' in st.session_state and st.session_state.custom_exclusions:
                                 csv_exclusion_ranges.extend(st.session_state.custom_exclusions)
-                            
-                            # Add 2020 exclusion if it was selected in the other section
-                            if 'exclude_2020' in st.session_state and st.session_state.exclude_2020:
-                                csv_exclusion_ranges.append({
-                                    'start': date(2020, 1, 1),
-                                    'end': date(2020, 12, 31),
-                                    'description': 'Entire year 2020'
-                                })
                         
                         # Apply exclusions if any are defined
                         if csv_exclusion_ranges:
