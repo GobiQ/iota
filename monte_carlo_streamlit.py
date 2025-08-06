@@ -11,6 +11,7 @@ from typing import List, Dict
 import tempfile
 import zipfile
 import io
+import random
 
 # Set page config
 st.set_page_config(
@@ -1339,10 +1340,11 @@ def main():
         
         data = st.session_state.returns_data
         returns = data['returns']
+        dates = data['dates']  # Add this line to get dates
         
         st.subheader("Forecast Configuration")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             forecast_days = st.number_input(
                 "Forecast period (trading days):",
@@ -1360,6 +1362,16 @@ def main():
                 value=10000,
                 step=1000,
                 help="Default: 10,000 simulations"
+            )
+        
+        with col3:
+            num_sample_paths = st.number_input(
+                "Number of sample paths to display:",
+                min_value=50,
+                max_value=1000,
+                value=200,
+                step=50,
+                help="Default: 200 sample paths (matching original script)"
             )
         
         if st.button("Run Forward Forecast"):
@@ -1388,11 +1400,11 @@ def main():
             fig, ax = plt.subplots(figsize=(12, 8))
             x = range(len(percentiles['50']))
             
-            # Select random sample paths (matching original script default of 200)
+            # Select random sample paths based on user input (matching original script)
             all_paths = simulation_results['paths']
             num_paths = all_paths.shape[0]
-            num_samples = min(200, num_paths)  # Default from original script
-            sample_indices = np.random.choice(num_paths, num_samples, replace=False)
+            num_samples = min(num_sample_paths, num_paths)  # Use user input
+            sample_indices = random.sample(range(num_paths), num_samples)
             
             # Plot random sample paths with very light opacity
             for idx in sample_indices:
