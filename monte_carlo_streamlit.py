@@ -807,7 +807,7 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 start_date = st.date_input("Start Date", value=date(2000, 1, 1), 
-                                         help="Default: 2000-01-01 (matches original script)")
+                                         help="Default: 2000-01-01 (defaults to oldest possible date)")
             with col2:
                 end_date = st.date_input("End Date", value=date.today(),
                                        help="Default: Today's date")
