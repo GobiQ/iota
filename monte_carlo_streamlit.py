@@ -804,10 +804,7 @@ def main():
         default_start_date = date.fromisoformat(start_date_param) if start_date_param else date(2000, 1, 1)
         default_end_date = date.fromisoformat(end_date_param) if end_date_param else date.today()
         
-        input_method = st.radio("Choose input method:", [
-            "Composer Symphony URL",
-            "Upload CSV File"
-        ])
+        input_method = "Composer Symphony URL"
         
         if input_method == "Composer Symphony URL":
             symphony_url = st.text_input(
@@ -932,37 +929,6 @@ def main():
                             with col4:
                                 annualized_return = np.mean(daily_returns) * 252
                                 st.metric("Annualized Return", f"{annualized_return:.2f}%")
-        
-        elif input_method == "Upload CSV File":
-            st.info("Upload a CSV file with columns: 'Date' and 'Daily_Return'")
-            uploaded_file = st.file_uploader("Choose CSV file", type="csv")
-            
-            if uploaded_file is not None:
-                try:
-                    df = pd.read_csv(uploaded_file)
-                    
-                    if 'Date' in df.columns and 'Daily_Return' in df.columns:
-                        portfolio_name = st.text_input("Portfolio Name:", 
-                                                     value=uploaded_file.name.replace('.csv', ''))
-                        
-                        st.session_state.returns_data = {
-                            'returns': df['Daily_Return'].tolist(),
-                            'dates': df['Date'].tolist(),
-                            'name': portfolio_name
-                        }
-                        st.session_state.portfolio_name = portfolio_name
-                        
-                        st.success(f"Successfully loaded {len(df)} trading days")
-                        
-                        # Show preview
-                        st.subheader("Data Preview")
-                        st.dataframe(df.head(10))
-                        
-                    else:
-                        st.error("CSV must contain 'Date' and 'Daily_Return' columns")
-                        
-                except Exception as e:
-                    st.error(f"Error reading CSV file: {str(e)}")
         
         # Show current data status
         if st.session_state.returns_data is not None:
