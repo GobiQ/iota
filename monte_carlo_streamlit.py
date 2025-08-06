@@ -776,7 +776,7 @@ def main():
     # Add brief credits in the sidebar
     with st.sidebar:
         st.markdown("---")
-        st.markdown("**Credits:** Based on original work by @prairie, adapted for Investor's Collaborative")
+        st.markdown("**Credits:** Based on original work by @prairie. ")
         st.markdown("---")
     
     # Sidebar for navigation
@@ -2087,9 +2087,7 @@ def main():
         Huge thanks to **@prairie** for sharing this Monte Carlo analysis framework.
         """)
         
-        # Add some styling
-        st.markdown("---")
-        st.markdown("*This tool is designed for educational and research purposes. Past performance does not guarantee future results.*")
+*")
 
 if __name__ == "__main__":
     main()
