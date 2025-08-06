@@ -796,10 +796,9 @@ def main():
         st.header("Configuration")
         
         # Handle URL parameters for shareable links
-        params = st.experimental_get_query_params()
-        symphony_url_param = params.get("symphony", [None])[0]
-        start_date_param = params.get("start_date", [None])[0]
-        end_date_param = params.get("end_date", [None])[0]
+        symphony_url_param = st.query_params.get("symphony", None)
+        start_date_param = st.query_params.get("start_date", None)
+        end_date_param = st.query_params.get("end_date", None)
         
         # Set default values from URL parameters if available
         default_url = symphony_url_param if symphony_url_param else 'https://app.composer.trade/symphony/MmQbpf2U5TMQFmr9Nt2e/details'
@@ -833,13 +832,20 @@ def main():
                     # Create shareable URL
                     shareable_url = f"?symphony={symphony_url}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
                     
-                    st.subheader("Shareable Link")
-                    st.info("Share this link to load the same configuration:")
-                    st.code(shareable_url, language=None)
+                    # Store the shareable URL in session state for display outside the form
+                    st.session_state.shareable_url = shareable_url
                     
-                    # Copy to clipboard button
-                    if st.button("Copy Link to Clipboard"):
-                        st.write("Link copied! (Note: You may need to manually copy from the code block above)")
+                    st.subheader("🔗 Share Your Analysis")
+                    st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
+                    
+                    # Create a text area for easy copying (similar to iota implementation)
+                    st.text_area(
+                        "Shareable URL (select all and copy):",
+                        value=shareable_url,
+                        height=100,
+                        help="Select all text (Ctrl+A) then copy (Ctrl+C)",
+                        key="shareable_url_textarea"
+                    )
             
             if st.button("Fetch Data"):
                 with st.spinner("Fetching data from Composer..."):
@@ -901,6 +907,21 @@ def main():
                             with col4:
                                 annualized_return = np.mean(daily_returns) * 252
                                 st.metric("Annualized Return", f"{annualized_return:.2f}%")
+        
+        # Display shareable URL outside the form (if available)
+        if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
+            st.markdown("---")
+            st.markdown("### 🔗 Share Your Analysis")
+            st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
+            
+            # Create a text area for easy copying
+            st.text_area(
+                "Shareable URL (select all and copy):",
+                value=st.session_state.shareable_url,
+                height=100,
+                help="Select all text (Ctrl+A) then copy (Ctrl+C)",
+                key="shareable_url_textarea_global"
+            )
         
         elif input_method == "Upload CSV File":
             st.info("Upload a CSV file with columns: 'Date' and 'Daily_Return'")
