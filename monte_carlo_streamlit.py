@@ -15,7 +15,7 @@ import random
 
 # Set page config
 st.set_page_config(
-    page_title="Monte Carlo Portfolio Analysis",
+    page_title="Monte Carlo Symphony Analysis",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -771,12 +771,12 @@ def analyze_drawdowns_comprehensive(returns, dates, period_length, test_start_da
 
 # Main Streamlit Application
 def main():
-    st.title("Monte Carlo Portfolio Analysis")
+    st.title("Monte Carlo Symphony Analysis")
     
     # Add brief credits in the sidebar
     with st.sidebar:
         st.markdown("---")
-        st.markdown("**Credits:** Based on original work by @prairie, adapted for Investor's Collaborative")
+        st.markdown("**Credits:** Based on original work by @prairie")
         st.markdown("---")
     
     # Sidebar for navigation
@@ -2080,11 +2080,7 @@ def main():
         st.markdown("""
         ## About This Application
         
-        This Monte Carlo Portfolio Analysis tool is based on code originally developed and shared by **@prairie**.
-        
-        Their scripts served as the foundation for this tool, which was adapted and extended for use by members of the **Investor's Collaborative**.
-        
-        Huge thanks to **@prairie** for sharing this Monte Carlo analysis framework.
+        This webtool is based on code originally developed and shared by **@prairie** - Huge thanks to him for sharing this analysis framework.
         """)
         
         # Add some styling
