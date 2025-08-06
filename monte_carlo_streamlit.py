@@ -855,7 +855,7 @@ def main():
                 else:
                     st.warning("Please enter a valid Composer Symphony URL to generate a shareable link.")
             
-                                    if st.button("Fetch Data", key="fetch_data_button", use_container_width=True, type="primary"):
+            if st.button("Fetch Data", key="fetch_data_button", use_container_width=True, type="primary"):
                 with st.spinner("Fetching data from Composer..."):
                     allocations_df, symphony_name, tickers = fetch_backtest(
                         symphony_url, 
