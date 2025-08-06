@@ -787,7 +787,6 @@ def main():
         "Rolling Walk Tests",
         "Expanding Window Tests",
         "Forward Forecast",
-        "Drawdown Analysis",
         "Credits"
     ])
     
@@ -2075,98 +2074,6 @@ def main():
             
             st.session_state.analysis_results['forward_forecast'] = simulation_results
 
-    elif page == "Drawdown Analysis":
-        st.header("Comprehensive Drawdown Analysis")
-        
-        if st.session_state.returns_data is None:
-            st.warning("Please load portfolio data first from the Data Input page.")
-            return
-        
-        data = st.session_state.returns_data
-        returns = data['returns']
-        dates = data['dates']
-        
-        st.subheader("Analysis Configuration")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            analysis_period = st.selectbox(
-                "Analysis Period:",
-                ["Full Dataset", "Last Year", "Last 6 Months", "Last 3 Months", "Custom Period"],
-                help="Choose the period for drawdown analysis"
-            )
-        
-        with col2:
-            if analysis_period == "Custom Period":
-                start_date = st.date_input("Start Date:", value=pd.to_datetime(dates[0]))
-                end_date = st.date_input("End Date:", value=pd.to_datetime(dates[-1]))
-            else:
-                start_date = None
-                end_date = None
-        
-        if st.button("Run Drawdown Analysis"):
-            # Determine the analysis period
-            if analysis_period == "Full Dataset":
-                start_idx = 0
-                end_idx = len(returns)
-            elif analysis_period == "Last Year":
-                start_idx = max(0, len(returns) - 252)
-                end_idx = len(returns)
-            elif analysis_period == "Last 6 Months":
-                start_idx = max(0, len(returns) - 126)
-                end_idx = len(returns)
-            elif analysis_period == "Last 3 Months":
-                start_idx = max(0, len(returns) - 63)
-                end_idx = len(returns)
-            else:  # Custom Period
-                start_date_str = start_date.strftime('%Y-%m-%d')
-                end_date_str = end_date.strftime('%Y-%m-%d')
-                
-                # Find indices for custom dates
-                try:
-                    start_idx = dates.index(start_date_str)
-                    end_idx = dates.index(end_date_str) + 1
-                except ValueError:
-                    st.error("Selected dates not found in dataset. Please choose different dates.")
-                    return
-            
-            # Extract data for analysis
-            analysis_returns = returns[start_idx:end_idx]
-            analysis_dates = dates[start_idx:end_idx]
-            
-            if len(analysis_returns) < 30:
-                st.error("Not enough data for meaningful drawdown analysis (minimum 30 days required).")
-                return
-            
-            st.info(f"Analyzing {len(analysis_returns)} trading days from {analysis_dates[0]} to {analysis_dates[-1]}")
-            
-            # Calculate cumulative returns for analysis
-            cumulative_returns = [0.0]
-            cumulative_return = 0.0
-            
-            for r in analysis_returns:
-                r_decimal = r / 100.0
-                cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
-                cumulative_returns.append(cumulative_return)
-            
-            # Run comprehensive drawdown analysis
-            drawdown_stats = analyze_drawdowns_comprehensive(
-                cumulative_returns,
-                [analysis_dates[0]] + analysis_dates,  # Add initial date for 0% return point
-                len(analysis_returns),
-                analysis_dates[0],
-                analysis_dates[-1],
-                data['name']
-            )
-            
-            # Store results
-            st.session_state.analysis_results['drawdown_analysis'] = {
-                'period': analysis_period,
-                'start_date': analysis_dates[0],
-                'end_date': analysis_dates[-1],
-                'stats': drawdown_stats
-            }
-
     elif page == "Credits":
         st.header("Credits")
         
@@ -2182,7 +2089,7 @@ def main():
         
         # Add some styling
         st.markdown("---")
-        st.markdown("*This tool is designed for educational and research purposes.*")
+        st.markdown("*This tool is designed for educational and research purposes. Past performance does not guarantee future results.*")
 
 if __name__ == "__main__":
     main()
