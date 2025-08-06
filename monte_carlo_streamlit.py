@@ -394,9 +394,390 @@ def create_distribution_plot(values, title, xlabel, actual_value=None):
     
     return fig
 
+def analyze_drawdowns_comprehensive(returns, dates, period_length, test_start_date, test_end_date, portfolio_name):
+    """
+    Comprehensive drawdown analysis matching the original script functionality
+    
+    Parameters:
+    -----------
+    returns : list
+        List of cumulative returns
+    dates : list
+        List of date strings corresponding to returns data
+    period_length : int
+        Length of the test period in days
+    test_start_date : str
+        Start date of the test period
+    test_end_date : str
+        End date of the test period
+    portfolio_name : str
+        Name of the portfolio for file naming
+    """
+    # Ensure dates is the same length as returns
+    if len(dates) != len(returns):
+        st.warning(f"Length mismatch between dates ({len(dates)}) and returns ({len(returns)})")
+        min_length = min(len(dates), len(returns))
+        dates = dates[:min_length]
+        returns = returns[:min_length]
+
+    # Convert dates to datetime objects for proper comparison
+    date_objects = [pd.to_datetime(d).date() if isinstance(d, str) else d for d in dates]
+
+    # Calculate drawdown periods and durations
+    drawdown_periods = []
+    drawdowns = []
+
+    # Track the running peak
+    running_peak = returns[0]
+    current_drawdown_start_idx = None
+    current_drawdown_start_value = None
+    in_drawdown = False
+    max_drawdown = 0
+    max_drawdown_idx = 0
+
+    # Loop through returns to calculate drawdowns and identify periods
+    for i, value in enumerate(returns):
+        # Update the running peak if we have a new high
+        if value > running_peak:
+            running_peak = value
+
+            # If we were in a drawdown and now we've reached a new peak, the drawdown is over
+            if in_drawdown:
+                # Calculate the depth (percentage) of this drawdown period
+                min_value = min(returns[current_drawdown_start_idx:i])
+                drawdown_depth = ((running_peak - min_value) / (1 + running_peak / 100))
+
+                # Add this drawdown period to our list
+                drawdown_periods.append({
+                    'start_idx': current_drawdown_start_idx,
+                    'end_idx': i,
+                    'start_date': dates[current_drawdown_start_idx],
+                    'end_date': dates[i],
+                    'duration': i - current_drawdown_start_idx,
+                    'max_drawdown': drawdown_depth,
+                    'calendar_days': (date_objects[i] - date_objects[current_drawdown_start_idx]).days
+                })
+
+                # Reset drawdown tracking
+                in_drawdown = False
+                current_drawdown_start_idx = None
+                current_drawdown_start_value = None
+
+        # Calculate current drawdown from peak
+        current_drawdown = ((running_peak - value) / (1 + running_peak / 100))
+        drawdowns.append(current_drawdown)
+
+        # Update maximum drawdown if this is a new max
+        if current_drawdown > max_drawdown:
+            max_drawdown = current_drawdown
+            max_drawdown_idx = i
+
+        # Detect the start of a new drawdown
+        if current_drawdown > 0 and not in_drawdown:
+            in_drawdown = True
+            current_drawdown_start_idx = i
+            current_drawdown_start_value = running_peak
+
+    # If we're still in a drawdown at the end, add that period
+    if in_drawdown:
+        min_value = min(returns[current_drawdown_start_idx:])
+        drawdown_depth = ((running_peak - min_value) / (1 + running_peak / 100))
+
+        drawdown_periods.append({
+            'start_idx': current_drawdown_start_idx,
+            'end_idx': len(returns) - 1,
+            'start_date': dates[current_drawdown_start_idx],
+            'end_date': dates[-1],
+            'duration': len(returns) - current_drawdown_start_idx,
+            'max_drawdown': drawdown_depth,
+            'calendar_days': (date_objects[-1] - date_objects[current_drawdown_start_idx]).days
+        })
+
+    # Recalculate max_drawdown from the drawdowns list to ensure consistency
+    if drawdowns:
+        max_drawdown = max(drawdowns)
+        max_drawdown_idx = drawdowns.index(max_drawdown)
+
+    # Recalculate drawdown periods to ensure they have the correct max_drawdown value
+    for i, period in enumerate(drawdown_periods):
+        start_idx = period['start_idx']
+        end_idx = period['end_idx']
+        period_drawdowns = drawdowns[start_idx:end_idx + 1]
+        if period_drawdowns:
+            period_max_dd = max(period_drawdowns)
+            drawdown_periods[i]['max_drawdown'] = period_max_dd
+
+    # Sort drawdown periods by max_drawdown (descending) for proper ranking
+    drawdown_periods.sort(key=lambda x: x['max_drawdown'], reverse=True)
+
+    total_days_in_drawdown = sum(period['duration'] for period in drawdown_periods)
+    significant_drawdown_days = sum(period['calendar_days'] for period in drawdown_periods
+                                    if period['calendar_days'] > 20)
+
+    # Find significant drawdown periods (duration > 20 calendar days)
+    significant_periods = [p for p in drawdown_periods if p['calendar_days'] > 20]
+    significant_periods.sort(key=lambda x: x['max_drawdown'], reverse=True)
+
+    # Display top 5 significant drawdown periods
+    st.subheader("Top 5 Significant Drawdown Periods (>20 calendar days)")
+    
+    if significant_periods:
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.write("**Rank**")
+        with col2:
+            st.write("**Trading Days**")
+        with col3:
+            st.write("**Calendar Days**")
+        with col4:
+            st.write("**Max Drawdown**")
+        with col5:
+            st.write("**Period**")
+        
+        for i, period in enumerate(significant_periods[:5], 1):
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                st.write(f"{i}")
+            with col2:
+                st.write(f"{period['duration']}")
+            with col3:
+                st.write(f"{period['calendar_days']}")
+            with col4:
+                st.write(f"{period['max_drawdown']:.2f}%")
+            with col5:
+                st.write(f"{period['start_date']} to {period['end_date']}")
+    else:
+        st.info("No significant drawdown periods (>20 calendar days) found.")
+
+    # Calculate average statistics
+    avg_drawdown_length = total_days_in_drawdown / len(drawdown_periods) if drawdown_periods else 0
+    avg_calendar_days = sum(period['calendar_days'] for period in drawdown_periods) / len(
+        drawdown_periods) if drawdown_periods else 0
+    non_zero_drawdowns = [d for d in drawdowns if d > 0]
+    avg_drawdown_depth = sum(non_zero_drawdowns) / len(non_zero_drawdowns) if non_zero_drawdowns else 0
+
+    # Display summary statistics
+    st.subheader("Drawdown Summary Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Overall Max Drawdown", f"{max_drawdown:.2f}%")
+    with col2:
+        st.metric("Average Drawdown", f"{avg_drawdown_depth:.2f}%")
+    with col3:
+        st.metric("Total Drawdown Days", f"{total_days_in_drawdown}")
+    with col4:
+        st.metric("Significant Periods", f"{len(significant_periods)}")
+
+    # Create comprehensive drawdown visualizations
+    st.subheader("Drawdown Analysis Visualizations")
+    
+    # Create a figure with multiple subplots
+    fig = plt.figure(figsize=(15, 12))
+    gs = plt.GridSpec(3, 2, figure=fig, height_ratios=[2, 1, 1], hspace=0.4, wspace=0.3)
+
+    # Create underwater plot (top left)
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax1.fill_between(range(len(drawdowns)), drawdowns, 0, color='red', alpha=0.3)
+    ax1.plot(range(len(drawdowns)), drawdowns, color='red', linewidth=1)
+
+    # Customize underwater plot
+    ax1.set_title(f'Drawdown Over Time - {period_length} days')
+    ax1.set_ylabel('Drawdown (%)')
+    ax1.set_xlabel('Trading Days')
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.1f}%'.format(y)))
+
+    # Add maximum drawdown line and annotation
+    ax1.axhline(y=max_drawdown, color='darkred', linestyle='--', alpha=0.5)
+    ax1.annotate(f'Maximum Drawdown: {max_drawdown:.2f}%\n'
+                 f'Average Drawdown: {avg_drawdown_depth:.2f}%\n'
+                 f'Avg Trading Days: {avg_drawdown_length:.1f}\n'
+                 f'Avg Calendar Days: {avg_calendar_days:.1f}',
+                 xy=(max_drawdown_idx, max_drawdown),
+                 xytext=(10, 10),
+                 textcoords='offset points',
+                 ha='left',
+                 va='bottom',
+                 bbox=dict(boxstyle='round,pad=0.5', fc='white', ec='red', alpha=0.8))
+
+    # Create cumulative returns plot (top right)
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax2.plot(range(len(returns)), returns, color='blue', linewidth=1.5)
+
+    # Mark drawdown periods
+    for period in drawdown_periods:
+        ax2.axvspan(period['start_idx'], period['end_idx'],
+                    alpha=0.2, color='red')
+
+    # Customize cumulative returns plot
+    ax2.set_title(f'Cumulative Return with Drawdown Periods - {period_length} days')
+    ax2.set_ylabel('Cumulative Return (%)')
+    ax2.set_xlabel('Trading Days')
+    ax2.grid(True, linestyle='--', alpha=0.7)
+
+    # Plot drawdown durations (middle row)
+    ax3 = fig.add_subplot(gs[1, 0])
+
+    durations = [period['duration'] for period in drawdown_periods]
+    calendar_days = [period['calendar_days'] for period in drawdown_periods]
+    max_drawdowns = [period['max_drawdown'] for period in drawdown_periods]
+
+    if durations:
+        # Create a grouped bar chart with both trading days and calendar days
+        x = np.arange(len(durations))
+        width = 0.35
+
+        ax3.bar(x - width / 2, durations, width, color='blue', alpha=0.7, label='Trading Days')
+        ax3.bar(x + width / 2, calendar_days, width, color='green', alpha=0.7, label='Calendar Days')
+
+        # Add drawdown depth as text
+        for i, (_, cal_days, dd) in enumerate(zip(durations, calendar_days, max_drawdowns)):
+            ax3.text(i, cal_days + 1, f"{dd:.1f}%",
+                     ha='center', va='bottom',
+                     color='black', fontsize=8)
+
+        # Customize drawdown durations plot
+        ax3.set_title('Drawdown Duration by Episode')
+        ax3.set_ylabel('Duration (Days)')
+        ax3.set_xlabel('Drawdown Episode')
+        ax3.grid(True, linestyle='--', alpha=0.7)
+        ax3.legend()
+    else:
+        ax3.text(0.5, 0.5, 'No drawdown periods found',
+                 ha='center', va='center', fontsize=12)
+
+    # Plot drawdown distribution (middle right)
+    ax4 = fig.add_subplot(gs[1, 1])
+
+    if drawdowns:
+        non_zero_drawdowns = [d for d in drawdowns if d > 0]
+        if non_zero_drawdowns:
+            sns.histplot(non_zero_drawdowns, bins=20, kde=True, ax=ax4, color='green')
+
+            # Add vertical line for mean and maximum
+            mean_dd = np.mean(non_zero_drawdowns)
+            median_dd = np.median(non_zero_drawdowns)
+
+            ax4.axvline(mean_dd, color='red', linestyle='--',
+                        label=f'Mean: {mean_dd:.2f}%')
+            ax4.axvline(median_dd, color='blue', linestyle='--',
+                        label=f'Median: {median_dd:.2f}%')
+            ax4.axvline(max_drawdown, color='black', linestyle='-',
+                        label=f'Max: {max_drawdown:.2f}%')
+
+            # Customize drawdown distribution plot
+            ax4.set_title('Drawdown Magnitude Distribution')
+            ax4.set_xlabel('Drawdown (%)')
+            ax4.set_ylabel('Frequency')
+            ax4.legend()
+            ax4.grid(True, linestyle='--', alpha=0.7)
+        else:
+            ax4.text(0.5, 0.5, 'No non-zero drawdowns found',
+                     ha='center', va='center', fontsize=12)
+    else:
+        ax4.text(0.5, 0.5, 'No drawdowns found',
+                 ha='center', va='center', fontsize=12)
+
+    # Plot drawdown duration distribution (bottom left)
+    ax5 = fig.add_subplot(gs[2, 0])
+
+    if durations:
+        # Plot both trading days and calendar days as separate histograms
+        sns.histplot(durations, bins=min(20, len(durations)), kde=True, ax=ax5, color='blue',
+                     alpha=0.4, label='Trading Days')
+        sns.histplot(calendar_days, bins=min(20, len(calendar_days)), kde=True, ax=ax5, color='green',
+                     alpha=0.4, label='Calendar Days')
+
+        # Add vertical line for mean and maximum of calendar days
+        mean_duration = np.mean(durations)
+        mean_calendar = np.mean(calendar_days)
+        median_duration = np.median(durations)
+        median_calendar = np.median(calendar_days)
+        max_calendar = max(calendar_days)
+
+        ax5.axvline(mean_calendar, color='darkgreen', linestyle='--',
+                    label=f'Mean Calendar: {mean_calendar:.1f} days')
+        ax5.axvline(median_calendar, color='green', linestyle=':',
+                    label=f'Median Calendar: {median_calendar:.1f} days')
+        ax5.axvline(max_calendar, color='green', linestyle='-',
+                    label=f'Max Calendar: {max_calendar:.0f} days')
+
+        # Customize drawdown duration distribution plot
+        ax5.set_title('Drawdown Duration Distribution')
+        ax5.set_xlabel('Duration (Days)')
+        ax5.set_ylabel('Frequency')
+        ax5.legend()
+        ax5.grid(True, linestyle='--', alpha=0.7)
+    else:
+        ax5.text(0.5, 0.5, 'No drawdown periods found',
+                 ha='center', va='center', fontsize=12)
+
+    # Plot drawdown scatter (bottom right)
+    ax6 = fig.add_subplot(gs[2, 1])
+
+    if durations and max_drawdowns:
+        # Scatter plot with calendar days instead of trading days
+        ax6.scatter(max_drawdowns, calendar_days, alpha=0.7, c='green', s=50, label='Calendar Days')
+        ax6.scatter(max_drawdowns, durations, alpha=0.7, c='blue', s=30, label='Trading Days')
+
+        # Add regression line for calendar days
+        if len(calendar_days) > 1:
+            z = np.polyfit(max_drawdowns, calendar_days, 1)
+            p = np.poly1d(z)
+            x_range = np.linspace(min(max_drawdowns), max(max_drawdowns), 100)
+            ax6.plot(x_range, p(x_range), 'g--', alpha=0.7)
+
+            # Calculate correlation
+            corr = np.corrcoef(max_drawdowns, calendar_days)[0, 1]
+            ax6.text(0.05, 0.95, f'Calendar Day Correlation: {corr:.2f}',
+                     transform=ax6.transAxes, fontsize=10,
+                     verticalalignment='top',
+                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+
+        # Customize scatter plot
+        ax6.set_title('Drawdown Magnitude vs Duration')
+        ax6.set_xlabel('Maximum Drawdown (%)')
+        ax6.set_ylabel('Duration (Days)')
+        ax6.grid(True, linestyle='--', alpha=0.7)
+        ax6.legend()
+    else:
+        ax6.text(0.5, 0.5, 'No drawdown periods found',
+                 ha='center', va='center', fontsize=12)
+
+    # Add overall title
+    fig.suptitle(f'Drawdown Analysis ({test_start_date} to {test_end_date})', fontsize=16, y=0.99)
+    fig.subplots_adjust(left=0.1, right=0.9, bottom=0.1, top=0.9, hspace=0.4, wspace=0.3)
+    fig.subplots_adjust(top=0.92)
+
+    st.pyplot(fig)
+
+    # Return drawdown statistics
+    return {
+        'max_drawdown': max_drawdown,
+        'avg_drawdown': avg_drawdown_depth,
+        'total_drawdown_days': total_days_in_drawdown,
+        'significant_drawdown_days': significant_drawdown_days,
+        'avg_drawdown_length': avg_drawdown_length,
+        'avg_calendar_days': avg_calendar_days,
+        'drawdown_periods': len(drawdown_periods),
+        'significant_periods': len(significant_periods),
+        'max_drawdown_duration': max(period['duration'] for period in drawdown_periods) if drawdown_periods else 0,
+        'max_calendar_duration': max(period['calendar_days'] for period in drawdown_periods) if drawdown_periods else 0,
+        'drawdown_durations': [period['duration'] for period in drawdown_periods],
+        'calendar_durations': [period['calendar_days'] for period in drawdown_periods],
+        'drawdown_magnitudes': [period['max_drawdown'] for period in drawdown_periods],
+        'top_significant_periods': significant_periods[:5]
+    }
+
 # Main Streamlit Application
 def main():
     st.title("Monte Carlo Portfolio Analysis")
+    
+    # Add brief credits in the sidebar
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("**Credits:** Based on original work by @prairie, adapted for Investor's Collaborative")
+        st.markdown("---")
     
     # Sidebar for navigation
     st.sidebar.title("Navigation")
@@ -406,7 +787,8 @@ def main():
         "Rolling Walk Tests",
         "Expanding Window Tests",
         "Forward Forecast",
-        "Results Summary"
+        "Drawdown Analysis",
+        "Credits"
     ])
     
     # Initialize session state
@@ -712,12 +1094,30 @@ def main():
                     error = actual_final_return - simulation_results['percentiles']['50'][-1]
                     st.metric("Forecast Error", f"{error:.2f}%")
                 
-                # Create simulation plot
-                fig = create_simulation_plot(
-                    simulation_results, 
-                    actual_path,
-                    f"Walk-Forward Test: {period_length} Days ({test_dates[0]} to {test_dates[-1]})"
-                )
+                # Create simulation plot with actual path (matching original script)
+                fig, ax = plt.subplots(figsize=(12, 8))
+                
+                # Plot percentile bands
+                percentiles = simulation_results['percentiles']
+                x = range(len(percentiles['50']))
+                ax.fill_between(x, percentiles['5'], percentiles['95'], 
+                              color='lightblue', alpha=0.3, label='5th-95th Percentile')
+                ax.fill_between(x, percentiles['25'], percentiles['75'], 
+                              color='blue', alpha=0.3, label='25th-75th Percentile')
+                ax.plot(x, percentiles['50'], 'b-', linewidth=2, label='Median Path')
+                
+                # Plot actual path
+                ax.plot(x, actual_path, 'orange', linewidth=3,
+                       label=f'Actual ({actual_final_return:.2f}%, {actual_percentile:.1f}%ile)')
+                
+                # Format plot
+                ax.set_title(f'Walk-Forward Test: {period_length} Days ({test_dates[0]} to {test_dates[-1]})', 
+                           fontsize=14)
+                ax.set_xlabel('Trading Days', fontsize=12)
+                ax.set_ylabel('Cumulative Return (%)', fontsize=12)
+                ax.grid(True, alpha=0.3)
+                ax.legend(loc='best')
+                
                 st.pyplot(fig)
                 
                 # Create distribution plots
@@ -739,6 +1139,28 @@ def main():
                         "Maximum Drawdown (%)"
                     )
                     st.pyplot(fig_dd)
+                
+                # Add comprehensive drawdown analysis
+                st.subheader("Comprehensive Drawdown Analysis")
+                
+                # Calculate actual cumulative return path for drawdown analysis
+                actual_return_path = [0.0]  # Start with 0% return
+                cumulative_return = 0.0
+                
+                for r in test_returns:
+                    r_decimal = r / 100.0
+                    cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
+                    actual_return_path.append(cumulative_return)
+                
+                # Run comprehensive drawdown analysis
+                drawdown_stats = analyze_drawdowns_comprehensive(
+                    actual_return_path,
+                    [test_dates[0]] + test_dates,  # Add initial date for 0% return point
+                    period_length,
+                    test_dates[0],
+                    test_dates[-1],
+                    data['name']
+                )
                 
                 # Generate CAGR distribution plot for longer periods
                 if period_length >= 252:  # Only for 1-year or longer periods
@@ -923,10 +1345,84 @@ def main():
                         'actual_return': actual_final_return,
                         'forecast_return': simulation_results['percentiles']['50'][-1],
                         'percentile': percentile,
-                        'max_drawdown': np.mean(simulation_results['max_drawdowns']) # Use mean of max_drawdowns for rolling
+                        'max_drawdown': np.mean(simulation_results['max_drawdowns']), # Use mean of max_drawdowns for rolling
+                        'actual_path': actual_path,
+                        'simulation_results': simulation_results,
+                        'test_data': test_data,
+                        'train_size': len(train_data)
                     })
                 
                 st.session_state.analysis_results['rolling_walk'] = results
+                
+                # Display individual iteration plots
+                if results:
+                    st.subheader("Individual Iteration Analysis")
+                    
+                    # Add option to show/hide individual plots
+                    show_individual_plots = st.checkbox("Show individual iteration plots", value=False)
+                    
+                    if show_individual_plots:
+                        for result in results:
+                            st.subheader(f"Iteration {result['iteration']} Analysis")
+                            
+                            # Create Monte Carlo simulation plot with actual path
+                            fig_iteration, ax_iteration = plt.subplots(figsize=(12, 8))
+                            
+                            # Plot percentile bands
+                            percentiles = result['simulation_results']['percentiles']
+                            x = range(len(percentiles['50']))
+                            ax_iteration.fill_between(x, percentiles['5'], percentiles['95'], 
+                                                    color='lightblue', alpha=0.3, label='5th-95th Percentile')
+                            ax_iteration.fill_between(x, percentiles['25'], percentiles['75'], 
+                                                    color='blue', alpha=0.3, label='25th-75th Percentile')
+                            ax_iteration.plot(x, percentiles['50'], 'b-', linewidth=2, label='Median Path')
+                            
+                            # Plot actual path
+                            ax_iteration.plot(x, result['actual_path'], 'orange', linewidth=3,
+                                            label=f'Actual ({result["actual_return"]:.2f}%, {result["percentile"]:.1f}%ile)')
+                            
+                            # Format plot
+                            ax_iteration.set_title(f'Rolling Walk Test: Iteration {result["iteration"]} ({result["test_start_date"]} to {result["test_end_date"]})', 
+                                                 fontsize=14)
+                            ax_iteration.set_xlabel('Trading Days', fontsize=12)
+                            ax_iteration.set_ylabel('Cumulative Return (%)', fontsize=12)
+                            ax_iteration.grid(True, alpha=0.3)
+                            ax_iteration.legend(loc='best')
+                            
+                            # Add training size information
+                            ax_iteration.text(0.02, 0.02, f'Training Size: {result["train_size"]} days',
+                                            transform=ax_iteration.transAxes, fontsize=10,
+                                            horizontalalignment='left', verticalalignment='bottom',
+                                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                            
+                            st.pyplot(fig_iteration)
+                            
+                            # Display iteration results
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Actual Return", f"{result['actual_return']:.2f}%")
+                            with col2:
+                                st.metric("Forecast Return", f"{result['forecast_return']:.2f}%")
+                            with col3:
+                                st.metric("Percentile Rank", f"{result['percentile']:.1f}%")
+                            with col4:
+                                error = result['actual_return'] - result['forecast_return']
+                                st.metric("Forecast Error", f"{error:.2f}%")
+                            
+                            # Add drawdown analysis for this iteration
+                            st.subheader(f"Iteration {result['iteration']} Drawdown Analysis")
+                            
+                            # Run comprehensive drawdown analysis for this iteration
+                            iteration_drawdown_stats = analyze_drawdowns_comprehensive(
+                                result['actual_path'],
+                                [result['test_start_date']] + [result['test_start_date']] * len(result['test_data']),  # Simplified dates
+                                len(result['test_data']),
+                                result['test_start_date'],
+                                result['test_end_date'],
+                                f"{data['name']}_rolling_iteration_{result['iteration']}"
+                            )
+                            
+                            st.divider()
                 
                 # Summary table
                 if results:
@@ -1100,6 +1596,66 @@ def main():
                 actual_final_return = actual_path[-1]
                 final_returns = simulation_results['final_returns']
                 percentile = stats.percentileofscore(final_returns, actual_final_return)
+                
+                # Create individual iteration plot (matching original script)
+                st.subheader(f"Iteration {i + 1} Analysis")
+                
+                # Create Monte Carlo simulation plot with actual path
+                fig_iteration, ax_iteration = plt.subplots(figsize=(12, 8))
+                
+                # Plot percentile bands
+                percentiles = simulation_results['percentiles']
+                x = range(len(percentiles['50']))
+                ax_iteration.fill_between(x, percentiles['5'], percentiles['95'], 
+                                        color='lightblue', alpha=0.3, label='5th-95th Percentile')
+                ax_iteration.fill_between(x, percentiles['25'], percentiles['75'], 
+                                        color='blue', alpha=0.3, label='25th-75th Percentile')
+                ax_iteration.plot(x, percentiles['50'], 'b-', linewidth=2, label='Median Path')
+                
+                # Plot actual path
+                ax_iteration.plot(x, actual_path, 'orange', linewidth=3,
+                                label=f'Actual ({actual_final_return:.2f}%, {percentile:.1f}%ile)')
+                
+                # Format plot
+                ax_iteration.set_title(f'Expanding Window Test: Iteration {i + 1} ({test_start_date} to {test_end_date})', 
+                                     fontsize=14)
+                ax_iteration.set_xlabel('Trading Days', fontsize=12)
+                ax_iteration.set_ylabel('Cumulative Return (%)', fontsize=12)
+                ax_iteration.grid(True, alpha=0.3)
+                ax_iteration.legend(loc='best')
+                
+                # Add training size information
+                ax_iteration.text(0.02, 0.02, f'Training Size: {train_size} days ({train_start_date} to {train_end_date})',
+                                transform=ax_iteration.transAxes, fontsize=10,
+                                horizontalalignment='left', verticalalignment='bottom',
+                                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                st.pyplot(fig_iteration)
+                
+                # Display iteration results
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Actual Return", f"{actual_final_return:.2f}%")
+                with col2:
+                    st.metric("Forecast Return", f"{simulation_results['percentiles']['50'][-1]:.2f}%")
+                with col3:
+                    st.metric("Percentile Rank", f"{percentile:.1f}%")
+                with col4:
+                    error = actual_final_return - simulation_results['percentiles']['50'][-1]
+                    st.metric("Forecast Error", f"{error:.2f}%")
+                
+                # Add drawdown analysis for this iteration
+                st.subheader(f"Iteration {i + 1} Drawdown Analysis")
+                
+                # Run comprehensive drawdown analysis for this iteration
+                iteration_drawdown_stats = analyze_drawdowns_comprehensive(
+                    actual_path,
+                    [test_dates[0]] + test_dates,  # Add initial date for 0% return point
+                    len(test_data),
+                    test_start_date,
+                    test_end_date,
+                    f"{data['name']}_iteration_{i + 1}"
+                )
                 
                 # Calculate CAGR for longer periods
                 if len(test_data) >= 20:  # Calculate CAGR for periods >= 20 days
@@ -1495,90 +2051,138 @@ def main():
                 )
                 st.pyplot(fig_dd)
             
+            # Add comprehensive drawdown analysis for historical data
+            st.subheader("Historical Drawdown Analysis")
+            
+            # Calculate cumulative returns for historical data
+            historical_cumulative = [0.0]
+            cumulative_return = 0.0
+            
+            for r in returns:
+                r_decimal = r / 100.0
+                cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
+                historical_cumulative.append(cumulative_return)
+            
+            # Run comprehensive drawdown analysis on historical data
+            historical_drawdown_stats = analyze_drawdowns_comprehensive(
+                historical_cumulative,
+                [dates[0]] + dates,  # Add initial date for 0% return point
+                len(returns),
+                dates[0],
+                dates[-1],
+                data['name']
+            )
+            
             st.session_state.analysis_results['forward_forecast'] = simulation_results
 
-    elif page == "Results Summary":
-        st.header("Analysis Results Summary")
+    elif page == "Drawdown Analysis":
+        st.header("Comprehensive Drawdown Analysis")
         
-        if not st.session_state.analysis_results:
-            st.info("No analysis results available. Run analyses from other pages first.")
+        if st.session_state.returns_data is None:
+            st.warning("Please load portfolio data first from the Data Input page.")
             return
         
-        # Summary of all available results
-        for analysis_type, results in st.session_state.analysis_results.items():
-            st.subheader(f"{analysis_type.replace('_', ' ').title()}")
-            
-            if analysis_type == 'walk_forward':
-                if results:
-                    summary_data = []
-                    for period, result in results.items():
-                        summary_data.append({
-                            'Period (Days)': period,
-                            'Actual Return (%)': f"{result['actual_return']:.2f}",
-                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
-                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
-                            'Percentile Rank': f"{result['percentile']:.1f}%"
-                        })
-                    
-                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
-            
-            elif analysis_type == 'rolling_walk':
-                if results:
-                    summary_data = []
-                    for result in results:
-                        summary_data.append({
-                            'Iteration': result['iteration'],
-                            'Test Period': f"{result['test_start_date']} to {result['test_end_date']}",
-                            'Actual Return (%)': f"{result['actual_return']:.2f}",
-                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
-                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
-                            'Percentile Rank': f"{result['percentile']:.1f}%",
-                            'Max Drawdown (%)': f"{result['max_drawdown']:.2f}"
-                        })
-                    
-                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
-            
-            elif analysis_type == 'expanding_window':
-                if results:
-                    summary_data = []
-                    for result in results:
-                        summary_data.append({
-                            'Iteration': result['iteration'],
-                            'Train Size': result['train_size'],
-                            'Test Period': result['test_period'],
-                            'Actual Return (%)': f"{result['actual_return']:.2f}",
-                            'Forecast Return (%)': f"{result['forecast_return']:.2f}",
-                            'Error (%)': f"{result['actual_return'] - result['forecast_return']:.2f}",
-                            'Percentile Rank': f"{result['percentile']:.1f}%",
-                            'CAGR (%)': f"{result['actual_cagr']:.2f}",
-                            'CAGR Percentile': f"{result['cagr_percentile']:.1f}%"
-                        })
-                    
-                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
-            
-            elif analysis_type == 'forward_forecast':
-                final_returns = results['final_returns']
-                st.write(f"**Forecast Statistics:**")
-                st.write(f"- Median: {np.median(final_returns):.2f}%")
-                st.write(f"- 5th Percentile: {np.percentile(final_returns, 5):.2f}%")
-                st.write(f"- 95th Percentile: {np.percentile(final_returns, 95):.2f}%")
-                st.write(f"- Probability of Loss: {np.mean(final_returns < 0) * 100:.1f}%")
+        data = st.session_state.returns_data
+        returns = data['returns']
+        dates = data['dates']
+        
+        st.subheader("Analysis Configuration")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            analysis_period = st.selectbox(
+                "Analysis Period:",
+                ["Full Dataset", "Last Year", "Last 6 Months", "Last 3 Months", "Custom Period"],
+                help="Choose the period for drawdown analysis"
+            )
+        
+        with col2:
+            if analysis_period == "Custom Period":
+                start_date = st.date_input("Start Date:", value=pd.to_datetime(dates[0]))
+                end_date = st.date_input("End Date:", value=pd.to_datetime(dates[-1]))
+            else:
+                start_date = None
+                end_date = None
+        
+        if st.button("Run Drawdown Analysis"):
+            # Determine the analysis period
+            if analysis_period == "Full Dataset":
+                start_idx = 0
+                end_idx = len(returns)
+            elif analysis_period == "Last Year":
+                start_idx = max(0, len(returns) - 252)
+                end_idx = len(returns)
+            elif analysis_period == "Last 6 Months":
+                start_idx = max(0, len(returns) - 126)
+                end_idx = len(returns)
+            elif analysis_period == "Last 3 Months":
+                start_idx = max(0, len(returns) - 63)
+                end_idx = len(returns)
+            else:  # Custom Period
+                start_date_str = start_date.strftime('%Y-%m-%d')
+                end_date_str = end_date.strftime('%Y-%m-%d')
                 
-                # Create summary visualization
-                fig_summary, ax_summary = plt.subplots(figsize=(10, 6))
-                ax_summary.hist(final_returns, bins=50, alpha=0.7, color='lightblue', edgecolor='black')
-                ax_summary.axvline(x=np.median(final_returns), color='red', linestyle='--', 
-                                  label=f'Median: {np.median(final_returns):.2f}%')
-                ax_summary.axvline(x=np.percentile(final_returns, 5), color='orange', linestyle='--', 
-                                  label=f'5th Percentile: {np.percentile(final_returns, 5):.2f}%')
-                ax_summary.axvline(x=np.percentile(final_returns, 95), color='green', linestyle='--', 
-                                  label=f'95th Percentile: {np.percentile(final_returns, 95):.2f}%')
-                ax_summary.set_title("Forward Forecast Distribution Summary")
-                ax_summary.set_xlabel("Cumulative Return (%)")
-                ax_summary.set_ylabel("Frequency")
-                ax_summary.legend()
-                ax_summary.grid(True, alpha=0.3)
-                st.pyplot(fig_summary)
+                # Find indices for custom dates
+                try:
+                    start_idx = dates.index(start_date_str)
+                    end_idx = dates.index(end_date_str) + 1
+                except ValueError:
+                    st.error("Selected dates not found in dataset. Please choose different dates.")
+                    return
+            
+            # Extract data for analysis
+            analysis_returns = returns[start_idx:end_idx]
+            analysis_dates = dates[start_idx:end_idx]
+            
+            if len(analysis_returns) < 30:
+                st.error("Not enough data for meaningful drawdown analysis (minimum 30 days required).")
+                return
+            
+            st.info(f"Analyzing {len(analysis_returns)} trading days from {analysis_dates[0]} to {analysis_dates[-1]}")
+            
+            # Calculate cumulative returns for analysis
+            cumulative_returns = [0.0]
+            cumulative_return = 0.0
+            
+            for r in analysis_returns:
+                r_decimal = r / 100.0
+                cumulative_return = (1 + cumulative_return / 100) * (1 + r_decimal) * 100 - 100
+                cumulative_returns.append(cumulative_return)
+            
+            # Run comprehensive drawdown analysis
+            drawdown_stats = analyze_drawdowns_comprehensive(
+                cumulative_returns,
+                [analysis_dates[0]] + analysis_dates,  # Add initial date for 0% return point
+                len(analysis_returns),
+                analysis_dates[0],
+                analysis_dates[-1],
+                data['name']
+            )
+            
+            # Store results
+            st.session_state.analysis_results['drawdown_analysis'] = {
+                'period': analysis_period,
+                'start_date': analysis_dates[0],
+                'end_date': analysis_dates[-1],
+                'stats': drawdown_stats
+            }
+
+    elif page == "Credits":
+        st.header("Credits")
+        
+        st.markdown("""
+        ## About This Application
+        
+        This Monte Carlo Portfolio Analysis tool is based on code originally developed and shared by **@prairie**.
+        
+        Their scripts served as the foundation for this tool, which was adapted and extended for use by members of the **Investor's Collaborative**.
+        
+        Huge thanks to **@prairie** for sharing this Monte Carlo analysis framework.
+        """)
+        
+        # Add some styling
+        st.markdown("---")
+        st.markdown("*This tool is designed for educational and research purposes. Past performance does not guarantee future results.*")
 
 if __name__ == "__main__":
     main()
