@@ -806,7 +806,8 @@ def main():
         
         input_method = "Composer Symphony URL"
         
-        if input_method == "Composer Symphony URL":
+        # Use a form like iota calculator for consistent button styling
+        with st.form("fetch_data_form"):
             symphony_url = st.text_input(
                 "Enter Composer Symphony URL:", 
                 value=symphony_url_param,
@@ -822,40 +823,29 @@ def main():
                 end_date = st.date_input("End Date", value=default_end_date,
                                        help="Default: Today's date")
             
-            # Generate shareable link
-            if symphony_url and symphony_url.strip():
-                # Validate that it's a Composer symphony URL
-                import re
-                symphony_id_match = re.search(r'/symphony/([^/]+)/', symphony_url)
-                if symphony_id_match:
-                    symphony_id = symphony_id_match.group(1)
-                    
-                    # Create shareable URL with full base URL
-                    base_url = "https://monte-carlo-symphony.streamlit.app/"
-                    shareable_url = f"{base_url}?symphony={symphony_url}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
-                    
-                    # Store the shareable URL in session state for display outside the form
-                    st.session_state.shareable_url = shareable_url
-                    
-                    st.subheader("🔗 Share Your Analysis")
-                    st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
-                    
-                    # Create a text area for easy copying (similar to iota implementation)
-                    st.text_area(
-                        "Shareable URL (select all and copy):",
-                        value=shareable_url,
-                        height=100,
-                        help="Select all text (Ctrl+A) then copy (Ctrl+C)",
-                        key="shareable_url_textarea"
-                    )
-                    
-                    # Add a button to copy the URL
-                    if st.button("Copy URL to Clipboard", key="copy_url_button"):
-                        st.success("URL copied! (Note: You may need to manually copy from the text area above)")
-                else:
-                    st.warning("Please enter a valid Composer Symphony URL to generate a shareable link.")
+            # Submit button with same styling as iota calculator
+            submitted = st.form_submit_button("Fetch Data", type="primary")
             
-            if st.button("Fetch Data", key="fetch_data_button", use_container_width=True, type="primary"):
+            if submitted:
+                # Generate shareable link
+                if symphony_url and symphony_url.strip():
+                    # Validate that it's a Composer symphony URL
+                    import re
+                    symphony_id_match = re.search(r'/symphony/([^/]+)/', symphony_url)
+                    if symphony_id_match:
+                        symphony_id = symphony_id_match.group(1)
+                        
+                        # Create shareable URL with full base URL
+                        base_url = "https://stochastic.streamlit.app/"
+                        shareable_url = f"{base_url}?symphony={symphony_url}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
+                        
+                        # Store the shareable URL in session state for display outside the form
+                        st.session_state.shareable_url = shareable_url
+                        
+                        # Success message
+                        st.success("Configuration saved! Fetching data...")
+                
+                # Fetch data
                 with st.spinner("Fetching data from Composer..."):
                     allocations_df, symphony_name, tickers = fetch_backtest(
                         symphony_url, 
@@ -914,6 +904,21 @@ def main():
                             with col4:
                                 annualized_return = np.mean(daily_returns) * 252
                                 st.metric("Annualized Return", f"{annualized_return:.2f}%")
+        
+        # Display shareable URL outside the form (if available)
+        if hasattr(st.session_state, 'shareable_url') and st.session_state.shareable_url:
+            st.markdown("---")
+            st.markdown("### 🔗 Share Your Analysis")
+            st.info("**Shareable URL**: Copy this link to share your analysis configuration with others:")
+            
+            # Create a text area for easy copying
+            st.text_area(
+                "Shareable URL (select all and copy):",
+                value=st.session_state.shareable_url,
+                height=100,
+                help="Select all text (Ctrl+A) then copy (Ctrl+C)",
+                key="shareable_url_textarea"
+            )
         
         # Show current data status
         if st.session_state.returns_data is not None:
