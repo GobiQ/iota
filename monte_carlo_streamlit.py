@@ -394,51 +394,6 @@ def create_distribution_plot(values, title, xlabel, actual_value=None):
     
     return fig
 
-def filter_data_by_exclusions(returns, dates, exclusion_ranges):
-    """
-    Filter out data points that fall within the specified exclusion ranges.
-    
-    Args:
-        returns: List of return values
-        dates: List of date strings in 'YYYY-MM-DD' format
-        exclusion_ranges: List of dictionaries with 'start' and 'end' date objects
-    
-    Returns:
-        filtered_returns: List of return values with exclusions applied
-        filtered_dates: List of date strings with exclusions applied
-        excluded_count: Number of data points excluded
-    """
-    if not exclusion_ranges:
-        return returns, dates, 0
-    
-    filtered_returns = []
-    filtered_dates = []
-    excluded_count = 0
-    
-    for i, (ret, date_str) in enumerate(zip(returns, dates)):
-        # Convert date string to date object for comparison
-        try:
-            current_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        except ValueError:
-            # If date parsing fails, include the data point
-            filtered_returns.append(ret)
-            filtered_dates.append(date_str)
-            continue
-        
-        # Check if current date falls within any exclusion range
-        should_exclude = False
-        for exclusion in exclusion_ranges:
-            if exclusion['start'] <= current_date <= exclusion['end']:
-                should_exclude = True
-                excluded_count += 1
-                break
-        
-        if not should_exclude:
-            filtered_returns.append(ret)
-            filtered_dates.append(date_str)
-    
-    return filtered_returns, filtered_dates, excluded_count
-
 def analyze_drawdowns_comprehensive(returns, dates, period_length, test_start_date, test_end_date, portfolio_name):
     """
     Comprehensive drawdown analysis matching the original script functionality
@@ -863,64 +818,6 @@ def main():
                 end_date = st.date_input("End Date", value=date.today(),
                                        help="Default: Today's date")
             
-            # Date exclusion feature
-            st.subheader("Date Exclusion Settings")
-            
-            exclude_dates = st.checkbox("Exclude specific date ranges from analysis", value=False,
-                                      help="When enabled, specified date ranges will be filtered out from the analysis")
-            
-            # Store exclusion settings in session state
-            st.session_state.exclude_dates = exclude_dates
-            
-            exclusion_ranges = []
-            if exclude_dates:
-                # Custom date range exclusion
-                st.write("**Add custom exclusion ranges:**")
-                
-                # Use session state to manage multiple exclusion ranges
-                if 'custom_exclusions' not in st.session_state:
-                    st.session_state.custom_exclusions = []
-                
-                # Add new exclusion range
-                col1, col2, col3 = st.columns([2, 2, 1])
-                with col1:
-                    new_start = st.date_input("Custom Start Date", value=date(2020, 3, 1), key="new_exclusion_start")
-                with col2:
-                    new_end = st.date_input("Custom End Date", value=date(2020, 5, 31), key="new_exclusion_end")
-                with col3:
-                    if st.button("Add Range", key="add_exclusion"):
-                        if new_start <= new_end:
-                            exclusion_range = {
-                                'start': new_start,
-                                'end': new_end,
-                                'description': f'Custom: {new_start.strftime("%Y-%m-%d")} to {new_end.strftime("%Y-%m-%d")}'
-                            }
-                            st.session_state.custom_exclusions.append(exclusion_range)
-                            st.rerun()
-                        else:
-                            st.error("Start date must be before or equal to end date")
-                
-                # Display current exclusion ranges
-                if st.session_state.custom_exclusions:
-                    st.write("**Current custom exclusion ranges:**")
-                    for i, exclusion in enumerate(st.session_state.custom_exclusions):
-                        col1, col2, col3 = st.columns([3, 1, 1])
-                        with col1:
-                            st.write(f"• {exclusion['description']}")
-                        with col2:
-                            if st.button("Remove", key=f"remove_{i}"):
-                                st.session_state.custom_exclusions.pop(i)
-                                st.rerun()
-                
-                # Add custom exclusions to the main list
-                exclusion_ranges.extend(st.session_state.custom_exclusions)
-                
-                # Display summary of all exclusions
-                if exclusion_ranges:
-                    st.info(f"**Total exclusion ranges:** {len(exclusion_ranges)}")
-                    for exclusion in exclusion_ranges:
-                        st.write(f"• {exclusion['description']}")
-            
             if st.button("Fetch Data"):
                 with st.spinner("Fetching data from Composer..."):
                     allocations_df, symphony_name, tickers = fetch_backtest(
@@ -937,19 +834,6 @@ def main():
                             
                             # Convert dates to strings for easier handling (matching original script)
                             date_strs = [d.strftime('%Y-%m-%d') for d in dates]
-                            
-                            # Apply date exclusions if specified
-                            if exclude_dates and exclusion_ranges:
-                                st.info(f"Applying {len(exclusion_ranges)} exclusion range(s)...")
-                                daily_returns, date_strs, excluded_count = filter_data_by_exclusions(
-                                    daily_returns.tolist() if not isinstance(daily_returns, list) else daily_returns,
-                                    date_strs,
-                                    exclusion_ranges
-                                )
-                                if excluded_count > 0:
-                                    st.success(f"Excluded {excluded_count} data points from analysis")
-                                else:
-                                    st.warning("No data points fell within the specified exclusion ranges")
                             
                             # Check if we have enough data (matching original script validation)
                             if len(daily_returns) < 60:  # Need at least 60 days of data
@@ -1007,42 +891,18 @@ def main():
                         portfolio_name = st.text_input("Portfolio Name:", 
                                                      value=uploaded_file.name.replace('.csv', ''))
                         
-                        # Apply date exclusions if specified (same logic as Composer section)
-                        returns = df['Daily_Return'].tolist()
-                        dates = df['Date'].tolist()
-                        
-                        # Check if exclusion ranges are defined in session state from the other section
-                        csv_exclusion_ranges = []
-                        
-                        # Only apply exclusions if the feature is enabled
-                        if 'exclude_dates' in st.session_state and st.session_state.exclude_dates:
-                            if 'custom_exclusions' in st.session_state and st.session_state.custom_exclusions:
-                                csv_exclusion_ranges.extend(st.session_state.custom_exclusions)
-                        
-                        # Apply exclusions if any are defined
-                        if csv_exclusion_ranges:
-                            st.info(f"Applying {len(csv_exclusion_ranges)} exclusion range(s) to CSV data...")
-                            returns, dates, excluded_count = filter_data_by_exclusions(
-                                returns, dates, csv_exclusion_ranges
-                            )
-                            if excluded_count > 0:
-                                st.success(f"Excluded {excluded_count} data points from CSV analysis")
-                            else:
-                                st.warning("No data points fell within the specified exclusion ranges")
-                        
                         st.session_state.returns_data = {
-                            'returns': returns,
-                            'dates': dates,
+                            'returns': df['Daily_Return'].tolist(),
+                            'dates': df['Date'].tolist(),
                             'name': portfolio_name
                         }
                         st.session_state.portfolio_name = portfolio_name
                         
-                        st.success(f"Successfully loaded {len(returns)} trading days")
+                        st.success(f"Successfully loaded {len(df)} trading days")
                         
                         # Show preview
                         st.subheader("Data Preview")
-                        preview_df = pd.DataFrame({'Date': dates, 'Daily_Return': returns})
-                        st.dataframe(preview_df.head(10))
+                        st.dataframe(df.head(10))
                         
                     else:
                         st.error("CSV must contain 'Date' and 'Daily_Return' columns")
