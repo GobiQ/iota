@@ -1255,14 +1255,14 @@ def main():
                                 validation_results = []
                                 mismatches = 0
                                 
-                                for i, date in enumerate(dates):
+                                for i, current_date in enumerate(dates):
                                     if i < len(our_allocations):
                                         our_alloc = our_allocations[i]
                                         
                                         # Find corresponding Composer allocation
-                                        date_str = date.strftime('%Y-%m-%d')
-                                        if date in composer_allocations.index:
-                                            composer_alloc = composer_allocations.loc[date]
+                                        date_str = current_date.strftime('%Y-%m-%d')
+                                        if current_date in composer_allocations.index:
+                                            composer_alloc = composer_allocations.loc[current_date]
                                             composer_dict = {
                                                 ticker: weight/100 for ticker, weight in composer_alloc.items() 
                                                 if abs(weight) > 0.001
