@@ -22,6 +22,55 @@ st.set_page_config(
 # Set random seed for reproducibility
 np.random.seed(42)
 
+def convert_trading_date(date_int):
+    """Convert trading date integer to datetime object"""
+    date_1 = datetime.strptime("01/01/1970", "%m/%d/%Y")
+    dt = date_1 + timedelta(days=int(date_int))
+    return dt
+
+@st.cache_data
+def fetch_backtest(id, start_date, end_date):
+    """Fetch backtest data from Composer API"""
+    if id.endswith('/details'):
+        id = id.split('/')[-2]
+    else:
+        id = id.split('/')[-1]
+
+    payload = {
+        "capital": 100000,
+        "apply_reg_fee": True,
+        "apply_taf_fee": True,
+        "backtest_version": "v2",
+        "slippage_percent": 0.0005,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+    url = f"https://backtest-api.composer.trade/api/v2/public/symphonies/{id}/backtest"
+
+    try:
+        data = requests.post(url, json=payload)
+        jsond = data.json()
+        symphony_name = jsond['legend'][id]['name']
+
+        holdings = jsond["last_market_days_holdings"]
+        tickers = list(holdings.keys())
+
+        allocations = jsond["tdvm_weights"]
+        date_range = pd.date_range(start=start_date, end=end_date)
+        df = pd.DataFrame(0.0, index=date_range, columns=tickers)
+
+        for ticker in allocations:
+            for date_int in allocations[ticker]:
+                trading_date = convert_trading_date(date_int)
+                percent = allocations[ticker][date_int]
+                df.at[trading_date, ticker] = percent
+
+        return df, symphony_name, tickers
+    except Exception as e:
+        st.error(f"Error fetching data from Composer: {str(e)}")
+        return None, None, None
+
 class TechnicalIndicators:
     """Calculate technical indicators for strategy logic"""
     
