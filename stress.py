@@ -417,11 +417,12 @@ class MarketSimulator:
         return scenario
 
 class StrategyEngine:
-    """Execute strategy logic on market data"""
+    """Execute strategy logic on market data - COMPLETELY REWRITTEN"""
     
     def __init__(self, strategy_parser: StrategyParser):
         self.parser = strategy_parser
         self.tech_indicators = TechnicalIndicators()
+        self.debug_mode = False
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
         """Evaluate a single condition with debug logging"""
@@ -549,13 +550,13 @@ class StrategyEngine:
                 result = False
             
             # Debug logging for mismatches
-            if hasattr(self, 'debug_mode') and self.debug_mode:
+            if self.debug_mode:
                 st.write(f"Condition: {condition['lhs_fn']}({lhs_val}) {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}")
             
             return result
             
         except Exception as e:
-            if hasattr(self, 'debug_mode') and self.debug_mode:
+            if self.debug_mode:
                 st.error(f"Condition evaluation error: {str(e)}")
             return False
     
@@ -575,18 +576,203 @@ class StrategyEngine:
         return rsi
     
     def execute_node(self, node: Any, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
-        """Execute a node in the strategy tree"""
+        """Execute a node in the strategy tree - COMPLETELY REWRITTEN"""
+        
+        # Handle raw JSON nodes (direct from Composer)
+        if isinstance(node, dict) and 'step' in node:
+            return self._execute_composer_node(node, market_data, current_idx)
+        
+        # Handle parsed nodes (from StrategyParser)
+        if isinstance(node, dict) and 'type' in node:
+            return self._execute_parsed_node(node, market_data, current_idx)
+        
+        # Handle lists of nodes
         if isinstance(node, list):
-            # Multiple nodes - execute first valid one
             for sub_node in node:
                 result = self.execute_node(sub_node, market_data, current_idx)
                 if result:
                     return result
             return {}
         
-        if not isinstance(node, dict):
+        return {}
+    
+    def _execute_composer_node(self, node: dict, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
+        """Execute a raw Composer JSON node"""
+        step = node.get('step', '')
+        
+        if step == 'asset':
+            ticker = node.get('ticker')
+            if ticker:
+                return {ticker: 1.0}
             return {}
         
+        elif step == 'wt-cash-equal':
+            # Execute children and apply weight
+            children = node.get('children', [])
+            if not children:
+                return {}
+            
+            # Execute first child
+            result = self.execute_node(children[0], market_data, current_idx)
+            if not result:
+                return {}
+            
+            # Apply weight if specified
+            weight_info = node.get('weight', {})
+            if weight_info:
+                num = weight_info.get('num', 100)
+                den = weight_info.get('den', 100)
+                weight_factor = float(num) / float(den)
+                
+                # Apply weight to all assets
+                weighted_result = {}
+                for ticker, allocation in result.items():
+                    weighted_result[ticker] = allocation * weight_factor
+                return weighted_result
+            
+            return result
+        
+        elif step == 'if':
+            # Evaluate condition and execute appropriate branch
+            condition_met = self._evaluate_composer_condition(node, market_data, current_idx)
+            children = node.get('children', [])
+            
+            for child in children:
+                if isinstance(child, dict) and child.get('step') == 'if-child':
+                    is_else = child.get('is-else-condition?', False)
+                    
+                    if (is_else and not condition_met) or (not is_else and condition_met):
+                        return self.execute_node(child.get('children', []), market_data, current_idx)
+            
+            return {}
+        
+        elif step == 'filter':
+            # Handle filter logic (top RSI selection, etc.)
+            children = node.get('children', [])
+            if not children:
+                return {}
+            
+            select_fn = node.get('select-fn', 'top')
+            select_n = int(node.get('select-n', 1))
+            sort_by_fn = node.get('sort-by-fn')
+            sort_by_window = int(node.get('sort-by-window-days', 10))
+            
+            if sort_by_fn == 'relative-strength-index':
+                candidates = []
+                for child in children:
+                    if isinstance(child, dict) and child.get('step') == 'asset':
+                        ticker = child.get('ticker')
+                        if ticker and ticker in market_data:
+                            prices = market_data[ticker].iloc[:current_idx+1]
+                            if len(prices) >= sort_by_window:
+                                rsi_values = self._calculate_wilder_rsi(prices, sort_by_window)
+                                rsi_val = rsi_values.iloc[-1] if not pd.isna(rsi_values.iloc[-1]) else 50
+                                candidates.append((ticker, rsi_val))
+                
+                if candidates:
+                    # Sort by RSI (descending for "top")
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                    selected_ticker = candidates[0][0]
+                    return {selected_ticker: 1.0}
+            
+            # Fallback: return first child
+            if children:
+                return self.execute_node(children[0], market_data, current_idx)
+            
+            return {}
+        
+        elif step == 'root':
+            # Execute root node children
+            children = node.get('children', [])
+            if children:
+                return self.execute_node(children[0], market_data, current_idx)
+            return {}
+        
+        return {}
+    
+    def _evaluate_composer_condition(self, node: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
+        """Evaluate a condition from raw Composer JSON"""
+        try:
+            lhs_fn = node.get('lhs-fn')
+            lhs_val = node.get('lhs-val')
+            lhs_window = int(node.get('lhs-window-days', 10))
+            rhs_fn = node.get('rhs-fn')
+            rhs_val = node.get('rhs-val')
+            rhs_window = int(node.get('rhs-window-days', 10))
+            comparator = node.get('comparator')
+            rhs_fixed = node.get('rhs-fixed-value?', False)
+            
+            # Get left-hand side value
+            if lhs_fn == 'current-price':
+                if lhs_val in market_data and current_idx < len(market_data[lhs_val]):
+                    lhs_value = market_data[lhs_val].iloc[current_idx]
+                else:
+                    return False
+            elif lhs_fn == 'relative-strength-index':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= lhs_window:
+                        rsi_values = self._calculate_wilder_rsi(prices, lhs_window)
+                        lhs_value = rsi_values.iloc[-1] if not pd.isna(rsi_values.iloc[-1]) else 50
+                    else:
+                        lhs_value = 50
+                else:
+                    return False
+            elif lhs_fn == 'moving-average-price':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= lhs_window:
+                        ma_values = self.tech_indicators.moving_average(prices, lhs_window)
+                        lhs_value = ma_values.iloc[-1] if not pd.isna(ma_values.iloc[-1]) else prices.iloc[-1]
+                    else:
+                        lhs_value = prices.iloc[-1] if len(prices) > 0 else 0
+                else:
+                    return False
+            else:
+                return False
+            
+            # Get right-hand side value
+            if rhs_fixed:
+                rhs_value = float(rhs_val)
+            elif rhs_fn == 'moving-average-price':
+                if rhs_val in market_data:
+                    prices = market_data[rhs_val].iloc[:current_idx+1]
+                    if len(prices) >= rhs_window:
+                        ma_values = self.tech_indicators.moving_average(prices, rhs_window)
+                        rhs_value = ma_values.iloc[-1] if not pd.isna(ma_values.iloc[-1]) else lhs_value
+                    else:
+                        rhs_value = lhs_value
+                else:
+                    return False
+            else:
+                rhs_value = float(rhs_val)
+            
+            # Compare values
+            if comparator == 'gt':
+                result = lhs_value > rhs_value
+            elif comparator == 'lt':
+                result = lhs_value < rhs_value
+            elif comparator == 'eq':
+                result = abs(lhs_value - rhs_value) < 0.001
+            elif comparator == 'gte':
+                result = lhs_value >= rhs_value
+            elif comparator == 'lte':
+                result = lhs_value <= rhs_value
+            else:
+                result = False
+            
+            if self.debug_mode:
+                st.write(f"Composer Condition: {lhs_val} {comparator} {rhs_val} -> {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}")
+            
+            return result
+            
+        except Exception as e:
+            if self.debug_mode:
+                st.write(f"Error evaluating Composer condition: {str(e)}")
+            return False
+    
+    def _execute_parsed_node(self, node: dict, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
+        """Execute a parsed node (from StrategyParser)"""
         node_type = node.get('type', '')
         
         if node_type == 'asset':
@@ -618,11 +804,9 @@ class StrategyEngine:
             return {}
         
         elif node_type == 'weight':
-            # Execute children and return results
             return self.execute_node(node.get('children', []), market_data, current_idx)
         
         elif node_type == 'filter':
-            # Handle filter logic (top RSI selection, etc.)
             children = node.get('children', [])
             if not children:
                 return {}
@@ -644,12 +828,10 @@ class StrategyEngine:
                                 candidates.append((ticker, rsi_val))
                 
                 if candidates:
-                    # Sort by RSI (descending for "top")
                     candidates.sort(key=lambda x: x[1], reverse=True)
                     selected_ticker = candidates[0][0]
                     return {selected_ticker: 1.0}
             
-            # Fallback: return first child
             if children:
                 return self.execute_node(children[0], market_data, current_idx)
             
@@ -659,6 +841,13 @@ class StrategyEngine:
     
     def get_allocation(self, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
         """Get portfolio allocation for current market conditions"""
+        # Try to execute the raw strategy JSON first
+        if hasattr(self.parser, 'strategy'):
+            result = self.execute_node(self.parser.strategy, market_data, current_idx)
+            if result:
+                return result
+        
+        # Fallback to parsed logic tree
         return self.execute_node(self.parser.logic_tree, market_data, current_idx)
 
 class StrategyStressTester:
