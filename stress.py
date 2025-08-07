@@ -600,9 +600,14 @@ class StrategyEngine:
         """Execute a raw Composer JSON node"""
         step = node.get('step', '')
         
+        if self.debug_mode:
+            st.write(f"Executing step: {step}")
+        
         if step == 'asset':
             ticker = node.get('ticker')
             if ticker:
+                if self.debug_mode:
+                    st.write(f"  Asset: {ticker}")
                 return {ticker: 1.0}
             return {}
         
@@ -612,10 +617,18 @@ class StrategyEngine:
             if not children:
                 return {}
             
+            if self.debug_mode:
+                st.write(f"  WT-CASH-EQUAL with {len(children)} children")
+            
             # Execute first child
             result = self.execute_node(children[0], market_data, current_idx)
             if not result:
+                if self.debug_mode:
+                    st.write(f"    No result from child")
                 return {}
+            
+            if self.debug_mode:
+                st.write(f"    Child result: {result}")
             
             # Apply weight if specified
             weight_info = node.get('weight', {})
@@ -624,10 +637,16 @@ class StrategyEngine:
                 den = weight_info.get('den', 100)
                 weight_factor = float(num) / float(den)
                 
+                if self.debug_mode:
+                    st.write(f"    Weight factor: {num}/{den} = {weight_factor}")
+                
                 # Apply weight to all assets
                 weighted_result = {}
                 for ticker, allocation in result.items():
                     weighted_result[ticker] = allocation * weight_factor
+                
+                if self.debug_mode:
+                    st.write(f"    Weighted result: {weighted_result}")
                 return weighted_result
             
             return result
@@ -637,13 +656,24 @@ class StrategyEngine:
             condition_met = self._evaluate_composer_condition(node, market_data, current_idx)
             children = node.get('children', [])
             
+            if self.debug_mode:
+                st.write(f"  IF condition result: {condition_met}")
+                st.write(f"  Number of children: {len(children)}")
+            
             for child in children:
                 if isinstance(child, dict) and child.get('step') == 'if-child':
                     is_else = child.get('is-else-condition?', False)
                     
+                    if self.debug_mode:
+                        st.write(f"    Child is_else: {is_else}")
+                    
                     if (is_else and not condition_met) or (not is_else and condition_met):
+                        if self.debug_mode:
+                            st.write(f"    Executing child branch")
                         return self.execute_node(child.get('children', []), market_data, current_idx)
             
+            if self.debug_mode:
+                st.write(f"  No matching branch found, returning empty")
             return {}
         
         elif step == 'filter':
@@ -684,8 +714,14 @@ class StrategyEngine:
         elif step == 'root':
             # Execute root node children
             children = node.get('children', [])
+            if self.debug_mode:
+                st.write(f"  ROOT with {len(children)} children")
+            
             if children:
-                return self.execute_node(children[0], market_data, current_idx)
+                result = self.execute_node(children[0], market_data, current_idx)
+                if self.debug_mode:
+                    st.write(f"    Root result: {result}")
+                return result
             return {}
         
         return {}
@@ -841,13 +877,22 @@ class StrategyEngine:
     
     def get_allocation(self, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
         """Get portfolio allocation for current market conditions"""
+        if self.debug_mode:
+            st.write(f"Getting allocation for index {current_idx}")
+        
         # Try to execute the raw strategy JSON first
         if hasattr(self.parser, 'strategy'):
+            if self.debug_mode:
+                st.write("Executing raw strategy JSON")
             result = self.execute_node(self.parser.strategy, market_data, current_idx)
             if result:
+                if self.debug_mode:
+                    st.write(f"Raw JSON result: {result}")
                 return result
         
         # Fallback to parsed logic tree
+        if self.debug_mode:
+            st.write("Falling back to parsed logic tree")
         return self.execute_node(self.parser.logic_tree, market_data, current_idx)
 
 class StrategyStressTester:
