@@ -427,8 +427,13 @@ class StrategyEngine:
         self.debug_days = 5
         self.debug_start_day = 200
         self.debug_day_count = 0
+        self.max_debug_lines = 10
+        self.debug_line_count = 0
         self.export_debug = False
         self.debug_output = []
+        self.show_validation_details = False
+        self.total_output_lines = 0
+        self.max_total_output = 100  # Global limit on total debug output lines
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
         """Evaluate a single condition with debug logging"""
@@ -569,6 +574,7 @@ class StrategyEngine:
                 st.write(debug_msg)
                 if self.export_debug:
                     self.debug_output.append(debug_msg)
+                self.debug_line_count += 1
             
             return result
             
@@ -620,7 +626,9 @@ class StrategyEngine:
         # Check if we should show debug output
         should_debug = (self.debug_mode and 
                        current_idx >= self.debug_start_day and 
-                       self.debug_day_count < self.debug_days)
+                       self.debug_day_count < self.debug_days and
+                       self.debug_line_count < self.max_debug_lines and
+                       self.total_output_lines < self.max_total_output)
         
         if should_debug:
             # Compact debug output
@@ -632,6 +640,8 @@ class StrategyEngine:
                     st.write(debug_info)
                     if self.export_debug:
                         self.debug_output.append(debug_info)
+                    self.debug_line_count += 1
+                    self.total_output_lines += 1
                     return {ticker: 1.0}
                 return {}
             
@@ -644,6 +654,8 @@ class StrategyEngine:
                 st.write(debug_info)
                 if self.export_debug:
                     self.debug_output.append(debug_info)
+                self.debug_line_count += 1
+                self.total_output_lines += 1
                 
                 # Execute first child
                 result = self.execute_node(children[0], market_data, current_idx)
@@ -677,6 +689,8 @@ class StrategyEngine:
                 st.write(debug_info)
                 if self.export_debug:
                     self.debug_output.append(debug_info)
+                self.debug_line_count += 1
+                self.total_output_lines += 1
                 
                 for child in children:
                     if isinstance(child, dict) and child.get('step') == 'if-child':
@@ -701,6 +715,8 @@ class StrategyEngine:
                 st.write(debug_info)
                 if self.export_debug:
                     self.debug_output.append(debug_info)
+                self.debug_line_count += 1
+                self.total_output_lines += 1
         
         # Non-debug execution
         if step == 'asset':
@@ -879,6 +895,7 @@ class StrategyEngine:
                 st.write(debug_msg)
                 if self.export_debug:
                     self.debug_output.append(debug_msg)
+                self.debug_line_count += 1
             
             return result
             
@@ -963,6 +980,8 @@ class StrategyEngine:
                        self.debug_day_count < self.debug_days)
         
         if should_debug:
+            # Reset line count for new day
+            self.debug_line_count = 0
             debug_msg = f"--- Day {current_idx} ---"
             st.write(debug_msg)
             if self.export_debug:
@@ -1614,8 +1633,8 @@ def main():
                     debug_days = st.number_input(
                         "Debug Output Days",
                         min_value=1,
-                        max_value=50,
-                        value=5,
+                        max_value=20,
+                        value=3,
                         help="Number of days to show debug output for (prevents page from becoming too long)"
                     )
                 with col2:
@@ -1627,8 +1646,27 @@ def main():
                         help="Which day to start showing debug output from"
                     )
                 
+                # Add strict output limits
+                col3, col4 = st.columns(2)
+                with col3:
+                    max_debug_lines = st.number_input(
+                        "Max Debug Lines Per Day",
+                        min_value=5,
+                        max_value=50,
+                        value=10,
+                        help="Maximum number of debug lines to show per day"
+                    )
+                with col4:
+                    show_validation_details = st.checkbox(
+                        "Show Validation Details",
+                        value=False,
+                        help="Show detailed validation comparison (can be very long)"
+                    )
+                
                 st.session_state.strategy_tester.engine.debug_days = debug_days
                 st.session_state.strategy_tester.engine.debug_start_day = debug_start_day
+                st.session_state.strategy_tester.engine.max_debug_lines = max_debug_lines
+                st.session_state.strategy_tester.engine.show_validation_details = show_validation_details
                 
                 # Add export option
                 export_debug = st.checkbox("Export debug output to file", value=False)
@@ -1852,7 +1890,8 @@ def main():
                                     st.write(f"- Match rate: {match_rate:.1f}%")
                                     st.write(f"- Date range overlap: {dates[0].strftime('%Y-%m-%d')} to {dates[-1].strftime('%Y-%m-%d')}")
                                     
-                                    # Show first few validation results for debugging
+                                                                    # Show validation results only if requested
+                                if st.session_state.strategy_tester.engine.show_validation_details:
                                     if validation_results:
                                         st.write("**First few validation results:**")
                                         for i, result in enumerate(validation_results[:3]):
@@ -1860,34 +1899,36 @@ def main():
                                             if result['Match'] == '❌':
                                                 st.write(f"    Our: {result['Our Allocation']}")
                                                 st.write(f"    Composer: {result['Composer Allocation']}")
-                                    
-                                    # Add critical validation warning
-                                    if match_rate > 50:  # If more than 50% "match" but performance is very different
-                                        st.error("⚠️ CRITICAL: High match rate but performance differs significantly!")
-                                        st.write("This indicates the comparison logic may be flawed or too lenient.")
-                                        st.write("Please check:")
-                                        st.write("- RSI calculation method (Wilder's vs EMA)")
-                                        st.write("- Technical indicator implementations")
-                                        st.write("- Strategy logic interpretation")
-                                        st.write("- Date/time handling")
-                                        st.write("- Weight calculation methods")
-                                    
-                                    # Add specific analysis of the mismatches
-                                    if mismatches > 0:
-                                        st.subheader("🔍 Mismatch Analysis")
-                                        st.write("**Our Implementation:** Always allocates 100% to TQQQ")
-                                        st.write("**Composer Implementation:** Switches between assets based on conditions")
-                                        st.write("")
-                                        st.write("**This indicates our strategy engine is NOT evaluating conditions properly!**")
-                                        st.write("")
-                                        st.write("**Expected Behavior:**")
-                                        st.write("- RSI(TQQQ, 10) > 79 → UVXY")
-                                        st.write("- RSI(TQQQ, 10) < 31 → TECL")
-                                        st.write("- RSI(SOXL, 10) < 30 → SOXL")
-                                        st.write("- Price(TQQQ) > MA(TQQQ, 200) → TQQQ")
-                                        st.write("- Price(TQQQ) < MA(TQQQ, 20) → SQQQ/BSV")
-                                        st.write("")
-                                        st.write("**Actual Behavior:** Always TQQQ (fallback/default case only)")
+                                        
+                                        # Add critical validation warning
+                                        if match_rate > 50:  # If more than 50% "match" but performance is very different
+                                            st.error("⚠️ CRITICAL: High match rate but performance differs significantly!")
+                                            st.write("This indicates the comparison logic may be flawed or too lenient.")
+                                            st.write("Please check:")
+                                            st.write("- RSI calculation method (Wilder's vs EMA)")
+                                            st.write("- Technical indicator implementations")
+                                            st.write("- Strategy logic interpretation")
+                                            st.write("- Date/time handling")
+                                            st.write("- Weight calculation methods")
+                                        
+                                        # Add specific analysis of the mismatches
+                                        if mismatches > 0:
+                                            st.subheader("🔍 Mismatch Analysis")
+                                            st.write("**Our Implementation:** Always allocates 100% to TQQQ")
+                                            st.write("**Composer Implementation:** Switches between assets based on conditions")
+                                            st.write("")
+                                            st.write("**This indicates our strategy engine is NOT evaluating conditions properly!**")
+                                            st.write("")
+                                            st.write("**Expected Behavior:**")
+                                            st.write("- RSI(TQQQ, 10) > 79 → UVXY")
+                                            st.write("- RSI(TQQQ, 10) < 31 → TECL")
+                                            st.write("- RSI(SOXL, 10) < 30 → SOXL")
+                                            st.write("- Price(TQQQ) > MA(TQQQ, 200) → TQQQ")
+                                            st.write("- Price(TQQQ) < MA(TQQQ, 20) → SQQQ/BSV")
+                                            st.write("")
+                                            st.write("**Actual Behavior:** Always TQQQ (fallback/default case only)")
+                                else:
+                                    st.info("💡 Enable 'Show Validation Details' to see detailed validation analysis")
                                 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
@@ -1902,10 +1943,13 @@ def main():
                                 
                                 if match_rate < 95:
                                     st.error(f"⚠️ Strategy logic mismatch detected! Only {match_rate:.1f}% of allocations match Composer.")
-                                    st.write("**Recent Mismatches:**")
-                                    mismatch_df = pd.DataFrame([r for r in validation_results if r['Match'] == '❌'][:10])
-                                    if not mismatch_df.empty:
-                                        st.dataframe(mismatch_df, use_container_width=True)
+                                    if st.session_state.strategy_tester.engine.show_validation_details:
+                                        st.write("**Recent Mismatches:**")
+                                        mismatch_df = pd.DataFrame([r for r in validation_results if r['Match'] == '❌'][:10])
+                                        if not mismatch_df.empty:
+                                            st.dataframe(mismatch_df, use_container_width=True)
+                                    else:
+                                        st.info("💡 Enable 'Show Validation Details' to see mismatch details")
                                         
                                     st.write("**Debugging Tips:**")
                                     st.write("- Check RSI calculation method (Wilder's vs EMA)")
