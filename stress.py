@@ -696,9 +696,17 @@ class StrategyEngine:
                 self.debug_line_count += 1
                 self.total_output_lines += 1
                 
+                # Debug: show condition details
+                if self.debug_verbosity == "Detailed":
+                    st.write(f"  Condition evaluated: {condition_met}")
+                    st.write(f"  Number of children: {len(children)}")
+                
                 for child in children:
                     if isinstance(child, dict) and child.get('step') == 'if-child':
                         is_else = child.get('is-else-condition?', False)
+                        
+                        if self.debug_verbosity == "Detailed":
+                            st.write(f"  Child is_else: {is_else}")
                         
                         if (is_else and not condition_met) or (not is_else and condition_met):
                             if self.debug_verbosity == "Detailed":
@@ -755,13 +763,25 @@ class StrategyEngine:
             condition_met = self._evaluate_composer_condition(node, market_data, current_idx)
             children = node.get('children', [])
             
+            # Debug: show condition evaluation
+            if self.debug_mode and current_idx >= self.debug_start_day:
+                st.write(f"  Condition evaluated: {condition_met}")
+                st.write(f"  Number of children: {len(children)}")
+            
             for child in children:
                 if isinstance(child, dict) and child.get('step') == 'if-child':
                     is_else = child.get('is-else-condition?', False)
                     
+                    if self.debug_mode and current_idx >= self.debug_start_day:
+                        st.write(f"  Child is_else: {is_else}")
+                    
                     if (is_else and not condition_met) or (not is_else and condition_met):
+                        if self.debug_mode and current_idx >= self.debug_start_day:
+                            st.write(f"  Executing {'else' if is_else else 'if'} branch")
                         return self.execute_node(child.get('children', []), market_data, current_idx)
             
+            if self.debug_mode and current_idx >= self.debug_start_day:
+                st.write("  No matching branch found, returning empty")
             return {}
         
         elif step == 'filter':
@@ -920,6 +940,12 @@ class StrategyEngine:
             elif should_debug and self.debug_verbosity == "Minimal":
                 # Only show condition results, not details
                 pass
+            
+            # Always show condition details in detailed mode
+            if should_debug and self.debug_verbosity == "Detailed":
+                st.write(f"  LHS: {lhs_fn}({lhs_val}) = {lhs_value:.2f}")
+                st.write(f"  RHS: {rhs_val} = {rhs_value:.2f}")
+                st.write(f"  Comparison: {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}")
             
             return result
             
