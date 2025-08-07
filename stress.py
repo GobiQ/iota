@@ -424,16 +424,16 @@ class StrategyEngine:
         self.tech_indicators = TechnicalIndicators()
         self.debug_mode = False
         self.debug_verbosity = "Compact"
-        self.debug_days = 5
+        self.debug_days = 3
         self.debug_start_day = 200
         self.debug_day_count = 0
-        self.max_debug_lines = 10
+        self.max_debug_lines = 5
         self.debug_line_count = 0
         self.export_debug = False
         self.debug_output = []
         self.show_validation_details = False
         self.total_output_lines = 0
-        self.max_total_output = 100  # Global limit on total debug output lines
+        self.max_total_output = 50  # Global limit on total debug output lines
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
         """Evaluate a single condition with debug logging"""
@@ -575,6 +575,10 @@ class StrategyEngine:
                 if self.export_debug:
                     self.debug_output.append(debug_msg)
                 self.debug_line_count += 1
+                self.total_output_lines += 1
+            elif should_debug and self.debug_verbosity == "Minimal":
+                # Only show condition results, not details
+                pass
             
             return result
             
@@ -630,7 +634,7 @@ class StrategyEngine:
                        self.debug_line_count < self.max_debug_lines and
                        self.total_output_lines < self.max_total_output)
         
-        if should_debug:
+        if should_debug and self.debug_verbosity != "Minimal":
             # Compact debug output
             debug_info = f"Step: {step}"
             if step == 'asset':
@@ -798,13 +802,29 @@ class StrategyEngine:
         elif step == 'root':
             # Execute root node children
             children = node.get('children', [])
-            if self.debug_mode:
-                st.write(f"  ROOT with {len(children)} children")
+            
+            # Check if we should show debug output
+            should_debug = (self.debug_mode and 
+                           current_idx >= self.debug_start_day and 
+                           self.debug_day_count < self.debug_days and
+                           self.debug_line_count < self.max_debug_lines and
+                           self.total_output_lines < self.max_total_output)
+            
+            if should_debug and self.debug_verbosity != "Minimal":
+                st.write(f"ROOT with {len(children)} children")
+                if self.export_debug:
+                    self.debug_output.append(f"ROOT with {len(children)} children")
+                self.debug_line_count += 1
+                self.total_output_lines += 1
             
             if children:
                 result = self.execute_node(children[0], market_data, current_idx)
-                if self.debug_mode:
-                    st.write(f"    Root result: {result}")
+                if should_debug and self.debug_verbosity != "Minimal":
+                    st.write(f"Root result: {result}")
+                    if self.export_debug:
+                        self.debug_output.append(f"Root result: {result}")
+                    self.debug_line_count += 1
+                    self.total_output_lines += 1
                 return result
             return {}
         
@@ -896,6 +916,10 @@ class StrategyEngine:
                 if self.export_debug:
                     self.debug_output.append(debug_msg)
                 self.debug_line_count += 1
+                self.total_output_lines += 1
+            elif should_debug and self.debug_verbosity == "Minimal":
+                # Only show condition results, not details
+                pass
             
             return result
             
@@ -977,7 +1001,8 @@ class StrategyEngine:
         # Check if we should show debug output for this day
         should_debug = (self.debug_mode and 
                        current_idx >= self.debug_start_day and 
-                       self.debug_day_count < self.debug_days)
+                       self.debug_day_count < self.debug_days and
+                       self.total_output_lines < self.max_total_output)
         
         if should_debug:
             # Reset line count for new day
@@ -986,6 +1011,14 @@ class StrategyEngine:
             st.write(debug_msg)
             if self.export_debug:
                 self.debug_output.append(debug_msg)
+            self.total_output_lines += 1
+            self.debug_day_count += 1
+        elif (self.debug_mode and 
+              current_idx >= self.debug_start_day and 
+              self.debug_day_count < self.debug_days and
+              self.total_output_lines >= self.max_total_output):
+            # Show summary when debug output is cut off
+            st.write(f"--- Day {current_idx} --- (Debug output limited - see export for full details)")
             self.debug_day_count += 1
         
         # Try to execute the raw strategy JSON first
@@ -995,6 +1028,7 @@ class StrategyEngine:
                 st.write(debug_msg)
                 if self.export_debug:
                     self.debug_output.append(debug_msg)
+                self.total_output_lines += 1
             result = self.execute_node(self.parser.strategy, market_data, current_idx)
             if result:
                 if should_debug:
@@ -1002,6 +1036,7 @@ class StrategyEngine:
                     st.write(debug_msg)
                     if self.export_debug:
                         self.debug_output.append(debug_msg)
+                    self.total_output_lines += 1
                 return result
         
         # Fallback to parsed logic tree
@@ -1010,7 +1045,17 @@ class StrategyEngine:
             st.write(debug_msg)
             if self.export_debug:
                 self.debug_output.append(debug_msg)
-        return self.execute_node(self.parser.logic_tree, market_data, current_idx)
+            self.total_output_lines += 1
+        result = self.execute_node(self.parser.logic_tree, market_data, current_idx)
+        
+        # Show summary if debug output was limited
+        if (self.debug_mode and 
+            current_idx >= self.debug_start_day and 
+            self.debug_day_count <= self.debug_days and
+            self.total_output_lines >= self.max_total_output):
+            st.write("(Debug output truncated - enable export to see full details)")
+        
+        return result
 
 class StrategyStressTester:
     """Main class for comprehensive strategy stress testing"""
@@ -1634,7 +1679,7 @@ def main():
                         "Debug Output Days",
                         min_value=1,
                         max_value=20,
-                        value=3,
+                        value=2,
                         help="Number of days to show debug output for (prevents page from becoming too long)"
                     )
                 with col2:
@@ -1651,9 +1696,9 @@ def main():
                 with col3:
                     max_debug_lines = st.number_input(
                         "Max Debug Lines Per Day",
-                        min_value=5,
+                        min_value=3,
                         max_value=50,
-                        value=10,
+                        value=5,
                         help="Maximum number of debug lines to show per day"
                     )
                 with col4:
@@ -1663,9 +1708,19 @@ def main():
                         help="Show detailed validation comparison (can be very long)"
                     )
                 
+                # Add global output limit
+                max_total_output = st.number_input(
+                    "Global Debug Output Limit",
+                    min_value=10,
+                    max_value=200,
+                    value=30,
+                    help="Maximum total debug lines across all days (prevents excessive output)"
+                )
+                
                 st.session_state.strategy_tester.engine.debug_days = debug_days
                 st.session_state.strategy_tester.engine.debug_start_day = debug_start_day
                 st.session_state.strategy_tester.engine.max_debug_lines = max_debug_lines
+                st.session_state.strategy_tester.engine.max_total_output = max_total_output
                 st.session_state.strategy_tester.engine.show_validation_details = show_validation_details
                 
                 # Add export option
@@ -1673,6 +1728,9 @@ def main():
                 if export_debug:
                     st.info("Debug output will be saved to 'debug_output.txt' after running the backtest")
                 st.session_state.strategy_tester.engine.export_debug = export_debug
+                
+                # Add warning about debug limits
+                st.warning("⚠️ Debug output is limited to prevent page from becoming too long. Use 'Export debug output' to see full details.")
                 
                 # Show sample condition evaluation
                 if st.session_state.strategy_tester.historical_data:
