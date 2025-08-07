@@ -1256,6 +1256,27 @@ def main():
             # Show strategy structure
             if st.checkbox("Show Strategy Structure", value=False):
                 st.json(st.session_state.strategy_tester.parser.strategy)
+            
+            # Add strategy debugging
+            if st.checkbox("Enable Strategy Debugging", value=False):
+                st.write("**Strategy Logic Debugging:**")
+                st.write("This will show the condition evaluations during backtest.")
+                st.session_state.strategy_tester.engine.debug_mode = True
+                
+                # Show sample condition evaluation
+                if st.session_state.strategy_tester.historical_data:
+                    st.write("**Sample Condition Evaluation:**")
+                    # Get a sample date for debugging
+                    sample_date = list(st.session_state.strategy_tester.historical_data.values())[0].index[200]  # After 200 days for indicators
+                    st.write(f"Sample date: {sample_date}")
+                    
+                    # Show what conditions should be evaluated
+                    st.write("**Expected Conditions from JSON:**")
+                    st.write("- RSI(TQQQ, 10) > 79 → UVXY")
+                    st.write("- RSI(TQQQ, 10) < 31 → TECL") 
+                    st.write("- RSI(SOXL, 10) < 30 → SOXL")
+                    st.write("- Price(TQQQ) > MA(TQQQ, 200) → TQQQ")
+                    st.write("- Price(TQQQ) < MA(TQQQ, 20) → SQQQ/BSV")
         
         # Backtest configuration
         col1, col2 = st.columns(2)
@@ -1458,6 +1479,23 @@ def main():
                                         st.write("- Strategy logic interpretation")
                                         st.write("- Date/time handling")
                                         st.write("- Weight calculation methods")
+                                    
+                                    # Add specific analysis of the mismatches
+                                    if mismatches > 0:
+                                        st.subheader("🔍 Mismatch Analysis")
+                                        st.write("**Our Implementation:** Always allocates 100% to TQQQ")
+                                        st.write("**Composer Implementation:** Switches between assets based on conditions")
+                                        st.write("")
+                                        st.write("**This indicates our strategy engine is NOT evaluating conditions properly!**")
+                                        st.write("")
+                                        st.write("**Expected Behavior:**")
+                                        st.write("- RSI(TQQQ, 10) > 79 → UVXY")
+                                        st.write("- RSI(TQQQ, 10) < 31 → TECL")
+                                        st.write("- RSI(SOXL, 10) < 30 → SOXL")
+                                        st.write("- Price(TQQQ) > MA(TQQQ, 200) → TQQQ")
+                                        st.write("- Price(TQQQ) < MA(TQQQ, 20) → SQQQ/BSV")
+                                        st.write("")
+                                        st.write("**Actual Behavior:** Always TQQQ (fallback/default case only)")
                                 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
