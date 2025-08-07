@@ -423,6 +423,12 @@ class StrategyEngine:
         self.parser = strategy_parser
         self.tech_indicators = TechnicalIndicators()
         self.debug_mode = False
+        self.debug_verbosity = "Compact"
+        self.debug_days = 5
+        self.debug_start_day = 200
+        self.debug_day_count = 0
+        self.export_debug = False
+        self.debug_output = []
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
         """Evaluate a single condition with debug logging"""
@@ -549,9 +555,20 @@ class StrategyEngine:
             else:
                 result = False
             
-            # Debug logging for mismatches
-            if self.debug_mode:
-                st.write(f"Condition: {condition['lhs_fn']}({lhs_val}) {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}")
+            # Debug logging based on verbosity and day limits
+            should_debug = (self.debug_mode and 
+                           current_idx >= self.debug_start_day and 
+                           self.debug_day_count < self.debug_days)
+            
+            if should_debug and self.debug_verbosity in ["Detailed", "Compact"]:
+                if self.debug_verbosity == "Detailed":
+                    debug_msg = f"Condition: {condition['lhs_fn']}({lhs_val}) {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}"
+                else:  # Compact
+                    debug_msg = f"{condition['lhs_fn']}({lhs_val}) {comparator} {rhs_val} = {result}"
+                
+                st.write(debug_msg)
+                if self.export_debug:
+                    self.debug_output.append(debug_msg)
             
             return result
             
@@ -600,80 +617,131 @@ class StrategyEngine:
         """Execute a raw Composer JSON node"""
         step = node.get('step', '')
         
-        if self.debug_mode:
-            st.write(f"Executing step: {step}")
+        # Check if we should show debug output
+        should_debug = (self.debug_mode and 
+                       current_idx >= self.debug_start_day and 
+                       self.debug_day_count < self.debug_days)
         
+        if should_debug:
+            # Compact debug output
+            debug_info = f"Step: {step}"
+            if step == 'asset':
+                ticker = node.get('ticker')
+                if ticker:
+                    debug_info += f" -> {ticker}"
+                    st.write(debug_info)
+                    if self.export_debug:
+                        self.debug_output.append(debug_info)
+                    return {ticker: 1.0}
+                return {}
+            
+            elif step == 'wt-cash-equal':
+                children = node.get('children', [])
+                if not children:
+                    return {}
+                
+                debug_info += f" ({len(children)} children)"
+                st.write(debug_info)
+                if self.export_debug:
+                    self.debug_output.append(debug_info)
+                
+                # Execute first child
+                result = self.execute_node(children[0], market_data, current_idx)
+                if not result:
+                    return {}
+                
+                # Apply weight if specified
+                weight_info = node.get('weight', {})
+                if weight_info:
+                    num = weight_info.get('num', 100)
+                    den = weight_info.get('den', 100)
+                    weight_factor = float(num) / float(den)
+                    
+                    # Apply weight to all assets
+                    weighted_result = {}
+                    for ticker, allocation in result.items():
+                        weighted_result[ticker] = allocation * weight_factor
+                    
+                    if self.debug_verbosity == "Detailed":
+                        st.write(f"  Weight applied: {num}/{den} = {weight_factor:.3f}")
+                    return weighted_result
+                
+                return result
+            
+            elif step == 'if':
+                # Evaluate condition and execute appropriate branch
+                condition_met = self._evaluate_composer_condition(node, market_data, current_idx)
+                children = node.get('children', [])
+                
+                debug_info += f" -> {condition_met} ({len(children)} children)"
+                st.write(debug_info)
+                if self.export_debug:
+                    self.debug_output.append(debug_info)
+                
+                for child in children:
+                    if isinstance(child, dict) and child.get('step') == 'if-child':
+                        is_else = child.get('is-else-condition?', False)
+                        
+                        if (is_else and not condition_met) or (not is_else and condition_met):
+                            if self.debug_verbosity == "Detailed":
+                                debug_msg = f"  Executing {'else' if is_else else 'if'} branch"
+                                st.write(debug_msg)
+                                if self.export_debug:
+                                    self.debug_output.append(debug_msg)
+                            return self.execute_node(child.get('children', []), market_data, current_idx)
+                
+                if self.debug_verbosity == "Detailed":
+                    debug_msg = "  No matching branch found"
+                    st.write(debug_msg)
+                    if self.export_debug:
+                        self.debug_output.append(debug_msg)
+                return {}
+            
+            else:
+                st.write(debug_info)
+                if self.export_debug:
+                    self.debug_output.append(debug_info)
+        
+        # Non-debug execution
         if step == 'asset':
             ticker = node.get('ticker')
             if ticker:
-                if self.debug_mode:
-                    st.write(f"  Asset: {ticker}")
                 return {ticker: 1.0}
             return {}
         
         elif step == 'wt-cash-equal':
-            # Execute children and apply weight
             children = node.get('children', [])
             if not children:
                 return {}
             
-            if self.debug_mode:
-                st.write(f"  WT-CASH-EQUAL with {len(children)} children")
-            
-            # Execute first child
             result = self.execute_node(children[0], market_data, current_idx)
             if not result:
-                if self.debug_mode:
-                    st.write(f"    No result from child")
                 return {}
             
-            if self.debug_mode:
-                st.write(f"    Child result: {result}")
-            
-            # Apply weight if specified
             weight_info = node.get('weight', {})
             if weight_info:
                 num = weight_info.get('num', 100)
                 den = weight_info.get('den', 100)
                 weight_factor = float(num) / float(den)
                 
-                if self.debug_mode:
-                    st.write(f"    Weight factor: {num}/{den} = {weight_factor}")
-                
-                # Apply weight to all assets
                 weighted_result = {}
                 for ticker, allocation in result.items():
                     weighted_result[ticker] = allocation * weight_factor
-                
-                if self.debug_mode:
-                    st.write(f"    Weighted result: {weighted_result}")
                 return weighted_result
             
             return result
         
         elif step == 'if':
-            # Evaluate condition and execute appropriate branch
             condition_met = self._evaluate_composer_condition(node, market_data, current_idx)
             children = node.get('children', [])
-            
-            if self.debug_mode:
-                st.write(f"  IF condition result: {condition_met}")
-                st.write(f"  Number of children: {len(children)}")
             
             for child in children:
                 if isinstance(child, dict) and child.get('step') == 'if-child':
                     is_else = child.get('is-else-condition?', False)
                     
-                    if self.debug_mode:
-                        st.write(f"    Child is_else: {is_else}")
-                    
                     if (is_else and not condition_met) or (not is_else and condition_met):
-                        if self.debug_mode:
-                            st.write(f"    Executing child branch")
                         return self.execute_node(child.get('children', []), market_data, current_idx)
             
-            if self.debug_mode:
-                st.write(f"  No matching branch found, returning empty")
             return {}
         
         elif step == 'filter':
@@ -797,8 +865,20 @@ class StrategyEngine:
             else:
                 result = False
             
-            if self.debug_mode:
-                st.write(f"Composer Condition: {lhs_val} {comparator} {rhs_val} -> {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}")
+            # Debug logging based on verbosity and day limits
+            should_debug = (self.debug_mode and 
+                           current_idx >= self.debug_start_day and 
+                           self.debug_day_count < self.debug_days)
+            
+            if should_debug and self.debug_verbosity in ["Detailed", "Compact"]:
+                if self.debug_verbosity == "Detailed":
+                    debug_msg = f"Composer Condition: {lhs_val} {comparator} {rhs_val} -> {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}"
+                else:  # Compact
+                    debug_msg = f"{lhs_val} {comparator} {rhs_val} = {result}"
+                
+                st.write(debug_msg)
+                if self.export_debug:
+                    self.debug_output.append(debug_msg)
             
             return result
             
@@ -877,22 +957,40 @@ class StrategyEngine:
     
     def get_allocation(self, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
         """Get portfolio allocation for current market conditions"""
-        if self.debug_mode:
-            st.write(f"Getting allocation for index {current_idx}")
+        # Check if we should show debug output for this day
+        should_debug = (self.debug_mode and 
+                       current_idx >= self.debug_start_day and 
+                       self.debug_day_count < self.debug_days)
+        
+        if should_debug:
+            debug_msg = f"--- Day {current_idx} ---"
+            st.write(debug_msg)
+            if self.export_debug:
+                self.debug_output.append(debug_msg)
+            self.debug_day_count += 1
         
         # Try to execute the raw strategy JSON first
         if hasattr(self.parser, 'strategy'):
-            if self.debug_mode:
-                st.write("Executing raw strategy JSON")
+            if should_debug:
+                debug_msg = "Executing raw strategy JSON"
+                st.write(debug_msg)
+                if self.export_debug:
+                    self.debug_output.append(debug_msg)
             result = self.execute_node(self.parser.strategy, market_data, current_idx)
             if result:
-                if self.debug_mode:
-                    st.write(f"Raw JSON result: {result}")
+                if should_debug:
+                    debug_msg = f"Result: {result}"
+                    st.write(debug_msg)
+                    if self.export_debug:
+                        self.debug_output.append(debug_msg)
                 return result
         
         # Fallback to parsed logic tree
-        if self.debug_mode:
-            st.write("Falling back to parsed logic tree")
+        if should_debug:
+            debug_msg = "Falling back to parsed logic tree"
+            st.write(debug_msg)
+            if self.export_debug:
+                self.debug_output.append(debug_msg)
         return self.execute_node(self.parser.logic_tree, market_data, current_idx)
 
 class StrategyStressTester:
@@ -1477,9 +1575,22 @@ def main():
         This ensures our strategy logic correctly replicates the intended behavior.
         """)
         
-        # Add debug mode toggle
-        debug_mode = st.checkbox("Enable Debug Mode (shows condition evaluations)", value=False)
+        # Add debug mode controls
+        col1, col2 = st.columns(2)
+        with col1:
+            debug_mode = st.checkbox("Enable Debug Mode", value=False)
+        with col2:
+            if debug_mode:
+                debug_verbosity = st.selectbox(
+                    "Debug Verbosity",
+                    ["Compact", "Detailed", "Minimal"],
+                    help="Compact: Shows key steps only. Detailed: Shows all evaluations. Minimal: Shows only errors."
+                )
+            else:
+                debug_verbosity = "Compact"
+        
         st.session_state.strategy_tester.engine.debug_mode = debug_mode
+        st.session_state.strategy_tester.engine.debug_verbosity = debug_verbosity
         
         # Add strategy analysis
         if st.session_state.strategy_tester:
@@ -1496,6 +1607,34 @@ def main():
                 st.write("**Strategy Logic Debugging:**")
                 st.write("This will show the condition evaluations during backtest.")
                 st.session_state.strategy_tester.engine.debug_mode = True
+                
+                # Add debug output controls
+                col1, col2 = st.columns(2)
+                with col1:
+                    debug_days = st.number_input(
+                        "Debug Output Days",
+                        min_value=1,
+                        max_value=50,
+                        value=5,
+                        help="Number of days to show debug output for (prevents page from becoming too long)"
+                    )
+                with col2:
+                    debug_start_day = st.number_input(
+                        "Start Debug From Day",
+                        min_value=200,
+                        max_value=1000,
+                        value=200,
+                        help="Which day to start showing debug output from"
+                    )
+                
+                st.session_state.strategy_tester.engine.debug_days = debug_days
+                st.session_state.strategy_tester.engine.debug_start_day = debug_start_day
+                
+                # Add export option
+                export_debug = st.checkbox("Export debug output to file", value=False)
+                if export_debug:
+                    st.info("Debug output will be saved to 'debug_output.txt' after running the backtest")
+                st.session_state.strategy_tester.engine.export_debug = export_debug
                 
                 # Show sample condition evaluation
                 if st.session_state.strategy_tester.historical_data:
@@ -1548,6 +1687,25 @@ def main():
             
             if backtest_results:
                 st.session_state.backtest_results = backtest_results
+                
+                # Export debug output if requested
+                if st.session_state.strategy_tester.engine.export_debug and st.session_state.strategy_tester.engine.debug_output:
+                    try:
+                        with open('debug_output.txt', 'w') as f:
+                            f.write('\n'.join(st.session_state.strategy_tester.engine.debug_output))
+                        st.success("✅ Debug output saved to 'debug_output.txt'")
+                        
+                        # Provide download link
+                        with open('debug_output.txt', 'r') as f:
+                            debug_content = f.read()
+                        st.download_button(
+                            label="Download Debug Output",
+                            data=debug_content,
+                            file_name="debug_output.txt",
+                            mime="text/plain"
+                        )
+                    except Exception as e:
+                        st.error(f"Failed to save debug output: {str(e)}")
                 
                 # If validation is enabled, compare with Composer
                 if validate_against_composer and composer_url:
