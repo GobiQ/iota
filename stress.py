@@ -1285,6 +1285,9 @@ def main():
                 
                 # If validation is enabled, compare with Composer
                 if validate_against_composer and composer_url:
+                    st.write(f"**Fetching Composer data for URL:** {composer_url}")
+                    st.write(f"**Date range:** {backtest_start.strftime('%Y-%m-%d')} to {backtest_end.strftime('%Y-%m-%d')}")
+                    
                     with st.spinner("Fetching Composer backtest for validation..."):
                         try:
                             composer_allocations, composer_name, composer_tickers = fetch_backtest(
@@ -1300,9 +1303,15 @@ def main():
                                 our_allocations = backtest_results['allocations_history']
                                 dates = backtest_results['dates']
                                 
+                                # Debug information
+                                st.write(f"**Our backtest dates:** {len(dates)} days from {dates[0]} to {dates[-1]}")
+                                st.write(f"**Composer backtest dates:** {len(composer_allocations.index)} days from {composer_allocations.index[0]} to {composer_allocations.index[-1]}")
+                                st.write(f"**Our allocations:** {len(our_allocations)} entries")
+                                
                                 # Find matching dates and compare
                                 validation_results = []
                                 mismatches = 0
+                                matched_dates = 0
                                 
                                 for i, current_date in enumerate(dates):
                                     if i < len(our_allocations):
@@ -1311,6 +1320,7 @@ def main():
                                         # Find corresponding Composer allocation
                                         date_str = current_date.strftime('%Y-%m-%d')
                                         if current_date in composer_allocations.index:
+                                            matched_dates += 1
                                             composer_alloc = composer_allocations.loc[current_date]
                                             composer_dict = {
                                                 ticker: weight/100 for ticker, weight in composer_alloc.items() 
@@ -1347,12 +1357,14 @@ def main():
                                 total_days = len(validation_results)
                                 match_rate = ((total_days - mismatches) / total_days * 100) if total_days > 0 else 0
                                 
-                                col1, col2, col3 = st.columns(3)
+                                col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.metric("Total Days Compared", total_days)
                                 with col2:
-                                    st.metric("Mismatches", mismatches)
+                                    st.metric("Matched Dates", matched_dates)
                                 with col3:
+                                    st.metric("Mismatches", mismatches)
+                                with col4:
                                     color = "normal" if match_rate > 95 else "inverse"
                                     st.metric("Match Rate", f"{match_rate:.1f}%", delta_color=color)
                                 
