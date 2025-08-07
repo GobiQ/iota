@@ -1344,11 +1344,14 @@ def main():
                                                 if abs(weight) > 0.001
                                             }
                                             
+                                            # Convert our allocation to percentage format to match Composer
+                                            our_alloc_percent = {ticker: weight/100 for ticker, weight in our_alloc.items()}
+                                            
                                             # Compare allocations
                                             match = True
                                             differences = []
-                                            for ticker in set(list(our_alloc.keys()) + list(composer_dict.keys())):
-                                                our_weight = our_alloc.get(ticker, 0)
+                                            for ticker in set(list(our_alloc_percent.keys()) + list(composer_dict.keys())):
+                                                our_weight = our_alloc_percent.get(ticker, 0)
                                                 composer_weight = composer_dict.get(ticker, 0)
                                                 
                                                 if abs(our_weight - composer_weight) > 0.05:  # 5% tolerance
@@ -1358,7 +1361,8 @@ def main():
                                             # Show first few mismatches for debugging
                                             if not match and len(validation_results) < 3:
                                                 st.write(f"**Sample mismatch for {date_str}:**")
-                                                st.write(f"Our allocation: {our_alloc}")
+                                                st.write(f"Our allocation (decimal): {our_alloc}")
+                                                st.write(f"Our allocation (percent): {our_alloc_percent}")
                                                 st.write(f"Composer allocation: {composer_dict}")
                                                 st.write(f"Differences: {differences[:5]}")  # Show first 5 differences
                                             
