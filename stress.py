@@ -1308,6 +1308,16 @@ def main():
                                 st.write(f"**Composer backtest dates:** {len(composer_allocations.index)} days from {composer_allocations.index[0]} to {composer_allocations.index[-1]}")
                                 st.write(f"**Our allocations:** {len(our_allocations)} entries")
                                 
+                                # Show sample of normalized dates for debugging
+                                sample_dates = dates[:5] if len(dates) > 5 else dates
+                                st.write("**Sample date normalization:**")
+                                for i, d in enumerate(sample_dates):
+                                    if hasattr(d, 'tz_localize'):
+                                        normalized = d.tz_localize(None)
+                                        st.write(f"  Original: {d} -> Normalized: {normalized}")
+                                    else:
+                                        st.write(f"  Date: {d} (no timezone)")
+                                
                                 # Find matching dates and compare
                                 validation_results = []
                                 mismatches = 0
@@ -1317,11 +1327,17 @@ def main():
                                     if i < len(our_allocations):
                                         our_alloc = our_allocations[i]
                                         
+                                        # Normalize date to remove timezone info for comparison
+                                        if hasattr(current_date, 'tz_localize'):
+                                            normalized_date = current_date.tz_localize(None)
+                                        else:
+                                            normalized_date = current_date
+                                        
                                         # Find corresponding Composer allocation
-                                        date_str = current_date.strftime('%Y-%m-%d')
-                                        if current_date in composer_allocations.index:
+                                        date_str = normalized_date.strftime('%Y-%m-%d')
+                                        if normalized_date in composer_allocations.index:
                                             matched_dates += 1
-                                            composer_alloc = composer_allocations.loc[current_date]
+                                            composer_alloc = composer_allocations.loc[normalized_date]
                                             composer_dict = {
                                                 ticker: weight/100 for ticker, weight in composer_alloc.items() 
                                                 if abs(weight) > 0.001
