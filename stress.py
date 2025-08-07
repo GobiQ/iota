@@ -1252,7 +1252,8 @@ def main():
         with col1:
             backtest_start = st.date_input(
                 "Backtest Start Date",
-                value=date(2022, 1, 1)
+                value=date(2000, 1, 1),
+                help="Default: 2000-01-01 (defaults to oldest possible date)"
             )
         
         with col2:
@@ -1345,13 +1346,21 @@ def main():
                                             
                                             # Compare allocations
                                             match = True
+                                            differences = []
                                             for ticker in set(list(our_alloc.keys()) + list(composer_dict.keys())):
                                                 our_weight = our_alloc.get(ticker, 0)
                                                 composer_weight = composer_dict.get(ticker, 0)
                                                 
                                                 if abs(our_weight - composer_weight) > 0.05:  # 5% tolerance
                                                     match = False
-                                                    break
+                                                    differences.append(f"{ticker}: Our={our_weight:.3f}, Composer={composer_weight:.3f}")
+                                            
+                                            # Show first few mismatches for debugging
+                                            if not match and len(validation_results) < 3:
+                                                st.write(f"**Sample mismatch for {date_str}:**")
+                                                st.write(f"Our allocation: {our_alloc}")
+                                                st.write(f"Composer allocation: {composer_dict}")
+                                                st.write(f"Differences: {differences[:5]}")  # Show first 5 differences
                                             
                                             if not match:
                                                 mismatches += 1
@@ -1372,6 +1381,22 @@ def main():
                                 # Display validation summary
                                 total_days = len(validation_results)
                                 match_rate = ((total_days - mismatches) / total_days * 100) if total_days > 0 else 0
+                                
+                                # Calculate average differences for insight
+                                if total_days > 0:
+                                    st.write("**Summary Statistics:**")
+                                    st.write(f"- Total days with mismatches: {mismatches}")
+                                    st.write(f"- Match rate: {match_rate:.1f}%")
+                                    st.write(f"- Date range overlap: {dates[0].strftime('%Y-%m-%d')} to {dates[-1].strftime('%Y-%m-%d')}")
+                                    
+                                    # Show first few validation results for debugging
+                                    if validation_results:
+                                        st.write("**First few validation results:**")
+                                        for i, result in enumerate(validation_results[:3]):
+                                            st.write(f"  {result['Date']}: {result['Match']}")
+                                            if result['Match'] == '❌':
+                                                st.write(f"    Our: {result['Our Allocation']}")
+                                                st.write(f"    Composer: {result['Composer Allocation']}")
                                 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
