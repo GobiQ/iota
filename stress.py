@@ -1247,6 +1247,16 @@ def main():
         debug_mode = st.checkbox("Enable Debug Mode (shows condition evaluations)", value=False)
         st.session_state.strategy_tester.engine.debug_mode = debug_mode
         
+        # Add strategy analysis
+        if st.session_state.strategy_tester:
+            st.subheader("Strategy Analysis")
+            st.write(f"**Strategy Name:** {st.session_state.strategy_tester.parser.strategy.get('name', 'Unknown')}")
+            st.write(f"**Detected Assets:** {', '.join(st.session_state.strategy_tester.assets)}")
+            
+            # Show strategy structure
+            if st.checkbox("Show Strategy Structure", value=False):
+                st.json(st.session_state.strategy_tester.parser.strategy)
+        
         # Backtest configuration
         col1, col2 = st.columns(2)
         with col1:
@@ -1319,6 +1329,17 @@ def main():
                                     else:
                                         st.write(f"  Date: {d} (no timezone)")
                                 
+                                # Analyze allocation patterns
+                                st.write("**Allocation Pattern Analysis:**")
+                                if len(our_allocations) > 0:
+                                    sample_our = our_allocations[:10]  # First 10 allocations
+                                    st.write(f"Sample of our allocations: {sample_our}")
+                                
+                                if composer_allocations is not None and len(composer_allocations) > 0:
+                                    sample_composer = composer_allocations.head(10)  # First 10 rows
+                                    st.write(f"Sample of Composer allocations:")
+                                    st.write(sample_composer)
+                                
                                 # Find matching dates and compare
                                 validation_results = []
                                 mismatches = 0
@@ -1347,16 +1368,34 @@ def main():
                                             # Convert our allocation to percentage format to match Composer
                                             our_alloc_percent = {ticker: weight/100 for ticker, weight in our_alloc.items()}
                                             
-                                            # Compare allocations
+                                            # Compare allocations with stricter logic
                                             match = True
                                             differences = []
-                                            for ticker in set(list(our_alloc_percent.keys()) + list(composer_dict.keys())):
+                                            
+                                            # Check if we have the same tickers
+                                            our_tickers = set(our_alloc_percent.keys())
+                                            composer_tickers = set(composer_dict.keys())
+                                            
+                                            if our_tickers != composer_tickers:
+                                                match = False
+                                                differences.append(f"Ticker mismatch: Our={our_tickers}, Composer={composer_tickers}")
+                                            
+                                            # Compare weights for each ticker
+                                            for ticker in our_tickers.union(composer_tickers):
                                                 our_weight = our_alloc_percent.get(ticker, 0)
                                                 composer_weight = composer_dict.get(ticker, 0)
                                                 
-                                                if abs(our_weight - composer_weight) > 0.05:  # 5% tolerance
+                                                # Use much stricter tolerance (0.01 = 1%)
+                                                if abs(our_weight - composer_weight) > 0.01:
                                                     match = False
-                                                    differences.append(f"{ticker}: Our={our_weight:.3f}, Composer={composer_weight:.3f}")
+                                                    differences.append(f"{ticker}: Our={our_weight:.4f}, Composer={composer_weight:.4f}")
+                                            
+                                            # Additional check: total allocation should be close to 1.0 (100%)
+                                            our_total = sum(our_alloc_percent.values())
+                                            composer_total = sum(composer_dict.values())
+                                            if abs(our_total - composer_total) > 0.01:
+                                                match = False
+                                                differences.append(f"Total allocation mismatch: Our={our_total:.4f}, Composer={composer_total:.4f}")
                                             
                                             # Show first few mismatches for debugging
                                             if not match and len(validation_results) < 3:
@@ -1365,6 +1404,13 @@ def main():
                                                 st.write(f"Our allocation (percent): {our_alloc_percent}")
                                                 st.write(f"Composer allocation: {composer_dict}")
                                                 st.write(f"Differences: {differences[:5]}")  # Show first 5 differences
+                                            
+                                            # Also show some matches for comparison
+                                            elif match and len(validation_results) < 3:
+                                                st.write(f"**Sample match for {date_str}:**")
+                                                st.write(f"Our allocation (decimal): {our_alloc}")
+                                                st.write(f"Our allocation (percent): {our_alloc_percent}")
+                                                st.write(f"Composer allocation: {composer_dict}")
                                             
                                             if not match:
                                                 mismatches += 1
@@ -1401,6 +1447,17 @@ def main():
                                             if result['Match'] == '❌':
                                                 st.write(f"    Our: {result['Our Allocation']}")
                                                 st.write(f"    Composer: {result['Composer Allocation']}")
+                                    
+                                    # Add critical validation warning
+                                    if match_rate > 50:  # If more than 50% "match" but performance is very different
+                                        st.error("⚠️ CRITICAL: High match rate but performance differs significantly!")
+                                        st.write("This indicates the comparison logic may be flawed or too lenient.")
+                                        st.write("Please check:")
+                                        st.write("- RSI calculation method (Wilder's vs EMA)")
+                                        st.write("- Technical indicator implementations")
+                                        st.write("- Strategy logic interpretation")
+                                        st.write("- Date/time handling")
+                                        st.write("- Weight calculation methods")
                                 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
@@ -1427,6 +1484,39 @@ def main():
                                     st.write("- Check weight allocation logic")
                                 else:
                                     st.success(f"✅ Strategy logic validation passed! {match_rate:.1f}% match rate.")
+                                
+                                # Add performance comparison
+                                st.subheader("Performance Comparison")
+                                st.write("**Note:** Even if allocations match, performance may differ due to:")
+                                st.write("- Different RSI calculation methods (Wilder's vs EMA)")
+                                st.write("- Different technical indicator implementations")
+                                st.write("- Different rebalancing logic")
+                                st.write("- Different price data sources")
+                                st.write("- Different execution timing")
+                                
+                                # Show our performance metrics
+                                if backtest_results:
+                                    portfolio_values = backtest_results['portfolio_values']
+                                    daily_returns = backtest_results['daily_returns']
+                                    
+                                    total_return = (portfolio_values[-1] / portfolio_values[0] - 1) * 100
+                                    annual_return = ((portfolio_values[-1] / portfolio_values[0]) ** (252 / len(daily_returns)) - 1) * 100
+                                    volatility = np.std(daily_returns) * np.sqrt(252) * 100
+                                    
+                                    # Calculate max drawdown
+                                    peak = np.maximum.accumulate(portfolio_values)
+                                    drawdown = (peak - portfolio_values) / peak
+                                    max_drawdown = np.max(drawdown) * 100
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("Our Total Return", f"{total_return:.2f}%")
+                                    with col2:
+                                        st.metric("Our Annual Return", f"{annual_return:.2f}%")
+                                    with col3:
+                                        st.metric("Our Volatility", f"{volatility:.2f}%")
+                                    with col4:
+                                        st.metric("Our Max Drawdown", f"{max_drawdown:.2f}%")
                         
                         except Exception as e:
                             st.error(f"Validation failed: {str(e)}")
