@@ -1178,7 +1178,7 @@ def main():
         else:
             st.info("👆 Please upload a Composer strategy JSON file to begin.")
     
-        elif page == "Historical Validation":
+    elif page == "Historical Validation":
         st.header("Historical Validation")
         
         if st.session_state.strategy_tester is None:
