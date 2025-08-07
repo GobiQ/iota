@@ -126,8 +126,8 @@ class StrategyParser:
         return parse_node(self.strategy)
     
     def _parse_condition(self, node: dict) -> dict:
-        """Parse condition logic"""
-        return {
+        """Parse condition logic with proper parameter handling"""
+        condition = {
             'lhs_fn': node.get('lhs-fn'),
             'lhs_val': node.get('lhs-val'),
             'lhs_window': int(node.get('lhs-window-days', 10)),
@@ -137,6 +137,19 @@ class StrategyParser:
             'rhs_window': int(node.get('rhs-window-days', 10)),
             'rhs_fixed': node.get('rhs-fixed-value?', False)
         }
+        
+        # Handle lhs-fn-params and rhs-fn-params
+        if 'lhs-fn-params' in node:
+            lhs_params = node['lhs-fn-params']
+            if 'window' in lhs_params:
+                condition['lhs_window'] = int(lhs_params['window'])
+        
+        if 'rhs-fn-params' in node:
+            rhs_params = node['rhs-fn-params']
+            if 'window' in rhs_params:
+                condition['rhs_window'] = int(rhs_params['window'])
+        
+        return condition
 
 class MarketSimulator:
     """Generate realistic market scenarios for stress testing"""
@@ -362,62 +375,155 @@ class StrategyEngine:
         self.tech_indicators = TechnicalIndicators()
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
-        """Evaluate a single condition"""
+        """Evaluate a single condition with debug logging"""
         if not condition:
             return True
         
-        lhs_val = condition['lhs_val']
-        rhs_val = condition['rhs_val']
-        comparator = condition['comparator']
-        
-        # Get left-hand side value
-        if condition['lhs_fn'] == 'current-price':
-            if lhs_val in market_data and current_idx < len(market_data[lhs_val]):
-                lhs_value = market_data[lhs_val].iloc[current_idx]
-            else:
-                return False
-        elif condition['lhs_fn'] == 'relative-strength-index':
-            if lhs_val in market_data:
-                prices = market_data[lhs_val].iloc[:current_idx+1]
-                if len(prices) >= condition['lhs_window']:
-                    rsi_values = self.tech_indicators.rsi(prices, condition['lhs_window'])
-                    lhs_value = rsi_values.iloc[-1] if not pd.isna(rsi_values.iloc[-1]) else 50
+        try:
+            lhs_val = condition['lhs_val']
+            rhs_val = condition['rhs_val']
+            comparator = condition['comparator']
+            
+            # Get left-hand side value
+            if condition['lhs_fn'] == 'current-price':
+                if lhs_val in market_data and current_idx < len(market_data[lhs_val]):
+                    lhs_value = market_data[lhs_val].iloc[current_idx]
                 else:
-                    lhs_value = 50  # Default RSI
+                    return False
+            elif condition['lhs_fn'] == 'relative-strength-index':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['lhs_window']:
+                        # Use Wilder's smoothing method to match Composer
+                        rsi_values = self._calculate_wilder_rsi(prices, condition['lhs_window'])
+                        lhs_value = rsi_values.iloc[-1] if not pd.isna(rsi_values.iloc[-1]) else 50
+                    else:
+                        lhs_value = 50  # Default RSI
+                else:
+                    return False
+            elif condition['lhs_fn'] == 'cumulative-return':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['lhs_window']:
+                        start_price = prices.iloc[-(condition['lhs_window']+1)]
+                        end_price = prices.iloc[-1]
+                        lhs_value = ((end_price / start_price) - 1) * 100
+                    else:
+                        lhs_value = 0
+                else:
+                    return False
+            elif condition['lhs_fn'] == 'moving-average-price':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['lhs_window']:
+                        ma_values = self.tech_indicators.moving_average(prices, condition['lhs_window'])
+                        lhs_value = ma_values.iloc[-1] if not pd.isna(ma_values.iloc[-1]) else prices.iloc[-1]
+                    else:
+                        lhs_value = prices.iloc[-1] if len(prices) > 0 else 0
+                else:
+                    return False
+            elif condition['lhs_fn'] == 'max-drawdown':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['lhs_window']:
+                        window_prices = prices.iloc[-condition['lhs_window']:]
+                        peak = window_prices.expanding().max()
+                        drawdown = (peak - window_prices) / peak * 100
+                        lhs_value = drawdown.max()
+                    else:
+                        lhs_value = 0
+                else:
+                    return False
+            elif condition['lhs_fn'] == 'standard-deviation-return':
+                if lhs_val in market_data:
+                    prices = market_data[lhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['lhs_window'] + 1:
+                        returns = prices.pct_change().dropna()
+                        window_returns = returns.iloc[-condition['lhs_window']:]
+                        lhs_value = window_returns.std() * 100
+                    else:
+                        lhs_value = 0
+                else:
+                    return False
             else:
                 return False
-        else:
+            
+            # Get right-hand side value
+            if condition.get('rhs_fixed', False):
+                rhs_value = float(rhs_val)
+            elif condition['rhs_fn'] == 'moving-average-price':
+                if rhs_val in market_data:
+                    prices = market_data[rhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['rhs_window']:
+                        ma_values = self.tech_indicators.moving_average(prices, condition['rhs_window'])
+                        rhs_value = ma_values.iloc[-1] if not pd.isna(ma_values.iloc[-1]) else lhs_value
+                    else:
+                        rhs_value = lhs_value  # Default to no change
+                else:
+                    return False
+            elif condition['rhs_fn'] == 'relative-strength-index':
+                if rhs_val in market_data:
+                    prices = market_data[rhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['rhs_window']:
+                        rsi_values = self._calculate_wilder_rsi(prices, condition['rhs_window'])
+                        rhs_value = rsi_values.iloc[-1] if not pd.isna(rsi_values.iloc[-1]) else 50
+                    else:
+                        rhs_value = 50
+                else:
+                    return False
+            elif condition['rhs_fn'] == 'cumulative-return':
+                if rhs_val in market_data:
+                    prices = market_data[rhs_val].iloc[:current_idx+1]
+                    if len(prices) >= condition['rhs_window']:
+                        start_price = prices.iloc[-(condition['rhs_window']+1)]
+                        end_price = prices.iloc[-1]
+                        rhs_value = ((end_price / start_price) - 1) * 100
+                    else:
+                        rhs_value = 0
+                else:
+                    return False
+            else:
+                rhs_value = float(rhs_val) if condition.get('rhs_fixed', False) else 0
+            
+            # Evaluate comparison
+            if comparator == 'gt':
+                result = lhs_value > rhs_value
+            elif comparator == 'lt':
+                result = lhs_value < rhs_value
+            elif comparator == 'gte':
+                result = lhs_value >= rhs_value
+            elif comparator == 'lte':
+                result = lhs_value <= rhs_value
+            elif comparator == 'eq':
+                result = abs(lhs_value - rhs_value) < 1e-6
+            else:
+                result = False
+            
+            # Debug logging for mismatches
+            if hasattr(self, 'debug_mode') and self.debug_mode:
+                st.write(f"Condition: {condition['lhs_fn']}({lhs_val}) {lhs_value:.2f} {comparator} {rhs_value:.2f} = {result}")
+            
+            return result
+            
+        except Exception as e:
+            if hasattr(self, 'debug_mode') and self.debug_mode:
+                st.error(f"Condition evaluation error: {str(e)}")
             return False
+    
+    def _calculate_wilder_rsi(self, prices: pd.Series, window: int) -> pd.Series:
+        """Calculate RSI using Wilder's smoothing method (matches Composer)"""
+        delta = prices.diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
         
-        # Get right-hand side value
-        if condition.get('rhs_fixed', False):
-            rhs_value = float(rhs_val)
-        elif condition['rhs_fn'] == 'moving-average-price':
-            if rhs_val in market_data:
-                prices = market_data[rhs_val].iloc[:current_idx+1]
-                if len(prices) >= condition['rhs_window']:
-                    ma_values = self.tech_indicators.moving_average(prices, condition['rhs_window'])
-                    rhs_value = ma_values.iloc[-1] if not pd.isna(ma_values.iloc[-1]) else lhs_value
-                else:
-                    rhs_value = lhs_value  # Default to no change
-            else:
-                return False
-        else:
-            rhs_value = float(rhs_val) if condition.get('rhs_fixed', False) else 0
+        # Use Wilder's smoothing (alpha = 1/window)
+        alpha = 1.0 / window
+        avg_gain = gain.ewm(alpha=alpha, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=alpha, adjust=False).mean()
         
-        # Evaluate comparison
-        if comparator == 'gt':
-            return lhs_value > rhs_value
-        elif comparator == 'lt':
-            return lhs_value < rhs_value
-        elif comparator == 'gte':
-            return lhs_value >= rhs_value
-        elif comparator == 'lte':
-            return lhs_value <= rhs_value
-        elif comparator == 'eq':
-            return abs(lhs_value - rhs_value) < 1e-6
-        
-        return False
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
     
     def execute_node(self, node: Any, market_data: Dict[str, pd.Series], current_idx: int) -> Dict[str, float]:
         """Execute a node in the strategy tree"""
@@ -1072,7 +1178,7 @@ def main():
         else:
             st.info("👆 Please upload a Composer strategy JSON file to begin.")
     
-    elif page == "Historical Validation":
+        elif page == "Historical Validation":
         st.header("Historical Validation")
         
         if st.session_state.strategy_tester is None:
@@ -1088,6 +1194,10 @@ def main():
         This ensures our strategy logic correctly replicates the intended behavior.
         """)
         
+        # Add debug mode toggle
+        debug_mode = st.checkbox("Enable Debug Mode (shows condition evaluations)", value=False)
+        st.session_state.strategy_tester.engine.debug_mode = debug_mode
+        
         # Backtest configuration
         col1, col2 = st.columns(2)
         with col1:
@@ -1102,6 +1212,18 @@ def main():
                 value=date.today()
             )
         
+        # Add option to fetch and compare with Composer backtest
+        st.subheader("Composer Validation")
+        col1, col2 = st.columns(2)
+        with col1:
+            validate_against_composer = st.checkbox("Compare with Composer backtest", value=True)
+        with col2:
+            if validate_against_composer:
+                composer_url = st.text_input(
+                    "Composer Strategy URL (for validation)", 
+                    help="Same URL used in configuration"
+                )
+        
         if st.button("Run Historical Backtest", type="primary"):
             with st.spinner("Running historical backtest..."):
                 backtest_results = st.session_state.strategy_tester.backtest_strategy(
@@ -1111,9 +1233,101 @@ def main():
             
             if backtest_results:
                 st.session_state.backtest_results = backtest_results
+                
+                # If validation is enabled, compare with Composer
+                if validate_against_composer and composer_url:
+                    with st.spinner("Fetching Composer backtest for validation..."):
+                        try:
+                            composer_allocations, composer_name, composer_tickers = fetch_backtest(
+                                composer_url,
+                                backtest_start.strftime("%Y-%m-%d"),
+                                backtest_end.strftime("%Y-%m-%d")
+                            )
+                            
+                            if composer_allocations is not None:
+                                # Compare allocations
+                                st.subheader("🔍 Validation Results")
+                                
+                                our_allocations = backtest_results['allocations_history']
+                                dates = backtest_results['dates']
+                                
+                                # Find matching dates and compare
+                                validation_results = []
+                                mismatches = 0
+                                
+                                for i, date in enumerate(dates):
+                                    if i < len(our_allocations):
+                                        our_alloc = our_allocations[i]
+                                        
+                                        # Find corresponding Composer allocation
+                                        date_str = date.strftime('%Y-%m-%d')
+                                        if date in composer_allocations.index:
+                                            composer_alloc = composer_allocations.loc[date]
+                                            composer_dict = {
+                                                ticker: weight/100 for ticker, weight in composer_alloc.items() 
+                                                if abs(weight) > 0.001
+                                            }
+                                            
+                                            # Compare allocations
+                                            match = True
+                                            for ticker in set(list(our_alloc.keys()) + list(composer_dict.keys())):
+                                                our_weight = our_alloc.get(ticker, 0)
+                                                composer_weight = composer_dict.get(ticker, 0)
+                                                
+                                                if abs(our_weight - composer_weight) > 0.05:  # 5% tolerance
+                                                    match = False
+                                                    break
+                                            
+                                            if not match:
+                                                mismatches += 1
+                                                validation_results.append({
+                                                    'Date': date_str,
+                                                    'Our Allocation': str(our_alloc),
+                                                    'Composer Allocation': str(composer_dict),
+                                                    'Match': '❌'
+                                                })
+                                            else:
+                                                validation_results.append({
+                                                    'Date': date_str,
+                                                    'Our Allocation': str(our_alloc),
+                                                    'Composer Allocation': str(composer_dict),
+                                                    'Match': '✅'
+                                                })
+                                
+                                # Display validation summary
+                                total_days = len(validation_results)
+                                match_rate = ((total_days - mismatches) / total_days * 100) if total_days > 0 else 0
+                                
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Total Days Compared", total_days)
+                                with col2:
+                                    st.metric("Mismatches", mismatches)
+                                with col3:
+                                    color = "normal" if match_rate > 95 else "inverse"
+                                    st.metric("Match Rate", f"{match_rate:.1f}%", delta_color=color)
+                                
+                                if match_rate < 95:
+                                    st.error(f"⚠️ Strategy logic mismatch detected! Only {match_rate:.1f}% of allocations match Composer.")
+                                    st.write("**Recent Mismatches:**")
+                                    mismatch_df = pd.DataFrame([r for r in validation_results if r['Match'] == '❌'][:10])
+                                    if not mismatch_df.empty:
+                                        st.dataframe(mismatch_df, use_container_width=True)
+                                        
+                                    st.write("**Debugging Tips:**")
+                                    st.write("- Check RSI calculation method (Wilder's vs EMA)")
+                                    st.write("- Verify technical indicator windows")
+                                    st.write("- Ensure proper condition evaluation order")
+                                    st.write("- Check weight allocation logic")
+                                else:
+                                    st.success(f"✅ Strategy logic validation passed! {match_rate:.1f}% match rate.")
+                        
+                        except Exception as e:
+                            st.error(f"Validation failed: {str(e)}")
+                
                 st.success("✅ Historical backtest completed!")
                 
-                # Display results
+                # Display results (existing code continues...)
                 portfolio_values = backtest_results['portfolio_values']
                 daily_returns = backtest_results['daily_returns']
                 dates = backtest_results['dates']
