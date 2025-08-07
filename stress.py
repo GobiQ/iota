@@ -424,16 +424,16 @@ class StrategyEngine:
         self.tech_indicators = TechnicalIndicators()
         self.debug_mode = False
         self.debug_verbosity = "Compact"
-        self.debug_days = 3
+        self.debug_days = 10
         self.debug_start_day = 200
         self.debug_day_count = 0
-        self.max_debug_lines = 5
+        self.max_debug_lines = 20
         self.debug_line_count = 0
         self.export_debug = False
         self.debug_output = []
         self.show_validation_details = False
         self.total_output_lines = 0
-        self.max_total_output = 50  # Global limit on total debug output lines
+        self.max_total_output = 200  # Global limit on total debug output lines
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
         """Evaluate a single condition with debug logging"""
@@ -661,10 +661,20 @@ class StrategyEngine:
                 self.debug_line_count += 1
                 self.total_output_lines += 1
                 
-                # Execute first child
-                result = self.execute_node(children[0], market_data, current_idx)
-                if not result:
-                    return {}
+                # Execute all children and combine results
+                all_results = {}
+                for i, child in enumerate(children):
+                    if self.debug_verbosity == "Detailed":
+                        st.write(f"  Executing child {i+1}/{len(children)}: {child.get('step', 'unknown')}")
+                    child_result = self.execute_node(child, market_data, current_idx)
+                    if child_result:
+                        if self.debug_verbosity == "Detailed":
+                            st.write(f"    Child {i+1} result: {child_result}")
+                        for ticker, allocation in child_result.items():
+                            if ticker in all_results:
+                                all_results[ticker] += allocation
+                            else:
+                                all_results[ticker] = allocation
                 
                 # Apply weight if specified
                 weight_info = node.get('weight', {})
@@ -675,14 +685,17 @@ class StrategyEngine:
                     
                     # Apply weight to all assets
                     weighted_result = {}
-                    for ticker, allocation in result.items():
+                    for ticker, allocation in all_results.items():
                         weighted_result[ticker] = allocation * weight_factor
                     
                     if self.debug_verbosity == "Detailed":
                         st.write(f"  Weight applied: {num}/{den} = {weight_factor:.3f}")
+                        st.write(f"  Final result: {weighted_result}")
                     return weighted_result
                 
-                return result
+                if self.debug_verbosity == "Detailed":
+                    st.write(f"  Final result: {all_results}")
+                return all_results
             
             elif step == 'if':
                 # Evaluate condition and execute appropriate branch
@@ -734,10 +747,18 @@ class StrategyEngine:
             if not children:
                 return {}
             
-            result = self.execute_node(children[0], market_data, current_idx)
-            if not result:
-                return {}
+            # Execute all children and combine results
+            all_results = {}
+            for child in children:
+                child_result = self.execute_node(child, market_data, current_idx)
+                if child_result:
+                    for ticker, allocation in child_result.items():
+                        if ticker in all_results:
+                            all_results[ticker] += allocation
+                        else:
+                            all_results[ticker] = allocation
             
+            # Apply weight if specified
             weight_info = node.get('weight', {})
             if weight_info:
                 num = weight_info.get('num', 100)
@@ -745,11 +766,11 @@ class StrategyEngine:
                 weight_factor = float(num) / float(den)
                 
                 weighted_result = {}
-                for ticker, allocation in result.items():
+                for ticker, allocation in all_results.items():
                     weighted_result[ticker] = allocation * weight_factor
                 return weighted_result
             
-            return result
+            return all_results
         
         elif step == 'if':
             condition_met = self._evaluate_composer_condition(node, market_data, current_idx)
@@ -1013,6 +1034,11 @@ class StrategyEngine:
                 self.debug_output.append(debug_msg)
             self.total_output_lines += 1
             self.debug_day_count += 1
+            
+            # Show strategy structure for debugging
+            if hasattr(self.parser, 'strategy') and self.debug_verbosity == "Detailed":
+                st.write("Strategy structure:")
+                st.json(self.parser.strategy)
         elif (self.debug_mode and 
               current_idx >= self.debug_start_day and 
               self.debug_day_count < self.debug_days and
@@ -1729,6 +1755,11 @@ def main():
                     st.info("Debug output will be saved to 'debug_output.txt' after running the backtest")
                 st.session_state.strategy_tester.engine.export_debug = export_debug
                 
+                # Add strategy structure display
+                if st.checkbox("Show Strategy JSON Structure", value=False):
+                    st.write("**Strategy JSON Structure:**")
+                    st.json(st.session_state.strategy_tester.parser.strategy)
+                
                 # Add warning about debug limits
                 st.warning("⚠️ Debug output is limited to prevent page from becoming too long. Use 'Export debug output' to see full details.")
                 
@@ -1738,6 +1769,16 @@ def main():
                     # Get a sample date for debugging
                     sample_date = list(st.session_state.strategy_tester.historical_data.values())[0].index[200]  # After 200 days for indicators
                     st.write(f"Sample date: {sample_date}")
+                    
+                    # Test a sample allocation
+                    if st.button("Test Sample Allocation"):
+                        with st.spinner("Testing sample allocation..."):
+                            sample_idx = 200
+                            sample_result = st.session_state.strategy_tester.engine.get_allocation(
+                                st.session_state.strategy_tester.historical_data, 
+                                sample_idx
+                            )
+                            st.write(f"**Sample allocation result:** {sample_result}")
                     
                     # Show what conditions should be evaluated
                     st.write("**Expected Conditions from JSON:**")
