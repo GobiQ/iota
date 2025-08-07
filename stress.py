@@ -424,16 +424,16 @@ class StrategyEngine:
         self.tech_indicators = TechnicalIndicators()
         self.debug_mode = False
         self.debug_verbosity = "Compact"
-        self.debug_days = 3
+        self.debug_days = 10
         self.debug_start_day = 200
         self.debug_day_count = 0
-        self.max_debug_lines = 5
+        self.max_debug_lines = 15
         self.debug_line_count = 0
         self.export_debug = False
         self.debug_output = []
         self.show_validation_details = False
         self.total_output_lines = 0
-        self.max_total_output = 50  # Global limit on total debug output lines
+        self.max_total_output = 200  # Global limit on total debug output lines
     
     def evaluate_condition(self, condition: dict, market_data: Dict[str, pd.Series], current_idx: int) -> bool:
         """Evaluate a single condition with debug logging"""
@@ -1710,8 +1710,8 @@ def main():
                     debug_days = st.number_input(
                         "Debug Output Days",
                         min_value=1,
-                        max_value=20,
-                        value=2,
+                        max_value=50,
+                        value=10,
                         help="Number of days to show debug output for (prevents page from becoming too long)"
                     )
                 with col2:
@@ -1728,9 +1728,9 @@ def main():
                 with col3:
                     max_debug_lines = st.number_input(
                         "Max Debug Lines Per Day",
-                        min_value=3,
-                        max_value=50,
-                        value=5,
+                        min_value=5,
+                        max_value=100,
+                        value=15,
                         help="Maximum number of debug lines to show per day"
                     )
                 with col4:
@@ -1743,9 +1743,9 @@ def main():
                 # Add global output limit
                 max_total_output = st.number_input(
                     "Global Debug Output Limit",
-                    min_value=10,
-                    max_value=200,
-                    value=30,
+                    min_value=50,
+                    max_value=500,
+                    value=200,
                     help="Maximum total debug lines across all days (prevents excessive output)"
                 )
                 
