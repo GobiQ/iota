@@ -622,7 +622,7 @@ class StrategyStressTester:
         self.historical_data = {}
         self.market_simulator = None
     
-    def load_historical_data(self, start_date: str = "2020-01-01", end_date: str = None) -> bool:
+    def load_historical_data(self, start_date: str = "2000-01-01", end_date: str = None) -> bool:
         """Load historical price data for all assets"""
         if end_date is None:
             end_date = datetime.now().strftime("%Y-%m-%d")
@@ -1140,8 +1140,8 @@ def main():
                 with col1:
                     start_date = st.date_input(
                         "Historical Data Start Date",
-                        value=date(2020, 1, 1),
-                        help="Start date for loading historical price data"
+                        value=date(2000, 1, 1),
+                        help="Default: 2000-01-01 (defaults to oldest possible date)"
                     )
                 
                 with col2:
