@@ -1306,16 +1306,7 @@ def main():
         help="Number of bootstrap resamples for statistical testing. 1000 = good balance of accuracy and speed. Higher values = more accurate p-values but slower computation. 500-2000 is typical."
     )
     
-    # FDR control parameter
-    fdr_alpha = st.sidebar.number_input(
-        "FDR Alpha Level",
-        min_value=0.01,
-        max_value=0.20,
-        value=0.05,
-        step=0.01,
-        format="%.2f",
-        help="False Discovery Rate control level. 0.05 = 5% FDR (standard). Controls false positives when testing multiple signals. Lower values = more conservative, fewer false positives. Higher values = less conservative, more signals."
-    )
+
     
     # Benchmark selection
     st.sidebar.subheader("Benchmark Settings")
@@ -1463,7 +1454,7 @@ def main():
         if not any([filter_by_total_return, filter_by_profit_factor, filter_by_sortino, filter_by_calmar]):
             st.sidebar.warning("⚠️ No quantile filters selected - all signals will be included")
     else:
-        fdr_alpha = 1.0  # Effectively disable FDR
+        fdr_alpha = None  # Sentinel for 'don't run FDR'
         # Set all filters to False when secondary filters are disabled
         filter_by_total_return = False
         filter_by_profit_factor = False
@@ -1591,7 +1582,7 @@ def main():
             st.info(f"📊 {len(backtest_results)} signals passed initial filters")
             
             # Apply FDR control to bootstrap p-values (only if secondary filters are enabled)
-            if enable_secondary_filters:
+            if enable_secondary_filters and fdr_alpha is not None:
                 pcol = 'OOS_Bootstrap_p' if 'OOS_Bootstrap_p' in backtest_results.columns else 'Bootstrap_p'
                 if pcol in backtest_results.columns:
                     valid_pvals = backtest_results[pcol].dropna()
@@ -1657,10 +1648,10 @@ def main():
                         st.warning("⚠️ No valid p-values for FDR control")
             else:
                 # Set default values when secondary filters are disabled
-                backtest_results['FDR_q_value'] = 1.0  # No FDR filtering
-                backtest_results['Trust_Score'] = 0.0  # No trust scoring
-                backtest_results['Trust_Status'] = '🔴 REJECT'  # Default status
-                backtest_results['Gates_Passed'] = 0  # No gates passed
+                backtest_results['FDR_q_value'] = np.nan  # No FDR filtering
+                backtest_results['Trust_Score'] = np.nan  # No trust scoring
+                backtest_results['Trust_Status'] = 'N/A'  # No evaluation performed
+                backtest_results['Gates_Passed'] = np.nan  # No gates evaluated
                 st.info("🔍 Secondary filters disabled - showing all signals with basic metrics")
             
             # Filter by quantiles per ticker (only if secondary filters are enabled)
@@ -1705,11 +1696,18 @@ def main():
             # Generate and backtest combined signals
             if combination_limit > 1 and len(backtest_filtered) > 1:
                 st.header("🔗 Backtesting Combined Signals...")
-                combinations_filtered = generate_filtered_combinations(signals, backtest_filtered, combination_limit, max_correlation)
+                
+                # Show progress for generating combinations
+                with st.spinner("Generating signal combinations..."):
+                    combinations_filtered = generate_filtered_combinations(signals, backtest_filtered, combination_limit, max_correlation)
                 
                 if combinations_filtered:
-                    log_returns = np.log(price_data / price_data.shift(1)).fillna(0)
-                    backtest_df_combined, combined_returns_store = backtest_combined_signals(combinations_filtered, signals, price_data, log_returns, two_sided_bootstrap=two_sided_bootstrap)
+                    st.info(f"📊 Generated {len(combinations_filtered)} signal combinations to test")
+                    
+                    # Show progress for backtesting combined signals
+                    with st.spinner(f"Backtesting {len(combinations_filtered)} combined signals..."):
+                        log_returns = np.log(price_data / price_data.shift(1)).fillna(0)
+                        backtest_df_combined, combined_returns_store = backtest_combined_signals(combinations_filtered, signals, price_data, log_returns, two_sided_bootstrap=two_sided_bootstrap)
                     
                     # Combine results
                     backtest_df_combined = backtest_df_combined[backtest_results.columns]
