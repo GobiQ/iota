@@ -65,13 +65,23 @@ def generate_signals(tickers, start, max_signals=15000, use_curated_pairs=False,
     """Generate trading signals based on various technical indicators"""
     with st.spinner(f"Downloading data for {len(tickers)} tickers..."):
         # Download data with option to use adjusted close
-        raw_data = yf.download(tickers, start=start, progress=False, group_by="ticker")
-        if 'Adj Close' in raw_data.columns:
-            price_data = raw_data['Adj Close']
+        raw_data = yf.download(tickers, start=start, progress=False)
+        
+        # Handle different data structures from yfinance
+        if isinstance(raw_data.columns, pd.MultiIndex):
+            # Multi-level columns (when downloading multiple tickers)
+            if 'Adj Close' in raw_data.columns.get_level_values(0):
+                price_data = raw_data['Adj Close']
+            else:
+                price_data = raw_data['Close']
         else:
-            price_data = raw_data['Close']
-        if isinstance(price_data, pd.Series):
-            price_data = price_data.to_frame(name=tickers[0])
+            # Single-level columns (when downloading single ticker)
+            if 'Adj Close' in raw_data.columns:
+                price_data = raw_data['Adj Close']
+            else:
+                price_data = raw_data['Close']
+            if isinstance(price_data, pd.Series):
+                price_data = price_data.to_frame(name=tickers[0])
 
     price_data = price_data.dropna()
     log_returns = np.log(price_data / price_data.shift(1))
