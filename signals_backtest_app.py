@@ -1412,6 +1412,28 @@ def main():
         help="Use two-sided statistical tests for bootstrap p-values. Tests both positive and negative returns. More robust than one-sided tests. Recommended for most strategies."
     )
     
+    # Advanced filtering controls
+    st.sidebar.subheader("🔍 Advanced Filtering")
+    
+    enable_secondary_filters = st.sidebar.checkbox(
+        "Enable Secondary Filters",
+        value=True,
+        help="Apply advanced filters: FDR control, trust gates, statistical significance tests. Disable for faster processing or to see all signals."
+    )
+    
+    if enable_secondary_filters:
+        fdr_alpha = st.sidebar.slider(
+            "FDR Alpha Level",
+            min_value=0.01,
+            max_value=0.20,
+            value=0.05,
+            step=0.01,
+            format="%.2f",
+            help="False Discovery Rate control level. Lower values = stricter multiple testing correction. 0.05 = 5% false positive rate."
+        )
+    else:
+        fdr_alpha = 1.0  # Effectively disable FDR
+    
     # Signal explosion controls
     st.sidebar.subheader("🎯 Signal Generation Controls")
     
@@ -1532,70 +1554,78 @@ def main():
             
             st.info(f"📊 {len(backtest_results)} signals passed initial filters")
             
-            # Apply FDR control to bootstrap p-values (use OOS in split mode)
-            pcol = 'OOS_Bootstrap_p' if 'OOS_Bootstrap_p' in backtest_results.columns else 'Bootstrap_p'
-            if pcol in backtest_results.columns:
-                valid_pvals = backtest_results[pcol].dropna()
-                if len(valid_pvals) > 0:
-                    fdr_qvals, fdr_threshold = fdr_bh(valid_pvals, alpha=fdr_alpha)
-                    backtest_results.loc[valid_pvals.index, 'FDR_q_value'] = fdr_qvals
-                    
-                    # Count significant signals
-                    significant_signals = (fdr_qvals <= fdr_alpha).sum()
-                    st.info(f"🔬 FDR Control: {significant_signals} signals significant at {fdr_alpha:.1%} FDR level")
-                    
-                    # Update trust gates with FDR values using OOS data
-                    for idx in backtest_results.index:
-                        if pd.notna(backtest_results.loc[idx, 'FDR_q_value']):
-                            fdr_q = backtest_results.loc[idx, 'FDR_q_value']
-                            signal_name = backtest_results.loc[idx, 'Signal']
-                            ticker = backtest_results.loc[idx, 'Ticker']
-                            
-                            if (signal_name, ticker) in returns_store:
-                                returns = returns_store[(signal_name, ticker)]
-                                shifted_signal = signals[signal_name].reindex(price_data.index).fillna(False).shift(1).fillna(False)
+            # Apply FDR control to bootstrap p-values (only if secondary filters are enabled)
+            if enable_secondary_filters:
+                pcol = 'OOS_Bootstrap_p' if 'OOS_Bootstrap_p' in backtest_results.columns else 'Bootstrap_p'
+                if pcol in backtest_results.columns:
+                    valid_pvals = backtest_results[pcol].dropna()
+                    if len(valid_pvals) > 0:
+                        fdr_qvals, fdr_threshold = fdr_bh(valid_pvals, alpha=fdr_alpha)
+                        backtest_results.loc[valid_pvals.index, 'FDR_q_value'] = fdr_qvals
+                        
+                        # Count significant signals
+                        significant_signals = (fdr_qvals <= fdr_alpha).sum()
+                        st.info(f"🔬 FDR Control: {significant_signals} signals significant at {fdr_alpha:.1%} FDR level")
+                        
+                        # Update trust gates with FDR values using OOS data
+                        for idx in backtest_results.index:
+                            if pd.notna(backtest_results.loc[idx, 'FDR_q_value']):
+                                fdr_q = backtest_results.loc[idx, 'FDR_q_value']
+                                signal_name = backtest_results.loc[idx, 'Signal']
+                                ticker = backtest_results.loc[idx, 'Ticker']
                                 
-                                if is_mask is not None and oos_mask is not None:
-                                    # Use OOS data for trust gate evaluation
-                                    oos_returns = returns[oos_mask]
-                                    oos_signal = shifted_signal[oos_mask]
-                                    oos_trade_metrics = trade_metrics(oos_returns, oos_signal)
+                                if (signal_name, ticker) in returns_store:
+                                    returns = returns_store[(signal_name, ticker)]
+                                    shifted_signal = signals[signal_name].reindex(price_data.index).fillna(False).shift(1).fillna(False)
                                     
-                                    # Get OOS metrics
-                                    oos_hac_t = backtest_results.loc[idx, 'OOS_HAC_t_stat']
-                                    oos_boot_ci = (backtest_results.loc[idx, 'OOS_Bootstrap_CI_low'], backtest_results.loc[idx, 'OOS_Bootstrap_CI_high'])
+                                    if is_mask is not None and oos_mask is not None:
+                                        # Use OOS data for trust gate evaluation
+                                        oos_returns = returns[oos_mask]
+                                        oos_signal = shifted_signal[oos_mask]
+                                        oos_trade_metrics = trade_metrics(oos_returns, oos_signal)
+                                        
+                                        # Get OOS metrics
+                                        oos_hac_t = backtest_results.loc[idx, 'OOS_HAC_t_stat']
+                                        oos_boot_ci = (backtest_results.loc[idx, 'OOS_Bootstrap_CI_low'], backtest_results.loc[idx, 'OOS_Bootstrap_CI_high'])
+                                        
+                                        # Recalculate trust gates with FDR using OOS data
+                                        updated_trust = calculate_trust_gates(
+                                            oos_returns, oos_signal,
+                                            oos_trade_metrics,
+                                            oos_hac_t, oos_boot_ci, fdr_q,
+                                            min_trades_trust, min_exposure_trust, min_sharpe_trust,
+                                            costs_per_trade, daily_slippage,
+                                            ticker=ticker
+                                        )
+                                    else:
+                                        # Use full period data
+                                        trade_metrics_full = trade_metrics(returns, shifted_signal)
+                                        hac_t_stat = backtest_results.loc[idx, 'HAC_t_stat']
+                                        boot_ci = (backtest_results.loc[idx, 'Bootstrap_CI_low'], backtest_results.loc[idx, 'Bootstrap_CI_high'])
+                                        
+                                        updated_trust = calculate_trust_gates(
+                                            returns, shifted_signal,
+                                            trade_metrics_full,
+                                            hac_t_stat, boot_ci, fdr_q,
+                                            min_trades_trust, min_exposure_trust, min_sharpe_trust,
+                                            costs_per_trade, daily_slippage,
+                                            ticker=ticker
+                                        )
                                     
-                                    # Recalculate trust gates with FDR using OOS data
-                                    updated_trust = calculate_trust_gates(
-                                        oos_returns, oos_signal,
-                                        oos_trade_metrics,
-                                        oos_hac_t, oos_boot_ci, fdr_q,
-                                        min_trades_trust, min_exposure_trust, min_sharpe_trust,
-                                        costs_per_trade, daily_slippage,
-                                        ticker=ticker
-                                    )
-                                else:
-                                    # Use full period data
-                                    trade_metrics_full = trade_metrics(returns, shifted_signal)
-                                    hac_t_stat = backtest_results.loc[idx, 'HAC_t_stat']
-                                    boot_ci = (backtest_results.loc[idx, 'Bootstrap_CI_low'], backtest_results.loc[idx, 'Bootstrap_CI_high'])
-                                    
-                                    updated_trust = calculate_trust_gates(
-                                        returns, shifted_signal,
-                                        trade_metrics_full,
-                                        hac_t_stat, boot_ci, fdr_q,
-                                        min_trades_trust, min_exposure_trust, min_sharpe_trust,
-                                        costs_per_trade, daily_slippage,
-                                        ticker=ticker
-                                    )
-                                
-                                # Update trust metrics
-                                backtest_results.loc[idx, 'Trust_Score'] = updated_trust['trust_score']
-                                backtest_results.loc[idx, 'Trust_Status'] = updated_trust['trust_status']
-                                backtest_results.loc[idx, 'Gates_Passed'] = updated_trust['gates_passed']
-                                backtest_results.loc[idx, 'Net_Sharpe'] = updated_trust['net_sharpe']
-                else:
-                    st.warning("⚠️ No valid p-values for FDR control")
+                                    # Update trust metrics
+                                    backtest_results.loc[idx, 'Trust_Score'] = updated_trust['trust_score']
+                                    backtest_results.loc[idx, 'Trust_Status'] = updated_trust['trust_status']
+                                    backtest_results.loc[idx, 'Gates_Passed'] = updated_trust['gates_passed']
+                                    backtest_results.loc[idx, 'Net_Sharpe'] = updated_trust['net_sharpe']
+                    else:
+                        st.warning("⚠️ No valid p-values for FDR control")
+            else:
+                # Set default values when secondary filters are disabled
+                backtest_results['FDR_q_value'] = 1.0  # No FDR filtering
+                backtest_results['Trust_Score'] = 0.0  # No trust scoring
+                backtest_results['Trust_Status'] = '🔴 REJECT'  # Default status
+                backtest_results['Gates_Passed'] = 0  # No gates passed
+                st.info("🔍 Secondary filters disabled - showing all signals with basic metrics")
             
             # Filter by quantiles per ticker
             backtest_filtered = pd.DataFrame()
@@ -1650,8 +1680,8 @@ def main():
             with col4:
                 st.metric("Avg IS Time in Market", f"{final_results['Time in Market'].mean():.1%}")
             
-            # Trust Gate Summary
-            if 'Trust_Status' in final_results.columns:
+            # Trust Gate Summary (only show if secondary filters are enabled)
+            if enable_secondary_filters and 'Trust_Status' in final_results.columns:
                 st.subheader("🔒 Trust Gate Summary")
                 
                 # Count signals by trust status
@@ -1672,9 +1702,11 @@ def main():
                 
                 # Trust gate details
                 st.markdown("**Trust Gates:** Sample Size, HAC t-stat, Bootstrap CI, FDR Control, Costs, Risk")
+            elif not enable_secondary_filters:
+                st.info("🔍 Trust gates disabled - all signals shown with basic performance metrics")
                 
-            # FDR Statistics
-            if 'FDR_q_value' in final_results.columns:
+            # FDR Statistics (only show if secondary filters are enabled)
+            if enable_secondary_filters and 'FDR_q_value' in final_results.columns:
                 fdr_stats = final_results['FDR_q_value'].dropna()
                 if len(fdr_stats) > 0:
                     col1, col2, col3, col4 = st.columns(4)
