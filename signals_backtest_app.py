@@ -1431,8 +1431,44 @@ def main():
             format="%.2f",
             help="False Discovery Rate control level. Lower values = stricter multiple testing correction. 0.05 = 5% false positive rate."
         )
+        
+        # Quantile filtering controls
+        st.sidebar.subheader("📊 Quantile Filtering")
+        
+        filter_by_total_return = st.sidebar.checkbox(
+            "Filter by Total Return",
+            value=True,
+            help="Only include signals above the quantile threshold for Total Return"
+        )
+        
+        filter_by_profit_factor = st.sidebar.checkbox(
+            "Filter by Profit Factor",
+            value=True,
+            help="Only include signals above the quantile threshold for Profit Factor"
+        )
+        
+        filter_by_sortino = st.sidebar.checkbox(
+            "Filter by Sortino Ratio",
+            value=True,
+            help="Only include signals above the quantile threshold for Sortino Ratio"
+        )
+        
+        filter_by_calmar = st.sidebar.checkbox(
+            "Filter by Calmar Ratio",
+            value=True,
+            help="Only include signals above the quantile threshold for Calmar Ratio"
+        )
+        
+        # Show warning if no filters selected
+        if not any([filter_by_total_return, filter_by_profit_factor, filter_by_sortino, filter_by_calmar]):
+            st.sidebar.warning("⚠️ No quantile filters selected - all signals will be included")
     else:
         fdr_alpha = 1.0  # Effectively disable FDR
+        # Set all filters to False when secondary filters are disabled
+        filter_by_total_return = False
+        filter_by_profit_factor = False
+        filter_by_sortino = False
+        filter_by_calmar = False
     
     # Signal explosion controls
     st.sidebar.subheader("🎯 Signal Generation Controls")
@@ -1627,17 +1663,44 @@ def main():
                 backtest_results['Gates_Passed'] = 0  # No gates passed
                 st.info("🔍 Secondary filters disabled - showing all signals with basic metrics")
             
-            # Filter by quantiles per ticker
-            backtest_filtered = pd.DataFrame()
-            for ticker in backtest_results['Ticker'].unique():
-                results = backtest_results[backtest_results["Ticker"] == ticker]
-                results = results[results['Total Return'] > results['Total Return'].quantile(quantile)]
-                results = results[results['Profit Factor'] > results['Profit Factor'].quantile(quantile)]
-                results = results[results['Sortino Ratio'] > results['Sortino Ratio'].quantile(quantile)]
-                results = results[results['Calmar Ratio'] > results['Calmar Ratio'].quantile(quantile)]
-                backtest_filtered = pd.concat([backtest_filtered, results])
-            
-            st.success(f"✅ {len(backtest_filtered)} high-quality individual signals identified")
+            # Filter by quantiles per ticker (only if secondary filters are enabled)
+            if enable_secondary_filters:
+                backtest_filtered = pd.DataFrame()
+                for ticker in backtest_results['Ticker'].unique():
+                    results = backtest_results[backtest_results["Ticker"] == ticker]
+                    
+                    # Apply individual quantile filters based on user selection
+                    if filter_by_total_return:
+                        results = results[results['Total Return'] > results['Total Return'].quantile(quantile)]
+                    
+                    if filter_by_profit_factor:
+                        results = results[results['Profit Factor'] > results['Profit Factor'].quantile(quantile)]
+                    
+                    if filter_by_sortino:
+                        results = results[results['Sortino Ratio'] > results['Sortino Ratio'].quantile(quantile)]
+                    
+                    if filter_by_calmar:
+                        results = results[results['Calmar Ratio'] > results['Calmar Ratio'].quantile(quantile)]
+                    
+                    backtest_filtered = pd.concat([backtest_filtered, results])
+                
+                # Create filter summary
+                active_filters = []
+                if filter_by_total_return:
+                    active_filters.append("Total Return")
+                if filter_by_profit_factor:
+                    active_filters.append("Profit Factor")
+                if filter_by_sortino:
+                    active_filters.append("Sortino Ratio")
+                if filter_by_calmar:
+                    active_filters.append("Calmar Ratio")
+                
+                filter_summary = ", ".join(active_filters) if active_filters else "None"
+                st.success(f"✅ {len(backtest_filtered)} high-quality individual signals identified (Filters: {filter_summary})")
+            else:
+                # When secondary filters are disabled, use all signals that passed initial filters
+                backtest_filtered = backtest_results.copy()
+                st.success(f"✅ {len(backtest_filtered)} signals available (secondary filters disabled)")
             
             # Generate and backtest combined signals
             if combination_limit > 1 and len(backtest_filtered) > 1:
