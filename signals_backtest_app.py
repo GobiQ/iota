@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import itertools
 from itertools import combinations
 from datetime import datetime, timedelta
 
@@ -62,11 +61,11 @@ st.set_page_config(
 
 # Helper functions
 @st.cache_data(ttl=3600)  # Cache for 1 hour
-def generate_signals(tickers, start):
+def generate_signals(tickers, start, max_signals=15000, use_curated_pairs=False, curated_pairs=None):
     """Generate trading signals based on various technical indicators"""
     with st.spinner(f"Downloading data for {len(tickers)} tickers..."):
         # Download data with option to use adjusted close
-        raw_data = yf.download(tickers, start=start, progress=False)
+        raw_data = yf.download(tickers, start=start, progress=False, group_by="ticker")
         if 'Adj Close' in raw_data.columns:
             price_data = raw_data['Adj Close']
         else:
@@ -75,7 +74,6 @@ def generate_signals(tickers, start):
             price_data = price_data.to_frame(name=tickers[0])
 
     price_data = price_data.dropna()
-    daily_returns = price_data.pct_change()
     log_returns = np.log(price_data / price_data.shift(1))
 
     signals = {}
@@ -114,7 +112,7 @@ def generate_signals(tickers, start):
                 break
 
         # Generate RSI comparisons between tickers
-        if 'use_curated_pairs' in locals() and use_curated_pairs and 'curated_pairs' in locals():
+        if use_curated_pairs and curated_pairs:
             ticker_pairs = curated_pairs
         else:
             ticker_pairs = [(a, b) for a in tickers for b in tickers if a != b]
@@ -545,7 +543,7 @@ def trade_metrics(returns_series, signal_series):
         'trades': trades
     }
 
-def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, target_tickers: list, is_mask=None, oos_mask=None, min_exposure=0.05, hac_lags=0, mbb_block_size=10, mbb_bootstrap_samples=1000, min_trades_trust=30, min_exposure_trust=0.10, min_sharpe_trust=0.5, costs_per_trade=0.001, daily_slippage=0.0001, two_sided_bootstrap=True, stability_testing=False):
+def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, target_tickers: list, is_mask=None, oos_mask=None, min_exposure=0.05, hac_lags=0, mbb_block_size=10, mbb_bootstrap_samples=1000, min_trades_trust=30, min_exposure_trust=0.10, min_sharpe_trust=0.5, costs_per_trade=0.001, daily_slippage=0.0001, two_sided_bootstrap=True):
     """Backtest individual signals with optional IS/OOS split"""
     log_returns = np.log(price_data / price_data.shift(1)).fillna(0)
     returns_store = {}  # (signal, ticker) -> pd.Series
@@ -808,7 +806,7 @@ def generate_filtered_combinations(signals, backtest_results, max_signals, max_c
 
     return combined
 
-def backtest_combined_signals(combinations, signals, price_data, log_returns):
+def backtest_combined_signals(combinations, signals, price_data, log_returns, two_sided_bootstrap=True):
     """Backtest combined signals"""
     returns_store = {}  # (signal, ticker) -> pd.Series
     results_rows = []
@@ -850,7 +848,7 @@ def backtest_combined_signals(combinations, signals, price_data, log_returns):
         hac_mu, hac_se, hac_t_stat = hac_t(returns, lags=0)  # Use default lags
         
         # Moving-block bootstrap
-        boot_p, boot_ci = mbb_p_ci(returns, block=10, B=1000, two_sided=True)  # Use default parameters
+        boot_p, boot_ci = mbb_p_ci(returns, block=10, B=1000, two_sided=two_sided_bootstrap)  # Use default parameters
         
         # Trade metrics
         trade_metrics_full = trade_metrics(returns, combined_signal)
@@ -1375,11 +1373,7 @@ def main():
         help="Maximum correlation between signals in combinations. 0.7 = 70% correlation limit. Lower values = more diverse combinations, higher values = less restrictive. Prevents redundant signal combinations."
     )
     
-    stability_testing = st.sidebar.checkbox(
-        "Enable Stability Testing",
-        value=False,
-        help="Test signal robustness with parameter variations (e.g., RSI window ±20%, thresholds ±10%). More rigorous evaluation but slower computation. Helps identify fragile, over-optimized strategies."
-    )
+
     
     two_sided_bootstrap = st.sidebar.checkbox(
         "Two-sided Bootstrap Test",
@@ -1428,7 +1422,7 @@ def main():
         try:
             # Generate signals
             st.header("🔄 Generating Signals...")
-            signals, price_data = generate_signals(all_tickers, start_date.strftime('%Y-%m-%d'))
+            signals, price_data = generate_signals(all_tickers, start_date.strftime('%Y-%m-%d'), max_signals, use_curated_pairs, curated_pairs if 'curated_pairs' in locals() else None)
             
             st.success(f"✅ Generated {len(signals)} signals for {len(all_tickers)} tickers")
             
@@ -1464,7 +1458,7 @@ def main():
                 signals, price_data, all_tickers, target, is_mask, oos_mask, 
                 min_exposure_threshold, hac_lags, mbb_block_size, mbb_bootstrap_samples,
                 min_trades_trust, min_exposure_trust, min_sharpe_trust, costs_per_trade, daily_slippage,
-                two_sided_bootstrap, stability_testing
+                two_sided_bootstrap
             )
             # Drop rows with NaN in key columns only (not all columns)
             key_columns = ['Signal', 'Ticker', 'Total Return', 'Sortino Ratio']
@@ -1516,7 +1510,8 @@ def main():
                                         oos_trade_metrics,
                                         oos_hac_t, oos_boot_ci, fdr_q,
                                         min_trades_trust, min_exposure_trust, min_sharpe_trust,
-                                        costs_per_trade, daily_slippage
+                                        costs_per_trade, daily_slippage,
+                                        ticker=ticker
                                     )
                                 else:
                                     # Use full period data
@@ -1529,7 +1524,8 @@ def main():
                                         trade_metrics_full,
                                         hac_t_stat, boot_ci, fdr_q,
                                         min_trades_trust, min_exposure_trust, min_sharpe_trust,
-                                        costs_per_trade, daily_slippage
+                                        costs_per_trade, daily_slippage,
+                                        ticker=ticker
                                     )
                                 
                                 # Update trust metrics
@@ -1559,7 +1555,7 @@ def main():
                 
                 if combinations_filtered:
                     log_returns = np.log(price_data / price_data.shift(1)).fillna(0)
-                    backtest_df_combined, combined_returns_store = backtest_combined_signals(combinations_filtered, signals, price_data, log_returns)
+                    backtest_df_combined, combined_returns_store = backtest_combined_signals(combinations_filtered, signals, price_data, log_returns, two_sided_bootstrap=two_sided_bootstrap)
                     
                     # Combine results
                     backtest_df_combined = backtest_df_combined[backtest_results.columns]
