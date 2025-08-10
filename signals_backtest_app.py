@@ -383,7 +383,7 @@ def trade_metrics(returns_series, signal_series):
         'trades': trades
     }
 
-def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, target_tickers: list, is_mask=None, oos_mask=None, min_exposure=0.05):
+def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, target_tickers: list, is_mask=None, oos_mask=None, min_exposure=0.05, hac_lags=0, mbb_block_size=10, mbb_bootstrap_samples=1000, min_trades_trust=30, min_exposure_trust=0.10, min_sharpe_trust=0.5, costs_per_trade=0.001, daily_slippage=0.0001):
     """Backtest individual signals with optional IS/OOS split"""
     log_returns = np.log(price_data / price_data.shift(1)).fillna(0)
     returns_store = {}  # (signal, ticker) -> pd.Series
@@ -536,13 +536,13 @@ def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, tar
             # Store return series separately
             returns_store[(signal_name, target_ticker)] = returns
             
-            # Calculate trust gates
+            # Calculate trust gates (FDR will be calculated later)
             trust_gates = calculate_trust_gates(
                 returns, shifted_signal, 
                 trade_metrics_full if 'trade_metrics_full' in locals() else {'num_trades': 0},
                 hac_t_stat if 'hac_t_stat' in locals() else np.nan,
                 boot_ci if 'boot_ci' in locals() else (np.nan, np.nan),
-                fdr_q_value if 'fdr_q_value' in locals() else np.nan,
+                np.nan,  # FDR q-value will be updated later
                 min_trades=min_trades_trust,
                 min_exposure=min_exposure_trust,
                 min_sharpe=min_sharpe_trust,
@@ -996,7 +996,11 @@ def main():
             
             # Backtest individual signals with IS/OOS split
             st.header("📈 Backtesting Individual Signals (IS/OOS)...")
-            backtest_results, returns_store = backtest_signals(signals, price_data, all_tickers, target, is_mask, oos_mask, min_exposure_threshold)
+            backtest_results, returns_store = backtest_signals(
+                signals, price_data, all_tickers, target, is_mask, oos_mask, 
+                min_exposure_threshold, hac_lags, mbb_block_size, mbb_bootstrap_samples,
+                min_trades_trust, min_exposure_trust, min_sharpe_trust, costs_per_trade, daily_slippage
+            )
             backtest_results = backtest_results.dropna()
             
             # Apply filters
@@ -1016,6 +1020,36 @@ def main():
                     # Count significant signals
                     significant_signals = (fdr_qvals <= fdr_alpha).sum()
                     st.info(f"🔬 FDR Control: {significant_signals} signals significant at {fdr_alpha:.1%} FDR level")
+                    
+                    # Update trust gates with FDR values
+                    for idx in backtest_results.index:
+                        if pd.notna(backtest_results.loc[idx, 'FDR_q_value']):
+                            fdr_q = backtest_results.loc[idx, 'FDR_q_value']
+                            # Recalculate trust gates with FDR
+                            signal_name = backtest_results.loc[idx, 'Signal']
+                            ticker = backtest_results.loc[idx, 'Ticker']
+                            if (signal_name, ticker) in returns_store:
+                                returns = returns_store[(signal_name, ticker)]
+                                shifted_signal = signals[signal_name].reindex(price_data.index).fillna(False).shift(1).fillna(False)
+                                
+                                # Get existing metrics
+                                hac_t_stat = backtest_results.loc[idx, 'HAC_t_stat']
+                                boot_ci = (backtest_results.loc[idx, 'Bootstrap_CI_low'], backtest_results.loc[idx, 'Bootstrap_CI_high'])
+                                
+                                # Recalculate trust gates
+                                updated_trust = calculate_trust_gates(
+                                    returns, shifted_signal,
+                                    {'num_trades': backtest_results.loc[idx, 'Num Trades']},
+                                    hac_t_stat, boot_ci, fdr_q,
+                                    min_trades_trust, min_exposure_trust, min_sharpe_trust,
+                                    costs_per_trade, daily_slippage
+                                )
+                                
+                                # Update trust metrics
+                                backtest_results.loc[idx, 'Trust_Score'] = updated_trust['trust_score']
+                                backtest_results.loc[idx, 'Trust_Status'] = updated_trust['trust_status']
+                                backtest_results.loc[idx, 'Gates_Passed'] = updated_trust['gates_passed']
+                                backtest_results.loc[idx, 'Net_Sharpe'] = updated_trust['net_sharpe']
                 else:
                     st.warning("⚠️ No valid p-values for FDR control")
             
