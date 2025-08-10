@@ -61,7 +61,8 @@ st.set_page_config(
 
 # Helper functions
 @st.cache_data(ttl=3600)  # Cache for 1 hour
-def generate_signals(tickers, start, max_signals=15000, use_curated_pairs=False, curated_pairs=None):
+def generate_signals(tickers, start, max_signals=15000, use_curated_pairs=False, curated_pairs=None, 
+                    enable_rsi_signals=True, enable_cumret_signals=True, enable_ma_signals=True):
     """Generate trading signals based on various technical indicators"""
     with st.spinner(f"Downloading data for {len(tickers)} tickers..."):
         # Download data with option to use adjusted close
@@ -110,87 +111,92 @@ def generate_signals(tickers, start, max_signals=15000, use_curated_pairs=False,
 
     with st.spinner("Generating trading signals..."):
         # Generate RSI signals
-        for t in tickers:
-            for p, rsi in rsi_cache[t].items():
-                for lvl in rsi_levels:
-                    if signal_count >= max_signals:
-                        break
-                    signals[f'RSI_{p}_{t}_GT_{lvl}'] = rsi > lvl
-                    signals[f'RSI_{p}_{t}_LT_{lvl}'] = rsi < lvl
-                    signal_count += 2
-            if signal_count >= max_signals:
-                break
+        if enable_rsi_signals:
+            for t in tickers:
+                for p, rsi in rsi_cache[t].items():
+                    for lvl in rsi_levels:
+                        if signal_count >= max_signals:
+                            break
+                        signals[f'RSI_{p}_{t}_GT_{lvl}'] = rsi > lvl
+                        signals[f'RSI_{p}_{t}_LT_{lvl}'] = rsi < lvl
+                        signal_count += 2
+                if signal_count >= max_signals:
+                    break
 
         # Generate RSI comparisons between tickers
-        if use_curated_pairs and curated_pairs:
-            ticker_pairs = curated_pairs
-        else:
-            ticker_pairs = [(a, b) for a in tickers for b in tickers if a != b]
-        
-        for t1, t2 in ticker_pairs:
-            if signal_count >= max_signals:
-                break
-            for p1 in rsi_cache[t1]:
-                rsi1 = rsi_cache[t1][p1]
-                for p2 in rsi_cache[t2]:
-                    if signal_count >= max_signals:
-                        break
-                    rsi2 = rsi_cache[t2][p2]
-                    signals[f'RSI_{p1}_{t1}_GT_RSI_{p2}_{t2}'] = rsi1 > rsi2
-                    signals[f'RSI_{p1}_{t1}_LT_RSI_{p2}_{t2}'] = rsi1 < rsi2
-                    signal_count += 2
+        if enable_rsi_signals:
+            if use_curated_pairs and curated_pairs:
+                ticker_pairs = curated_pairs
+            else:
+                ticker_pairs = [(a, b) for a in tickers for b in tickers if a != b]
+            
+            for t1, t2 in ticker_pairs:
                 if signal_count >= max_signals:
                     break
-            if signal_count >= max_signals:
-                break
+                for p1 in rsi_cache[t1]:
+                    rsi1 = rsi_cache[t1][p1]
+                    for p2 in rsi_cache[t2]:
+                        if signal_count >= max_signals:
+                            break
+                        rsi2 = rsi_cache[t2][p2]
+                        signals[f'RSI_{p1}_{t1}_GT_RSI_{p2}_{t2}'] = rsi1 > rsi2
+                        signals[f'RSI_{p1}_{t1}_LT_RSI_{p2}_{t2}'] = rsi1 < rsi2
+                        signal_count += 2
+                    if signal_count >= max_signals:
+                        break
+                if signal_count >= max_signals:
+                    break
 
         # Generate Cumulative Return signals
-        for t in tickers:
-            for p, cum in cumret_cache[t].items():
-                for lvl in cumret_levels:
-                    if signal_count >= max_signals:
-                        break
-                    signals[f'CUMRET_{p}_{t}_GT_{lvl}'] = cum > lvl
-                    signals[f'CUMRET_{p}_{t}_LT_{lvl}'] = cum < lvl
-                    signal_count += 2
-            if signal_count >= max_signals:
-                break
+        if enable_cumret_signals:
+            for t in tickers:
+                for p, cum in cumret_cache[t].items():
+                    for lvl in cumret_levels:
+                        if signal_count >= max_signals:
+                            break
+                        signals[f'CUMRET_{p}_{t}_GT_{lvl}'] = cum > lvl
+                        signals[f'CUMRET_{p}_{t}_LT_{lvl}'] = cum < lvl
+                        signal_count += 2
+                if signal_count >= max_signals:
+                    break
 
         # Generate Cumulative Return comparisons between tickers
-        for t1, t2 in ticker_pairs:
-            if signal_count >= max_signals:
-                break
-            for p1 in cumret_cache[t1]:
-                r1 = cumret_cache[t1][p1]
-                for p2 in cumret_cache[t2]:
-                    if signal_count >= max_signals:
-                        break
-                    r2 = cumret_cache[t2][p2]
-                    signals[f'CUMRET_{p1}_{t1}_GT_CUMRET_{p2}_{t2}'] = r1 > r2
-                    signals[f'CUMRET_{p1}_{t1}_LT_CUMRET_{p2}_{t2}'] = r1 < r2
-                    signal_count += 2
+        if enable_cumret_signals:
+            for t1, t2 in ticker_pairs:
                 if signal_count >= max_signals:
                     break
-            if signal_count >= max_signals:
-                break
+                for p1 in cumret_cache[t1]:
+                    r1 = cumret_cache[t1][p1]
+                    for p2 in cumret_cache[t2]:
+                        if signal_count >= max_signals:
+                            break
+                        r2 = cumret_cache[t2][p2]
+                        signals[f'CUMRET_{p1}_{t1}_GT_CUMRET_{p2}_{t2}'] = r1 > r2
+                        signals[f'CUMRET_{p1}_{t1}_LT_CUMRET_{p2}_{t2}'] = r1 < r2
+                        signal_count += 2
+                    if signal_count >= max_signals:
+                        break
+                if signal_count >= max_signals:
+                    break
 
         # Generate Moving Average signals
-        for t1, t2 in ticker_pairs:
-            if signal_count >= max_signals:
-                break
-            for p1 in ma_cache[t1]:
-                m1 = ma_cache[t1][p1]
-                for p2 in ma_cache[t2]:
-                    if signal_count >= max_signals:
-                        break
-                    m2 = ma_cache[t2][p2]
-                    signals[f'MA_{p1}_{t1}_GT_MA_{p2}_{t2}'] = m1 > m2
-                    signals[f'MA_{p1}_{t1}_LT_MA_{p2}_{t2}'] = m1 < m2
-                    signal_count += 2
+        if enable_ma_signals:
+            for t1, t2 in ticker_pairs:
                 if signal_count >= max_signals:
                     break
-            if signal_count >= max_signals:
-                break
+                for p1 in ma_cache[t1]:
+                    m1 = ma_cache[t1][p1]
+                    for p2 in ma_cache[t2]:
+                        if signal_count >= max_signals:
+                            break
+                        m2 = ma_cache[t2][p2]
+                        signals[f'MA_{p1}_{t1}_GT_MA_{p2}_{t2}'] = m1 > m2
+                        signals[f'MA_{p1}_{t1}_LT_MA_{p2}_{t2}'] = m1 < m2
+                        signal_count += 2
+                    if signal_count >= max_signals:
+                        break
+                if signal_count >= max_signals:
+                    break
 
 
 
@@ -199,7 +205,22 @@ def generate_signals(tickers, start, max_signals=15000, use_curated_pairs=False,
         if not isinstance(signals[k], pd.Series):
             signals[k] = pd.Series(signals[k], index=price_data.index)
 
-    st.info(f"📊 Generated {len(signals)} signals (capped at {max_signals})")
+    # Count signals by type
+    rsi_count = sum(1 for s in signals.keys() if s.startswith('RSI_'))
+    cumret_count = sum(1 for s in signals.keys() if s.startswith('CUMRET_'))
+    ma_count = sum(1 for s in signals.keys() if s.startswith('MA_'))
+    
+    # Create summary message
+    summary_parts = []
+    if rsi_count > 0:
+        summary_parts.append(f"RSI: {rsi_count}")
+    if cumret_count > 0:
+        summary_parts.append(f"CumRet: {cumret_count}")
+    if ma_count > 0:
+        summary_parts.append(f"MA: {ma_count}")
+    
+    summary = " | ".join(summary_parts) if summary_parts else "None"
+    st.info(f"📊 Generated {len(signals)} signals (capped at {max_signals}) - Types: {summary}")
     return signals, price_data
 
 def hac_t(ret, lags=None):
@@ -1403,6 +1424,27 @@ def main():
         help="Hard cap on total generated signals to prevent explosion"
     )
     
+    # Signal type selection
+    st.sidebar.subheader("📊 Signal Types")
+    
+    enable_rsi_signals = st.sidebar.checkbox(
+        "RSI Signals",
+        value=True,
+        help="Generate RSI-based signals (individual levels and cross-asset comparisons)"
+    )
+    
+    enable_cumret_signals = st.sidebar.checkbox(
+        "Cumulative Return Signals",
+        value=True,
+        help="Generate cumulative return-based signals (individual levels and cross-asset comparisons)"
+    )
+    
+    enable_ma_signals = st.sidebar.checkbox(
+        "Moving Average Signals",
+        value=True,
+        help="Generate moving average comparison signals (cross-asset only)"
+    )
+    
     use_curated_pairs = st.sidebar.checkbox(
         "Use Curated Ticker Pairs",
         value=False,
@@ -1432,7 +1474,16 @@ def main():
         try:
             # Generate signals
             st.header("🔄 Generating Signals...")
-            signals, price_data = generate_signals(all_tickers, start_date.strftime('%Y-%m-%d'), max_signals, use_curated_pairs, curated_pairs if 'curated_pairs' in locals() else None)
+            signals, price_data = generate_signals(
+                all_tickers, 
+                start_date.strftime('%Y-%m-%d'), 
+                max_signals, 
+                use_curated_pairs, 
+                curated_pairs if 'curated_pairs' in locals() else None,
+                enable_rsi_signals,
+                enable_cumret_signals,
+                enable_ma_signals
+            )
             
             st.success(f"✅ Generated {len(signals)} signals for {len(all_tickers)} tickers")
             
