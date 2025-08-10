@@ -1,15 +1,57 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import itertools
-from ta.momentum import RSIIndicator
-from tqdm import tqdm
 from itertools import combinations
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime, timedelta
+
+# Check for required packages and show installation instructions if missing
+missing_packages = []
+
+try:
+    import yfinance as yf
+except ImportError:
+    missing_packages.append("yfinance")
+
+try:
+    from ta.momentum import RSIIndicator
+except ImportError:
+    missing_packages.append("ta")
+
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+except ImportError:
+    missing_packages.append("plotly")
+
+# Show installation instructions if packages are missing
+if missing_packages:
+    st.error("📦 Missing Required Packages")
+    st.markdown("Please install the following packages to use this app:")
+    
+    install_command = f"pip install {' '.join(missing_packages)}"
+    st.code(install_command, language="bash")
+    
+    st.markdown("### Installation Steps:")
+    st.markdown("1. Open your terminal/command prompt")
+    st.markdown(f"2. Run: `{install_command}`")
+    st.markdown("3. Restart your Streamlit app")
+    
+    st.stop()
+
+# Progress bar replacement for environments without tqdm
+class SimpleProgress:
+    def __init__(self, total):
+        self.total = total
+        self.current = 0
+        self.progress_bar = st.progress(0)
+    
+    def update(self, n=1):
+        self.current += n
+        self.progress_bar.progress(min(self.current / self.total, 1.0))
+    
+    def close(self):
+        self.progress_bar.empty()
 
 # Set page config
 st.set_page_config(
@@ -120,16 +162,14 @@ def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, tar
     log_returns = np.log(price_data / price_data.shift(1)).fillna(0)
     results = []
 
-    progress_bar = st.progress(0)
     total_signals = len(signals) * len(target_tickers)
-    current_progress = 0
+    progress = SimpleProgress(total_signals)
 
     for target_ticker in target_tickers:
         cumulative_returns = np.exp(log_returns[target_ticker].cumsum()) - 1
 
         for signal_name, signal in signals.items():
-            current_progress += 1
-            progress_bar.progress(current_progress / total_signals)
+            progress.update(1)
 
             shifted_signal = signal.reindex(price_data.index).fillna(False).shift(1).fillna(False)
             returns = shifted_signal * log_returns[target_ticker]
@@ -166,7 +206,7 @@ def backtest_signals(signals: dict, price_data: pd.DataFrame, tickers: list, tar
                 'Signal Returns': returns
             })
 
-    progress_bar.empty()
+    progress.close()
     return pd.DataFrame(results).sort_values(by='Sortino Ratio', ascending=False)
 
 def generate_filtered_combinations(signals, backtest_results, max_signals):
@@ -189,11 +229,11 @@ def backtest_combined_signals(combinations, signals, price_data, log_returns):
     """Backtest combined signals"""
     results = []
     
-    progress_bar = st.progress(0)
     total_combinations = len(combinations)
+    progress = SimpleProgress(total_combinations)
 
-    for i, (signal_names, ticker) in enumerate(combinations):
-        progress_bar.progress((i + 1) / total_combinations)
+    for signal_names, ticker in combinations:
+        progress.update(1)
 
         combined_signal = signals[signal_names[0]]
         for s in signal_names[1:]:
@@ -230,7 +270,7 @@ def backtest_combined_signals(combinations, signals, price_data, log_returns):
             'Signal Returns': returns
         })
 
-    progress_bar.empty()
+    progress.close()
     return pd.DataFrame(results).sort_values(by='Sortino Ratio', ascending=False)
 
 def plot_performance_chart(results_df, selected_signals, price_data):
