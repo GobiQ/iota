@@ -95,10 +95,10 @@ def get_stock_data_cached(ticker: str, start_date=None, end_date=None) -> pd.Ser
     """Cached version of stock data fetching"""
     stock = yf.Ticker(ticker)
     if start_date and end_date:
-        data = stock.history(start=start_date, end=end_date)
+        data = stock.history(start=start_date, end=end_date, auto_adjust=False)
     else:
-        data = stock.history(period="max")
-    return data['Close']
+        data = stock.history(period="max", auto_adjust=False)
+    return data['Adj Close']
 
 def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None) -> pd.Series:
     """Fetch stock data using yfinance with optional date range and exclusions"""
@@ -121,7 +121,7 @@ def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None)
                 # Remove data within exclusion period
                 data_df = data_df[~((data_df.index >= exclusion_start) & (data_df.index <= exclusion_end))]
         
-        return data_df['Close']
+        return data_df['Adj Close']
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
