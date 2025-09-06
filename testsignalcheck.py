@@ -92,35 +92,34 @@ def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02, u
 
 @st.cache_data(show_spinner=False)
 def get_stock_data_cached(ticker: str, start_date=None, end_date=None) -> pd.Series:
-    """Cached version of stock data fetching"""
-    stock = yf.Ticker(ticker)
+    """Cached version of stock data fetching (adjusted for splits/dividends)."""
+    tkr = yf.Ticker(ticker.upper().strip())
+    # auto_adjust=True returns an adjusted 'Close' (already adjusted for splits/dividends)
     if start_date and end_date:
-        data = stock.history(start=start_date, end=end_date, auto_adjust=False)
+        data = tkr.history(start=start_date, end=end_date, auto_adjust=True)
     else:
-        data = stock.history(period="max", auto_adjust=False)
-    return data['Adj Close']
+        data = tkr.history(period="max", auto_adjust=True)
+    s = data['Close'].copy()
+    s.name = 'Adj Close'  # standardize the name for downstream use
+    return s
 
 def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None) -> pd.Series:
-    """Fetch stock data using yfinance with optional date range and exclusions"""
+    """Fetch adjusted price series with optional exclusions."""
     try:
-        # Use cached version for the main data fetch
         data = get_stock_data_cached(ticker, start_date, end_date)
-        
-        if data.empty:
+        if data is None or data.empty:
             st.error(f"No data found for ticker: {ticker}")
             return None
-        
-        # Convert to DataFrame for exclusion processing
-        data_df = pd.DataFrame({'Close': data})
-        
-        # Apply exclusions if provided
+
+        # Keep the same column name as returned ('Adj Close') to avoid KeyErrors
+        data_df = pd.DataFrame({'Adj Close': data})
+
         if exclusions:
             for exclusion in exclusions:
                 exclusion_start = pd.Timestamp(exclusion['start'])
                 exclusion_end = pd.Timestamp(exclusion['end'])
-                # Remove data within exclusion period
                 data_df = data_df[~((data_df.index >= exclusion_start) & (data_df.index <= exclusion_end))]
-        
+
         return data_df['Adj Close']
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
