@@ -180,9 +180,9 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
                 }
         
         # Apply precondition mask to base signals
-        signals = base_signals & precondition_mask
+        signals = (base_signals.astype(bool) & precondition_mask).fillna(False).astype(int)
     else:
-        signals = base_signals
+        signals = base_signals.fillna(0).astype(int)
     
     # Calculate equity curve day by day - buy/sell TARGET based on SIGNAL RSI
     equity_curve = pd.Series(1.0, index=target_prices.index)
@@ -616,19 +616,22 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
                 benchmark_precondition_mask = pd.Series(True, index=signal_data.index)
                 
                 for precondition in preconditions:
-                    precondition_ticker = precondition['signal_ticker']
-                    precondition_comparison = precondition['comparison']
-                    precondition_threshold = precondition['threshold']
+                    pre_tkr = precondition['signal_ticker']
+                    pre_cmp = precondition['comparison']
+                    pre_thr = precondition['threshold']
                     
-                    if precondition_ticker in precondition_data:
-                        precondition_rsi = calculate_rsi(precondition_data[precondition_ticker], window=rsi_period, method=rsi_method)
+                    if pre_tkr in precondition_data:
+                        pre_rsi = calculate_rsi(precondition_data[pre_tkr], window=rsi_period, method=rsi_method)
                         
-                        if precondition_comparison == "less_than":
-                            precondition_condition = (precondition_rsi <= precondition_threshold)
-                        else:  # greater_than
-                            precondition_condition = (precondition_rsi >= precondition_threshold)
+                        if pre_cmp == "less_than":
+                            pre_cond = (pre_rsi <= pre_thr)
+                        else:
+                            pre_cond = (pre_rsi >= pre_thr)
                         
-                        benchmark_precondition_mask = benchmark_precondition_mask & precondition_condition
+                        # ✅ align to the signal index and make missing = False
+                        pre_cond = pre_cond.reindex(signal_data.index).fillna(False)
+                        
+                        benchmark_precondition_mask = benchmark_precondition_mask & pre_cond
                 
                 benchmark_signals = benchmark_base_signals & benchmark_precondition_mask
             else:
@@ -702,19 +705,22 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
                 benchmark_precondition_mask = pd.Series(True, index=signal_data.index)
                 
                 for precondition in preconditions:
-                    precondition_ticker = precondition['signal_ticker']
-                    precondition_comparison = precondition['comparison']
-                    precondition_threshold = precondition['threshold']
+                    pre_tkr = precondition['signal_ticker']
+                    pre_cmp = precondition['comparison']
+                    pre_thr = precondition['threshold']
                     
-                    if precondition_ticker in precondition_data:
-                        precondition_rsi = calculate_rsi(precondition_data[precondition_ticker], window=rsi_period, method=rsi_method)
+                    if pre_tkr in precondition_data:
+                        pre_rsi = calculate_rsi(precondition_data[pre_tkr], window=rsi_period, method=rsi_method)
                         
-                        if precondition_comparison == "less_than":
-                            precondition_condition = (precondition_rsi <= precondition_threshold)
-                        else:  # greater_than
-                            precondition_condition = (precondition_rsi >= precondition_threshold)
+                        if pre_cmp == "less_than":
+                            pre_cond = (pre_rsi <= pre_thr)
+                        else:
+                            pre_cond = (pre_rsi >= pre_thr)
                         
-                        benchmark_precondition_mask = benchmark_precondition_mask & precondition_condition
+                        # ✅ align to the signal index and make missing = False
+                        pre_cond = pre_cond.reindex(signal_data.index).fillna(False)
+                        
+                        benchmark_precondition_mask = benchmark_precondition_mask & pre_cond
                 
                 benchmark_signals = benchmark_base_signals & benchmark_precondition_mask
             else:
