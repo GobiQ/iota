@@ -90,30 +90,37 @@ def calculate_sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.02, u
     
     return excess_returns.mean() / downside_deviation
 
+@st.cache_data(show_spinner=False)
+def get_stock_data_cached(ticker: str, start_date=None, end_date=None) -> pd.Series:
+    """Cached version of stock data fetching (adjusted for splits/dividends)."""
+    tkr = yf.Ticker(ticker.upper().strip())
+    # auto_adjust=True returns an adjusted 'Close' (already adjusted for splits/dividends)
+    if start_date and end_date:
+        data = tkr.history(start=start_date, end=end_date, auto_adjust=True)
+    else:
+        data = tkr.history(period="max", auto_adjust=True)
+    s = data['Close'].copy()
+    s.name = 'Adj Close'  # standardize the name for downstream use
+    return s
+
 def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None) -> pd.Series:
-    """Fetch stock data using yfinance with optional date range and exclusions"""
+    """Fetch adjusted price series with optional exclusions."""
     try:
-        stock = yf.Ticker(ticker)
-        
-        if start_date and end_date:
-            data = stock.history(start=start_date, end=end_date)
-        else:
-            # Default to maximum available period
-            data = stock.history(period="max")
-        
-        if data.empty:
+        data = get_stock_data_cached(ticker, start_date, end_date)
+        if data is None or data.empty:
             st.error(f"No data found for ticker: {ticker}")
             return None
-        
-        # Apply exclusions if provided
+
+        # Keep the same column name as returned ('Adj Close') to avoid KeyErrors
+        data_df = pd.DataFrame({'Adj Close': data})
+
         if exclusions:
             for exclusion in exclusions:
                 exclusion_start = pd.Timestamp(exclusion['start'])
                 exclusion_end = pd.Timestamp(exclusion['end'])
-                # Remove data within exclusion period
-                data = data[~((data.index >= exclusion_start) & (data.index <= exclusion_end))]
-        
-        return data['Close']
+                data_df = data_df[~((data_df.index >= exclusion_start) & (data_df.index <= exclusion_end))]
+
+        return data_df['Adj Close']
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
@@ -151,6 +158,9 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
                 else:  # greater_than
                     precondition_condition = (precondition_rsi >= precondition_threshold)
                 
+                # Ensure same index as signal
+                precondition_condition = precondition_condition.reindex(signal_prices.index).fillna(False)
+                
                 # Update the mask (all preconditions must be True)
                 precondition_mask = precondition_mask & precondition_condition
             else:
@@ -169,9 +179,9 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
                 }
         
         # Apply precondition mask to base signals
-        signals = base_signals & precondition_mask
+        signals = (base_signals.astype(bool) & precondition_mask).fillna(False).astype(int)
     else:
-        signals = base_signals
+        signals = base_signals.fillna(0).astype(int)
     
     # Calculate equity curve day by day - buy/sell TARGET based on SIGNAL RSI
     equity_curve = pd.Series(1.0, index=target_prices.index)
@@ -321,43 +331,49 @@ def calculate_statistical_significance(strategy_equity_curve: pd.Series, benchma
             'insufficient_data': True
         }
     
-    # Perform two-tailed t-test first
-    t_stat, p_value_two_tail = stats.ttest_ind(strategy_returns.values, benchmark_returns.values)
+    # Align returns on common index
+    idx = strategy_returns.index.intersection(benchmark_returns.index)
+    strat_r = strategy_returns.loc[idx]
+    bench_r = benchmark_returns.loc[idx]
+    n = min(len(strat_r), len(bench_r))
     
-    # Calculate the difference in means
-    strategy_mean = np.mean(strategy_returns.values)
-    benchmark_mean = np.mean(benchmark_returns.values)
-    mean_difference = strategy_mean - benchmark_mean
+    if n < 20:
+        return {
+            't_statistic': 0,
+            'p_value': 1.0,
+            'confidence_level': 0,
+            'significant': False,
+            'effect_size': 0,
+            'power': 0,
+            'direction': 'unknown',
+            'insufficient_data': True
+        }
+    
+    # Perform two-tailed t-test
+    t_stat, p_two = stats.ttest_ind(strat_r.values, bench_r.values, equal_var=False)
+    diff = strat_r.mean() - bench_r.mean()
     
     # Calculate effect size (Cohen's d)
-    pooled_std = np.sqrt(((len(strategy_returns) - 1) * np.var(strategy_returns.values, ddof=1) + 
-                          (len(benchmark_returns) - 1) * np.var(benchmark_returns.values, ddof=1)) / 
-                         (len(strategy_returns) + len(benchmark_returns) - 2))
+    pooled_std = np.sqrt(((np.var(strat_r, ddof=1) + np.var(bench_r, ddof=1)) / 2))
+    effect_size = float(diff / pooled_std) if pooled_std > 0 else 0.0
     
-    effect_size = mean_difference / pooled_std if pooled_std > 0 else 0
+    # Use same one-tailed p for both directions
+    one_tail_p = p_two / 2.0
+    direction = "outperform" if diff > 0 else "underperform"
+    significant = one_tail_p < 0.05
+    confidence_level = (1 - one_tail_p) * 100
     
-    # Calculate one-tailed p-value based on direction
-    if mean_difference > 0:
-        # Strategy outperforms benchmark
-        p_value_one_tail = p_value_two_tail / 2
-        confidence_level = (1 - p_value_one_tail) * 100
-        significant = p_value_one_tail < 0.05
-    else:
-        # Strategy underperforms benchmark - calculate confidence for underperformance
-        p_value_one_tail = 1 - (p_value_two_tail / 2)
-        confidence_level = (1 - p_value_one_tail) * 100
-        significant = p_value_one_tail < 0.05  # Significant underperformance
-    
-    # Calculate statistical power (simplified)
-    power = 0.8 if len(strategy_returns) > 30 and abs(effect_size) > 0.5 else 0.5
+    # Calculate statistical power
+    power = 0.8 if (n > 30 and abs(effect_size) > 0.5) else 0.5
     
     return {
-        't_statistic': t_stat,
-        'p_value': p_value_one_tail,
-        'confidence_level': confidence_level,
-        'significant': significant,
-        'effect_size': effect_size,
-        'power': power,
+        't_statistic': float(t_stat),
+        'p_value': float(one_tail_p),
+        'confidence_level': float(confidence_level),
+        'significant': bool(significant),
+        'effect_size': float(effect_size),
+        'power': float(power),
+        'direction': direction,
         'insufficient_data': False
     }
 
@@ -402,7 +418,7 @@ def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.02, us
         return 0.0 if np.mean(excess_returns) == 0 else np.inf
     return np.mean(excess_returns) / np.std(excess_returns)
 
-def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, annual_return: float, use_quantstats: bool = True) -> Dict:
+def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, annual_return: float, use_quantstats: bool = True, benchmark_equity: Optional[pd.Series] = None) -> Dict:
     """Add more comprehensive risk metrics using QuantStats or fallback"""
     if len(returns) == 0 or equity_curve.empty:
         return {
@@ -423,7 +439,8 @@ def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, a
     if QUANTSTATS_AVAILABLE and use_quantstats:
         try:
             # Use QuantStats for various metrics
-            max_dd = calculate_max_drawdown(equity_curve, use_quantstats)
+            eq_ret = equity_curve.pct_change().dropna()
+            max_dd = qs.stats.max_drawdown(eq_ret)
             sharpe = calculate_sharpe_ratio(returns, use_quantstats=use_quantstats)
             
             # Calculate Calmar ratio using QuantStats
@@ -435,20 +452,24 @@ def calculate_additional_metrics(returns: np.ndarray, equity_curve: pd.Series, a
             # Calculate volatility using QuantStats
             volatility = qs.stats.volatility(returns_series) if len(returns) > 0 else 0.0
             
-            # Additional QuantStats metrics
-            beta = qs.stats.beta(returns_series, returns_series) if len(returns) > 0 else 0.0  # Self-beta as placeholder
-            alpha = qs.stats.alpha(returns_series, returns_series) if len(returns) > 0 else 0.0  # Self-alpha as placeholder
-            information_ratio = qs.stats.information_ratio(returns_series, returns_series) if len(returns) > 0 else 0.0  # Self-IR as placeholder
+            # Calculate alpha/beta/IR vs benchmark if available
+            beta = alpha = information_ratio = 0.0
+            if benchmark_equity is not None:
+                br = benchmark_equity.pct_change().dropna().reindex(eq_ret.index).dropna()
+                er = eq_ret.reindex(br.index)
+                beta = qs.stats.beta(er, br)
+                alpha = qs.stats.alpha(er, br)
+                information_ratio = qs.stats.information_ratio(er, br)
             
             return {
-                'max_drawdown': max_dd,
-                'calmar_ratio': calmar_ratio if not np.isnan(calmar_ratio) else (annual_return / max_dd if max_dd > 0 else 0.0),
+                'max_drawdown': abs(max_dd) if not np.isnan(max_dd) else 0.0,
+                'calmar_ratio': calmar_ratio if not np.isnan(calmar_ratio) else (annual_return / abs(max_dd) if max_dd else 0.0),
                 'var_95': var_95 if not np.isnan(var_95) else (np.percentile(returns, 5) if len(returns) > 0 else 0.0),
                 'sharpe_ratio': sharpe,
                 'volatility': volatility if not np.isnan(volatility) else (np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.0),
-                'beta': beta if not np.isnan(beta) else 0.0,
-                'alpha': alpha if not np.isnan(alpha) else 0.0,
-                'information_ratio': information_ratio if not np.isnan(information_ratio) else 0.0
+                'beta': 0.0 if np.isnan(beta) else beta,
+                'alpha': 0.0 if np.isnan(alpha) else alpha,
+                'information_ratio': 0.0 if np.isnan(information_ratio) else information_ratio
             }
         except Exception:
             pass  # Fall through to fallback calculations
@@ -497,7 +518,7 @@ def validate_data_quality(data: pd.Series, ticker: str) -> Tuple[bool, List[str]
 # Basic QuantStats metrics are still available in the main analysis functions
 
 def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: float, comparison: str, 
-                    start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY", use_quantstats: bool = True, preconditions: List[Dict] = None, exclusions: List[Dict] = None) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
+                    start_date=None, end_date=None, rsi_period: int = 14, rsi_method: str = "wilders", benchmark_ticker: str = "SPY", use_quantstats: bool = True, preconditions: List[Dict] = None, exclusions: List[Dict] = None, rsi_min: Optional[float] = None, rsi_max: Optional[float] = None) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
     """Run comprehensive RSI analysis across the specified range with optional preconditions and exclusions"""
     
     # Fetch data with quality validation
@@ -508,14 +529,14 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
         is_valid, messages = validate_data_quality(signal_data, signal_ticker)
         all_messages.extend(messages)
         if not is_valid:
-            return None, None
+            return None, None, all_messages
     
     with st.spinner(f"Fetching data for {target_ticker}..."):
         target_data = get_stock_data(target_ticker, start_date, end_date, exclusions)
         is_valid, messages = validate_data_quality(target_data, target_ticker)
         all_messages.extend(messages)
         if not is_valid:
-            return None, None
+            return None, None, all_messages
     
     # Fetch benchmark data for comparison - use user-selected benchmark
     with st.spinner(f"Fetching benchmark data ({benchmark_ticker})..."):
@@ -523,7 +544,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
         is_valid, messages = validate_data_quality(benchmark_data, benchmark_ticker)
         all_messages.extend(messages)
         if not is_valid:
-            return None, None
+            return None, None, all_messages
     
     # Fetch precondition data if preconditions are set
     precondition_data = {}
@@ -536,20 +557,25 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
                     is_valid, messages = validate_data_quality(ticker_data, ticker)
                     all_messages.extend(messages)
                     if not is_valid:
-                        return None, None
+                        return None, None, all_messages
                     precondition_data[ticker] = ticker_data
         
         # Add main signal data to precondition data for consistency
         precondition_data[signal_ticker] = signal_data
     
     if signal_data is None or target_data is None or benchmark_data is None:
-        return None, None
+        return None, None, all_messages
     
     # Align data on common dates
     common_dates = signal_data.index.intersection(target_data.index).intersection(benchmark_data.index)
     signal_data = signal_data[common_dates]
     target_data = target_data[common_dates]
     benchmark_data = benchmark_data[common_dates]
+    
+    # Align precondition data to common dates
+    if preconditions and precondition_data:
+        for tkr in list(precondition_data.keys()):
+            precondition_data[tkr] = precondition_data[tkr].reindex(common_dates).dropna()
     
     # Create buy-and-hold benchmark
     benchmark = benchmark_data / benchmark_data.iloc[0]  # Normalize to start at 1.0
@@ -558,12 +584,15 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
     benchmark_returns = benchmark_data.pct_change().dropna()
     
     # Generate RSI thresholds based on the specified range
-    rsi_thresholds = np.arange(rsi_min, rsi_max + 0.5, 0.5)
+    if rsi_min is not None and rsi_max is not None:
+        rsi_thresholds = np.arange(rsi_min, rsi_max + 0.5, 0.5)
+    else:
+        rsi_thresholds = np.array([rsi_threshold], dtype=float)
     
     results = []
     
     progress_bar = st.progress(0)
-    total_thresholds = len(rsi_thresholds)
+    total_thresholds = max(1, len(rsi_thresholds))
     
     for i, threshold in enumerate(rsi_thresholds):
         analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method, use_quantstats, preconditions, precondition_data)
@@ -586,19 +615,22 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
                 benchmark_precondition_mask = pd.Series(True, index=signal_data.index)
                 
                 for precondition in preconditions:
-                    precondition_ticker = precondition['signal_ticker']
-                    precondition_comparison = precondition['comparison']
-                    precondition_threshold = precondition['threshold']
+                    pre_tkr = precondition['signal_ticker']
+                    pre_cmp = precondition['comparison']
+                    pre_thr = precondition['threshold']
                     
-                    if precondition_ticker in precondition_data:
-                        precondition_rsi = calculate_rsi(precondition_data[precondition_ticker], window=rsi_period, method=rsi_method)
+                    if pre_tkr in precondition_data:
+                        pre_rsi = calculate_rsi(precondition_data[pre_tkr], window=rsi_period, method=rsi_method)
                         
-                        if precondition_comparison == "less_than":
-                            precondition_condition = (precondition_rsi <= precondition_threshold)
-                        else:  # greater_than
-                            precondition_condition = (precondition_rsi >= precondition_threshold)
+                        if pre_cmp == "less_than":
+                            pre_cond = (pre_rsi <= pre_thr)
+                        else:
+                            pre_cond = (pre_rsi >= pre_thr)
                         
-                        benchmark_precondition_mask = benchmark_precondition_mask & precondition_condition
+                        # ✅ align to the signal index and make missing = False
+                        pre_cond = pre_cond.reindex(signal_data.index).fillna(False)
+                        
+                        benchmark_precondition_mask = benchmark_precondition_mask & pre_cond
                 
                 benchmark_signals = benchmark_base_signals & benchmark_precondition_mask
             else:
@@ -646,7 +678,8 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
             # Calculate benchmark average and median returns
             benchmark_avg_return = np.mean(benchmark_trades) if benchmark_trades else 0
             benchmark_median_return = np.median(benchmark_trades) if benchmark_trades else 0
-            benchmark_annualized = (benchmark.iloc[-1] - 1) * (365 / (benchmark.index[-1] - benchmark.index[0]).days)
+            days = (benchmark.index[-1] - benchmark.index[0]).days
+            benchmark_annualized = (benchmark.iloc[-1]) ** (365 / days) - 1 if days > 0 else 0
             stats_result = calculate_statistical_significance(
                 strategy_equity_curve, 
                 benchmark_equity_curve,
@@ -655,7 +688,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
             )
             
             # Calculate additional risk metrics
-            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'], use_quantstats)
+            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'], use_quantstats, benchmark_equity_curve)
         else:
             # Calculate benchmark average and median returns even when strategy has no trades
             signal_rsi = calculate_rsi(signal_data, window=rsi_period, method=rsi_method)
@@ -671,19 +704,22 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
                 benchmark_precondition_mask = pd.Series(True, index=signal_data.index)
                 
                 for precondition in preconditions:
-                    precondition_ticker = precondition['signal_ticker']
-                    precondition_comparison = precondition['comparison']
-                    precondition_threshold = precondition['threshold']
+                    pre_tkr = precondition['signal_ticker']
+                    pre_cmp = precondition['comparison']
+                    pre_thr = precondition['threshold']
                     
-                    if precondition_ticker in precondition_data:
-                        precondition_rsi = calculate_rsi(precondition_data[precondition_ticker], window=rsi_period, method=rsi_method)
+                    if pre_tkr in precondition_data:
+                        pre_rsi = calculate_rsi(precondition_data[pre_tkr], window=rsi_period, method=rsi_method)
                         
-                        if precondition_comparison == "less_than":
-                            precondition_condition = (precondition_rsi <= precondition_threshold)
-                        else:  # greater_than
-                            precondition_condition = (precondition_rsi >= precondition_threshold)
+                        if pre_cmp == "less_than":
+                            pre_cond = (pre_rsi <= pre_thr)
+                        else:
+                            pre_cond = (pre_rsi >= pre_thr)
                         
-                        benchmark_precondition_mask = benchmark_precondition_mask & precondition_condition
+                        # ✅ align to the signal index and make missing = False
+                        pre_cond = pre_cond.reindex(signal_data.index).fillna(False)
+                        
+                        benchmark_precondition_mask = benchmark_precondition_mask & pre_cond
                 
                 benchmark_signals = benchmark_base_signals & benchmark_precondition_mask
             else:
@@ -739,11 +775,12 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
                 'significant': False,
                 'effect_size': 0,
                 'power': 0,
+                'direction': 'unknown',
                 'insufficient_data': True
             }
             
             # Calculate additional risk metrics (even when no trades)
-            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'], use_quantstats)
+            risk_metrics = calculate_additional_metrics(analysis['returns'], analysis['equity_curve'], analysis['annualized_return'], use_quantstats, benchmark_equity_curve)
         
         results.append({
             'RSI_Threshold': threshold,
@@ -770,6 +807,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
             'significant': stats_result['significant'],
             'effect_size': stats_result['effect_size'],
             'power': stats_result['power'],
+            'direction': stats_result.get('direction', 'unknown'),
             'insufficient_data': stats_result.get('insufficient_data', False),
             'max_drawdown': risk_metrics['max_drawdown'],
             'calmar_ratio': risk_metrics['calmar_ratio'],
@@ -1017,7 +1055,7 @@ if st.sidebar.button("🚀 Run RSI Analysis", type="primary", use_container_widt
     if (not use_date_range or (start_date and end_date and start_date < end_date)) and (not use_custom_range or (rsi_min and rsi_max and rsi_min < rsi_max)):
         try:
             exclusions = st.session_state.get('date_exclusions', []) if use_exclusions else None
-            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_threshold, comparison, start_date, end_date, rsi_period, rsi_method, final_benchmark_ticker, use_quantstats, st.session_state.get('preconditions', []), exclusions)
+            results_df, benchmark, data_messages = run_rsi_analysis(signal_ticker, target_ticker, rsi_threshold, comparison, start_date, end_date, rsi_period, rsi_method, final_benchmark_ticker, use_quantstats, st.session_state.get('preconditions', []), exclusions, rsi_min=rsi_min, rsi_max=rsi_max)
             
             if results_df is not None and benchmark is not None and not results_df.empty:
                 # Store analysis results in session state
@@ -1169,6 +1207,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     display_df['Final_Equity'] = display_df['Final_Equity'].apply(lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else x)
     display_df['Confidence_Level'] = display_df['confidence_level'].apply(lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x)
     display_df['Significant'] = display_df['significant'].apply(lambda x: "✓" if x else "✗")
+    display_df['Direction'] = display_df['direction'].map({'outperform':'↑', 'underperform':'↓'}).fillna('')
     display_df['Effect_Size'] = display_df['effect_size'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
     
     # Add p-value to display columns
@@ -1177,7 +1216,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     # Drop the equity_curve and trades columns for display
     display_cols = ['RSI_Threshold', 'Total_Trades', 'Win_Rate', 'Avg_Return', 'Median_Return', 'Benchmark_Avg_Return', 'Benchmark_Median_Return',
                    'Total_Return', 'Annualized_Return', 'Sortino_Ratio', 'Sharpe_Ratio', 'Calmar_Ratio', 'Final_Equity', 'Avg_Hold_Days', 
-                   'Return_Std', 'Best_Return', 'Worst_Return', 'Max_Drawdown', 'VaR_95', 'Confidence_Level', 'Significant', 'Effect_Size', 'P_Value']
+                   'Return_Std', 'Best_Return', 'Worst_Return', 'Max_Drawdown', 'VaR_95', 'Confidence_Level', 'Significant', 'Direction', 'Effect_Size', 'P_Value']
     
     # Check if all display columns exist
     missing_display_cols = [col for col in display_cols if col not in display_df.columns]
@@ -1332,11 +1371,14 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         st.subheader(f"📊 RSI Analysis Results ({len(filtered_df)} signals)")
         st.dataframe(filtered_df[display_cols], use_container_width=True)
 
-    # Find best strategies (needed for subsequent sections)
-    best_sortino_idx = filtered_df['Sortino_Ratio'].idxmax()
-    best_annualized_idx = filtered_df['annualized_return'].idxmax()
-    best_winrate_idx = filtered_df['Win_Rate'].idxmax()
-    best_total_return_idx = filtered_df['Total_Return'].idxmax()
+    # Find best strategies (needed for subsequent sections) - use numeric data
+    mask = st.session_state['results_df']['RSI_Threshold'].isin(filtered_df['RSI_Threshold'])
+    numeric_slice = st.session_state['results_df'][mask]
+    
+    best_sortino_idx = numeric_slice['Sortino_Ratio'].idxmax()
+    best_annualized_idx = numeric_slice['annualized_return'].idxmax()
+    best_winrate_idx = numeric_slice['Win_Rate'].idxmax()
+    best_total_return_idx = numeric_slice['Total_Return'].idxmax()
     
     # Statistical Significance Analysis
     with st.expander("📊 Statistical Significance Analysis", expanded=True):
@@ -1355,10 +1397,14 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         # Add summary of statistical analysis
         if not valid_signals.empty:
             signals_with_trades = valid_signals[valid_signals['Total_Trades'] > 0]
-            significant_count = len(valid_signals[valid_signals['significant'] == True])
+            significant_signals = valid_signals[valid_signals['significant'] == True]
+            significant_outperform = len(significant_signals[significant_signals['Direction'] == '↑'])
+            significant_underperform = len(significant_signals[significant_signals['Direction'] == '↓'])
             total_signals = len(valid_signals)
             signals_with_trades_count = len(signals_with_trades)
-            st.success(f"📊 **Analysis Summary:** Found {significant_count} statistically significant signals out of {total_signals} total signals ({signals_with_trades_count} with trades).")
+            st.success(f"📊 **Analysis Summary:** Found {len(significant_signals)} statistically significant signals out of {total_signals} total signals ({signals_with_trades_count} with trades).")
+            if len(significant_signals) > 0:
+                st.info(f"📈 **Direction Breakdown:** {significant_outperform} significant ↑ (outperformance), {significant_underperform} significant ↓ (underperformance)")
         else:
             st.warning("⚠️ **No signals found.** This means none of the RSI thresholds generated any results during the analysis period.")
         
@@ -1842,15 +1888,15 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         
         # RSI vs Max Drawdown Chart
         st.subheader("📊 RSI Threshold vs Max Drawdown")
-        st.info("💡 **What this shows:** This chart displays how the maximum drawdown (worst single trade loss) varies across different RSI thresholds. Lower drawdown values indicate better risk management. Look for valleys in the chart to identify RSI thresholds with lower risk.")
+        st.info("💡 **What this shows:** This chart displays how the maximum drawdown (equity curve drawdown) varies across different RSI thresholds. Lower drawdown values indicate better risk management. Look for valleys in the chart to identify RSI thresholds with lower risk.")
         
         fig_drawdown_rsi = go.Figure()
         
         # Add points for significant signals (green)
-        if not significant_data.empty:
+        if not original_significant_data.empty:
             fig_drawdown_rsi.add_trace(go.Scatter(
-                x=significant_data['RSI_Threshold'],
-                y=significant_data['Worst_Return'],
+                x=original_significant_data['RSI_Threshold'],
+                y=original_significant_data['max_drawdown'],
                 mode='markers',
                 name='Significant Signals',
                 marker=dict(color='green', size=8),
@@ -1861,10 +1907,10 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
             ))
         
         # Add points for non-significant signals (red)
-        if not non_significant_data.empty:
+        if not original_non_significant_data.empty:
             fig_drawdown_rsi.add_trace(go.Scatter(
-                x=non_significant_data['RSI_Threshold'],
-                y=non_significant_data['Worst_Return'],
+                x=original_non_significant_data['RSI_Threshold'],
+                y=original_non_significant_data['max_drawdown'],
                 mode='markers',
                 name='Non-Significant Signals',
                 marker=dict(color='red', size=8),
@@ -1881,7 +1927,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         fig_drawdown_rsi.update_layout(
             title="Max Drawdown vs RSI Threshold",
             xaxis_title="RSI Threshold",
-            yaxis_title="Max Drawdown (%)",
+            yaxis_title="Max Drawdown (equity curve)",
             hovermode='closest',
             xaxis=dict(range=[0, 100]),
             showlegend=True
