@@ -1927,7 +1927,7 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
         fig_drawdown_rsi.update_layout(
             title="Max Drawdown vs RSI Threshold",
             xaxis_title="RSI Threshold",
-            yaxis_title="Max Drawdown (equity curve)",
+            yaxis_title="Max Drawdown",
             hovermode='closest',
             xaxis=dict(range=[0, 100]),
             showlegend=True
