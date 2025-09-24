@@ -19,10 +19,15 @@ def ema(close: pd.Series, length: int) -> pd.Series:
     return close.ewm(span=int(length), adjust=False, min_periods=max(3, int(length*0.6))).mean()
 
 def _cmp_series(a: pd.Series, b: pd.Series, op: str) -> pd.Series:
+    """Compare two Series with proper alignment to handle different indices."""
     op = (op or "greater_than").strip().lower()
-    if op == "less_than":      return a <  b
-    if op == "greater_than":   return a >  b
-    return a > b  # default
+    
+    # Align the Series on their common index to avoid "identically-labeled" error
+    a_aligned, b_aligned = a.align(b, join='inner')
+    
+    if op == "less_than":      return a_aligned <  b_aligned
+    if op == "greater_than":   return a_aligned >  b_aligned
+    return a_aligned > b_aligned  # default
 
 def _tz_naive(s: pd.Series) -> pd.Series:
     if hasattr(s.index, "tz") and s.index.tz is not None:
