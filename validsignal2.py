@@ -22,9 +22,6 @@ def _cmp_series(a: pd.Series, b: pd.Series, op: str) -> pd.Series:
     op = (op or "greater_than").strip().lower()
     if op == "less_than":      return a <  b
     if op == "greater_than":   return a >  b
-    if op == "less_equal":     return a <= b
-    if op == "greater_equal":  return a >= b
-    if op == "equal":          return a.eq(b)
     return a > b  # default
 
 def _tz_naive(s: pd.Series) -> pd.Series:
@@ -259,7 +256,7 @@ def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None)
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
-def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than", rsi_period: int = 14, rsi_method: str = "wilders", use_quantstats: bool = True, preconditions: List[Dict] = None, precondition_data: Dict[str, pd.Series] = None) -> Dict:
+def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than", rsi_period: int = 14, rsi_method: str = "wilders", use_quantstats: bool = True, preconditions: List[Dict] = None) -> Dict:
     """Analyze RSI signals for a specific threshold with optional preconditions"""
     # Calculate RSI for the SIGNAL ticker using specified period and method
     signal_rsi = calculate_rsi(signal_prices, window=rsi_period, method=rsi_method)
@@ -648,22 +645,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
         if not is_valid:
             return None, None, all_messages
     
-    # Fetch precondition data if preconditions are set
-    precondition_data = {}
-    if preconditions:
-        unique_precondition_tickers = list(set([p['signal_ticker'] for p in preconditions]))
-        for ticker in unique_precondition_tickers:
-            if ticker != signal_ticker:  # Don't fetch again if it's the same as main signal
-                with st.spinner(f"Fetching precondition data for {ticker}..."):
-                    ticker_data = get_stock_data(ticker, start_date, end_date, exclusions)
-                    is_valid, messages = validate_data_quality(ticker_data, ticker)
-                    all_messages.extend(messages)
-                    if not is_valid:
-                        return None, None, all_messages
-                    precondition_data[ticker] = ticker_data
-        
-        # Add main signal data to precondition data for consistency
-        precondition_data[signal_ticker] = signal_data
+    # Note: Precondition data is now fetched directly by build_precondition_mask function
     
     if signal_data is None or target_data is None or benchmark_data is None:
         return None, None, all_messages
@@ -674,10 +656,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
     target_data = target_data[common_dates]
     benchmark_data = benchmark_data[common_dates]
     
-    # Align precondition data to common dates
-    if preconditions and precondition_data:
-        for tkr in list(precondition_data.keys()):
-            precondition_data[tkr] = precondition_data[tkr].reindex(common_dates).dropna()
+    # Note: Precondition data alignment is now handled by build_precondition_mask function
     
     # Create buy-and-hold benchmark
     benchmark = benchmark_data / benchmark_data.iloc[0]  # Normalize to start at 1.0
@@ -697,7 +676,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
     total_thresholds = max(1, len(rsi_thresholds))
     
     for i, threshold in enumerate(rsi_thresholds):
-        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method, use_quantstats, preconditions, precondition_data)
+        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method, use_quantstats, preconditions)
         
         # Calculate statistical significance
         strategy_equity_curve = analysis['equity_curve']
@@ -918,13 +897,13 @@ if st.session_state.preconditions:
     for i, p in enumerate(st.session_state.preconditions):
         mode = p.get("mode","static")
         if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
-            sym = {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥","equal":"="}[p.get("op","less_than")]
+            sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
             st.sidebar.write(f"• {mode}: {p['lhs_ticker']}({p.get('lhs_len', 1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len', 1)})")
         elif mode == "pair":
-            sym = {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥","equal":"="}[p.get("op","less_than")]
+            sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
             st.sidebar.write(f"• {p['lhs_ticker']} RSI({p.get('lhs_len', 10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len', 10)})")
         else:
-            sym = {"less_than":"≤","greater_than":"≥","less_equal":"≤","greater_equal":"≥","equal":"="}[p.get("comparison","greater_than")]
+            sym = {"less_than":"<","greater_than":">"}[p.get("comparison","greater_than")]
             st.sidebar.write(f"• {p['signal_ticker']} RSI({p.get('rsi_len', 10)}) {sym} {p.get('threshold', 50)}")
         if st.sidebar.button("🗑️", key=f"remove_pre_{i}"):
             st.session_state.preconditions.pop(i)
@@ -960,8 +939,8 @@ with st.sidebar.expander("➕ Add Precondition", expanded=False):
         with cols[1]:
             rhs_t = st.text_input("Right ticker (RHS)", value="XLK", key="pc_pair_rhs").strip().upper()
             rhs_len = st.number_input("RHS RSI length", min_value=2, max_value=200, value=10, step=1, key="pc_pair_rhs_len")
-        op = st.selectbox("Comparison", ["less_than","greater_than","less_equal","greater_equal","equal"], index=0, key="pc_pair_op",
-                          format_func=lambda x: {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥","equal":"="}[x])
+        op = st.selectbox("Comparison", ["less_than","greater_than"], index=0, key="pc_pair_op",
+                          format_func=lambda x: {"less_than":"<","greater_than":">"}[x])
         if st.button("Add pair RSI precondition", key="add_pc_pair"):
             st.session_state.preconditions.append({
                 "mode":"pair",
@@ -994,8 +973,8 @@ with st.sidebar.expander("➕ Add Precondition", expanded=False):
             rhs_t = st.text_input("Right ticker (RHS)", value="SPY", key="pc_ma_rhs").strip().upper()
             default_rhs_len = 200 if "price_vs_" in mode_choice else 50
             rhs_len = st.number_input("RHS window", min_value=1, max_value=500, value=default_rhs_len, step=1, key="pc_ma_rhs_len")
-        op = st.selectbox("Comparison", ["less_than","greater_than","less_equal","greater_equal","equal"], index=1, key="pc_ma_op",
-                          format_func=lambda x: {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥","equal":"="}[x])
+        op = st.selectbox("Comparison", ["less_than","greater_than"], index=1, key="pc_ma_op",
+                          format_func=lambda x: {"less_than":"<","greater_than":">"}[x])
         if st.button("Add MA/EMA precondition", key="add_pc_ma"):
             st.session_state.preconditions.append({
                 "mode": mode_choice,
@@ -1209,9 +1188,17 @@ with col1:
     # Display preconditions first
     if st.session_state.get('preconditions'):
         st.write("**Preconditions:**")
-        for i, precondition in enumerate(st.session_state.preconditions):
-            comparison_symbol = "≤" if precondition['comparison'] == "less_than" else "≥"
-            st.write(f"  • {precondition['signal_ticker']} RSI {comparison_symbol} {precondition['threshold']}")
+        for p in st.session_state.preconditions:
+            mode = p.get("mode","static")
+            if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
+                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+                st.write(f"  • {mode}: {p['lhs_ticker']}({p.get('lhs_len',1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len',1)})")
+            elif mode == "pair":
+                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+                st.write(f"  • {p['lhs_ticker']} RSI({p.get('lhs_len',10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len',10)})")
+            else:
+                sym = {"less_than":"<","greater_than":">"}[p.get("comparison","greater_than")]
+                st.write(f"  • {p['signal_ticker']} RSI({p.get('rsi_len',10)}) {sym} {p.get('threshold', 50)}")
     
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
     st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
@@ -1255,13 +1242,13 @@ with col2:
         for p in st.session_state.preconditions:
             mode = p.get("mode","static")
             if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
-                sym = {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥","equal":"="}[p.get("op","less_than")]
+                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
                 st.write(f"  • {mode}: {p['lhs_ticker']}({p.get('lhs_len',1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len',1)})")
             elif mode == "pair":
-                sym = {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥","equal":"="}[p.get("op","less_than")]
+                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
                 st.write(f"  • {p['lhs_ticker']} RSI({p.get('lhs_len',10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len',10)})")
             else:
-                sym = {"less_than":"≤","greater_than":"≥","less_equal":"≤","greater_equal":"≥","equal":"="}[p.get("comparison","greater_than")]
+                sym = {"less_than":"<","greater_than":">"}[p.get("comparison","greater_than")]
                 st.write(f"  • {p['signal_ticker']} RSI({p.get('rsi_len',10)}) {sym} {p.get('threshold', 50)}")
         st.write("**Main Signal:**")
     
