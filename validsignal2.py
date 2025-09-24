@@ -1491,10 +1491,37 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     mask = st.session_state['results_df']['RSI_Threshold'].isin(filtered_df['RSI_Threshold'])
     numeric_slice = st.session_state['results_df'][mask]
     
-    best_sortino_idx = numeric_slice['Sortino_Ratio'].idxmax()
-    best_annualized_idx = numeric_slice['annualized_return'].idxmax()
-    best_winrate_idx = numeric_slice['Win_Rate'].idxmax()
-    best_total_return_idx = numeric_slice['Total_Return'].idxmax()
+    # Initialize best strategy indices as None
+    best_sortino_idx = None
+    best_annualized_idx = None
+    best_winrate_idx = None
+    best_total_return_idx = None
+    
+    # Safely find best strategies with comprehensive error handling
+    if not numeric_slice.empty:
+        try:
+            if 'Sortino_Ratio' in numeric_slice.columns and not numeric_slice['Sortino_Ratio'].isna().all():
+                best_sortino_idx = numeric_slice['Sortino_Ratio'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_sortino_idx = None
+        
+        try:
+            if 'annualized_return' in numeric_slice.columns and not numeric_slice['annualized_return'].isna().all():
+                best_annualized_idx = numeric_slice['annualized_return'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_annualized_idx = None
+        
+        try:
+            if 'Win_Rate' in numeric_slice.columns and not numeric_slice['Win_Rate'].isna().all():
+                best_winrate_idx = numeric_slice['Win_Rate'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_winrate_idx = None
+        
+        try:
+            if 'Total_Return' in numeric_slice.columns and not numeric_slice['Total_Return'].isna().all():
+                best_total_return_idx = numeric_slice['Total_Return'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_total_return_idx = None
     
     # Statistical Significance Analysis
     with st.expander("📊 Statistical Significance Analysis", expanded=True):
