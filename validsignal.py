@@ -9,6 +9,154 @@ import warnings
 from scipy import stats
 warnings.filterwarnings('ignore')
 
+# -----------------------------
+# Expanded Preconditions Utils
+# -----------------------------
+def sma(close: pd.Series, length: int) -> pd.Series:
+    return close.rolling(int(length), min_periods=max(3, int(length*0.6))).mean()
+
+def ema(close: pd.Series, length: int) -> pd.Series:
+    return close.ewm(span=int(length), adjust=False, min_periods=max(3, int(length*0.6))).mean()
+
+def _cmp_series(a: pd.Series, b: pd.Series, op: str) -> pd.Series:
+    """Compare two Series with proper alignment to handle different indices."""
+    op = (op or "greater_than").strip().lower()
+    
+    # Align the Series on their common index to avoid "identically-labeled" error
+    a_aligned, b_aligned = a.align(b, join='inner')
+    
+    if op == "less_than":      return a_aligned <  b_aligned
+    if op == "greater_than":   return a_aligned >  b_aligned
+    return a_aligned > b_aligned  # default
+
+def _tz_naive(s: pd.Series) -> pd.Series:
+    if hasattr(s.index, "tz") and s.index.tz is not None:
+        s = s.copy()
+        s.index = s.index.tz_convert(None)
+    return s
+
+def _get_symbol(op: str) -> str:
+    """Safely get symbol for operator, with fallback for unknown operators."""
+    sym_map = {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥"}
+    return sym_map.get(op, op if op else "?")
+
+def _price_series(ticker: str, start_date=None, end_date=None, exclusions=None) -> pd.Series:
+    """Wrapper over get_stock_data -> returns 'close' series w/ tz-naive index."""
+    s = get_stock_data(ticker, start_date, end_date, exclusions)
+    if s is None or s.empty:
+        return pd.Series(dtype=float)
+    s = s.rename("close")
+    s = _tz_naive(s)
+    return s
+
+def build_precondition_mask(
+    base_index: pd.DatetimeIndex,
+    preconditions: List[Dict],
+    start_date=None,
+    end_date=None,
+    rsi_len: int = 14,
+    exclusions: Optional[List[Dict]] = None,
+) -> pd.Series:
+    """
+    Returns boolean Series indexed by base_index that is True only when ALL preconditions pass.
+
+    Supported precondition dicts (examples):
+      # Static RSI vs threshold
+      {"mode":"static", "signal_ticker":"QQQ", "rsi_len":10, "comparison":"greater_than", "threshold":80.0}
+
+      # Pair RSI vs RSI
+      {"mode":"pair", "lhs_ticker":"KMLM", "lhs_len":10, "op":"less_than",
+                        "rhs_ticker":"XLK",  "rhs_len":10}
+
+      # Price/MA/EMA variants (operators: "less_than" or "greater_than")
+      {"mode":"price_vs_ma",  "lhs_ticker":"SPY", "lhs_len":1,  "op":"greater_than",
+                               "rhs_ticker":"SPY", "rhs_len":200}
+      {"mode":"price_vs_ema", "lhs_ticker":"QQQ", "lhs_len":1,  "op":"less_than",
+                               "rhs_ticker":"QQQ", "rhs_len":50}
+      {"mode":"ma_vs_ma",     "lhs_ticker":"SPY", "lhs_len":20, "op":"greater_than",
+                               "rhs_ticker":"SPY", "rhs_len":50}
+      {"mode":"ema_vs_ema",   "lhs_ticker":"IWM", "lhs_len":12, "op":"less_than",
+                               "rhs_ticker":"IWM", "rhs_len":26}
+    """
+    # Normalize base index to tz-naive so it matches _price_series() outputs
+    try:
+        if getattr(base_index, "tz", None) is not None:
+            base_index = base_index.tz_convert(None)
+    except Exception:
+        pass
+    
+    if not preconditions:
+        return pd.Series(True, index=base_index, dtype=bool)
+
+    mask = pd.Series(True, index=base_index, dtype=bool)
+
+    for p in preconditions:
+        mode = (p.get("mode") or "static").strip().lower()
+
+        if mode == "pair":
+            lhs_tkr = p.get("lhs_ticker","").strip().upper()
+            rhs_tkr = p.get("rhs_ticker","").strip().upper()
+            lhs_len = int(p.get("lhs_len", rsi_len))
+            rhs_len = int(p.get("rhs_len", rsi_len))
+            op      = p.get("op","less_than")
+
+            lhs = _price_series(lhs_tkr, start_date, end_date, exclusions)
+            rhs = _price_series(rhs_tkr, start_date, end_date, exclusions)
+            if lhs.empty or rhs.empty:
+                cond = pd.Series(False, index=base_index)
+            else:
+                lhs_rsi = calculate_rsi(lhs, window=lhs_len, method="wilders")
+                rhs_rsi = calculate_rsi(rhs, window=rhs_len, method="wilders")
+                cond = _cmp_series(lhs_rsi, rhs_rsi, op).reindex(base_index).fillna(False)
+
+            mask &= cond.astype(bool)
+
+        elif mode in ("price_vs_ma", "price_vs_ema", "ma_vs_ma", "ema_vs_ema"):
+            lhs_tkr = p.get("lhs_ticker","").strip().upper()
+            rhs_tkr = p.get("rhs_ticker","").strip().upper()
+            lhs_len = int(p.get("lhs_len", 1))
+            rhs_len = int(p.get("rhs_len", 50))
+            op      = p.get("op","greater_than")
+
+            lhs_close = _price_series(lhs_tkr, start_date, end_date, exclusions)
+            rhs_close = _price_series(rhs_tkr, start_date, end_date, exclusions)
+            if lhs_close.empty or rhs_close.empty:
+                cond = pd.Series(False, index=base_index)
+            else:
+                if mode in ("price_vs_ma","price_vs_ema"):
+                    lhs_series = lhs_close  # price
+                else:
+                    lhs_series = sma(lhs_close, lhs_len) if mode == "ma_vs_ma" else ema(lhs_close, lhs_len)
+
+                if   mode == "price_vs_ma":  rhs_series = sma(rhs_close, rhs_len)
+                elif mode == "price_vs_ema": rhs_series = ema(rhs_close, rhs_len)
+                elif mode == "ma_vs_ma":     rhs_series = sma(rhs_close, rhs_len)
+                else:                        rhs_series = ema(rhs_close, rhs_len)
+
+                cond = _cmp_series(lhs_series, rhs_series, op).reindex(base_index).fillna(False)
+
+            mask &= cond.astype(bool)
+
+        else:
+            # static RSI vs absolute threshold
+            tkr = p.get("signal_ticker", "").strip().upper()
+            cmp_key = p.get("comparison","greater_than")
+            thr = float(p.get("threshold", 50.0))
+            this_len = int(p.get("rsi_len", rsi_len))
+
+            s = _price_series(tkr, start_date, end_date, exclusions)
+            if s.empty:
+                cond = pd.Series(False, index=base_index)
+            else:
+                rsi = calculate_rsi(s, window=this_len, method="wilders")
+                cond = _cmp_series(rsi, pd.Series(thr, index=rsi.index), cmp_key).reindex(base_index).fillna(False)
+
+            mask &= cond.astype(bool)
+
+    # Ensure correct shape/dtype
+    mask = mask.reindex(base_index).fillna(False).astype(bool)
+    return mask
+
 # Try to import QuantStats with error handling
 try:
     import quantstats as qs
@@ -125,7 +273,7 @@ def get_stock_data(ticker: str, start_date=None, end_date=None, exclusions=None)
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
-def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than", rsi_period: int = 14, rsi_method: str = "wilders", use_quantstats: bool = True, preconditions: List[Dict] = None, precondition_data: Dict[str, pd.Series] = None) -> Dict:
+def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_threshold: float, comparison: str = "less_than", rsi_period: int = 14, rsi_method: str = "wilders", use_quantstats: bool = True, preconditions: List[Dict] = None) -> Dict:
     """Analyze RSI signals for a specific threshold with optional preconditions"""
     # Calculate RSI for the SIGNAL ticker using specified period and method
     signal_rsi = calculate_rsi(signal_prices, window=rsi_period, method=rsi_method)
@@ -138,48 +286,16 @@ def analyze_rsi_signals(signal_prices: pd.Series, target_prices: pd.Series, rsi_
         # "≥" configuration: Buy TARGET when SIGNAL RSI ≥ threshold, sell when SIGNAL RSI < threshold
         base_signals = (signal_rsi >= rsi_threshold).astype(int)
     
-    # Apply preconditions if provided
-    if preconditions and precondition_data:
-        # Start with all signals as valid
-        precondition_mask = pd.Series(True, index=signal_prices.index)
-        
-        for precondition in preconditions:
-            precondition_ticker = precondition['signal_ticker']
-            precondition_comparison = precondition['comparison']
-            precondition_threshold = precondition['threshold']
-            
-            # Get RSI data for this precondition ticker
-            if precondition_ticker in precondition_data:
-                precondition_rsi = calculate_rsi(precondition_data[precondition_ticker], window=rsi_period, method=rsi_method)
-                
-                # Apply the precondition condition
-                if precondition_comparison == "less_than":
-                    precondition_condition = (precondition_rsi <= precondition_threshold)
-                else:  # greater_than
-                    precondition_condition = (precondition_rsi >= precondition_threshold)
-                
-                # Ensure same index as signal
-                precondition_condition = precondition_condition.reindex(signal_prices.index).fillna(False)
-                
-                # Update the mask (all preconditions must be True)
-                precondition_mask = precondition_mask & precondition_condition
-            else:
-                st.warning(f"⚠️ No data found for precondition ticker: {precondition_ticker}")
-                return {
-                    'total_trades': 0,
-                    'win_rate': 0,
-                    'avg_return': 0,
-                    'median_return': 0,
-                    'returns': [],
-                    'avg_hold_days': 0,
-                    'sortino_ratio': 0,
-                    'equity_curve': pd.Series(1.0, index=target_prices.index),
-                    'trades': [],
-                    'annualized_return': 0
-                }
-        
-        # Apply precondition mask to base signals
-        signals = (base_signals.astype(bool) & precondition_mask).fillna(False).astype(int)
+    # Apply preconditions (expanded set) if provided
+    if preconditions:
+        pc_mask = build_precondition_mask(
+            base_index=signal_prices.index,
+            preconditions=preconditions,
+            start_date=signal_prices.index.min(),
+            end_date=signal_prices.index.max(),
+            rsi_len=rsi_period,
+        )
+        signals = (base_signals.astype(bool) & pc_mask.astype(bool)).fillna(False).astype(int)
     else:
         signals = base_signals.fillna(0).astype(int)
     
@@ -546,22 +662,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
         if not is_valid:
             return None, None, all_messages
     
-    # Fetch precondition data if preconditions are set
-    precondition_data = {}
-    if preconditions:
-        unique_precondition_tickers = list(set([p['signal_ticker'] for p in preconditions]))
-        for ticker in unique_precondition_tickers:
-            if ticker != signal_ticker:  # Don't fetch again if it's the same as main signal
-                with st.spinner(f"Fetching precondition data for {ticker}..."):
-                    ticker_data = get_stock_data(ticker, start_date, end_date, exclusions)
-                    is_valid, messages = validate_data_quality(ticker_data, ticker)
-                    all_messages.extend(messages)
-                    if not is_valid:
-                        return None, None, all_messages
-                    precondition_data[ticker] = ticker_data
-        
-        # Add main signal data to precondition data for consistency
-        precondition_data[signal_ticker] = signal_data
+    # Note: Precondition data is now fetched directly by build_precondition_mask function
     
     if signal_data is None or target_data is None or benchmark_data is None:
         return None, None, all_messages
@@ -572,10 +673,22 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
     target_data = target_data[common_dates]
     benchmark_data = benchmark_data[common_dates]
     
-    # Align precondition data to common dates
-    if preconditions and precondition_data:
-        for tkr in list(precondition_data.keys()):
-            precondition_data[tkr] = precondition_data[tkr].reindex(common_dates).dropna()
+    # Fix timezone issues - convert all series to tz-naive for consistency
+    def _tz_fix(s):
+        if s is None or s.empty: return s
+        try:
+            if getattr(s.index, "tz", None) is not None:
+                s = s.copy()
+                s.index = s.index.tz_convert(None)
+        except Exception:
+            pass
+        return s
+
+    signal_data = _tz_fix(signal_data)
+    target_data = _tz_fix(target_data)
+    benchmark_data = _tz_fix(benchmark_data)
+    
+    # Note: Precondition data alignment is now handled by build_precondition_mask function
     
     # Create buy-and-hold benchmark
     benchmark = benchmark_data / benchmark_data.iloc[0]  # Normalize to start at 1.0
@@ -595,7 +708,7 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
     total_thresholds = max(1, len(rsi_thresholds))
     
     for i, threshold in enumerate(rsi_thresholds):
-        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method, use_quantstats, preconditions, precondition_data)
+        analysis = analyze_rsi_signals(signal_data, target_data, threshold, comparison, rsi_period, rsi_method, use_quantstats, preconditions)
         
         # Calculate statistical significance
         strategy_equity_curve = analysis['equity_curve']
@@ -610,29 +723,16 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
             else:  # greater_than
                 benchmark_base_signals = (signal_rsi >= threshold).astype(int)
             
-            # Apply preconditions to benchmark signals if they exist
-            if preconditions and precondition_data:
-                benchmark_precondition_mask = pd.Series(True, index=signal_data.index)
-                
-                for precondition in preconditions:
-                    pre_tkr = precondition['signal_ticker']
-                    pre_cmp = precondition['comparison']
-                    pre_thr = precondition['threshold']
-                    
-                    if pre_tkr in precondition_data:
-                        pre_rsi = calculate_rsi(precondition_data[pre_tkr], window=rsi_period, method=rsi_method)
-                        
-                        if pre_cmp == "less_than":
-                            pre_cond = (pre_rsi <= pre_thr)
-                        else:
-                            pre_cond = (pre_rsi >= pre_thr)
-                        
-                        # ✅ align to the signal index and make missing = False
-                        pre_cond = pre_cond.reindex(signal_data.index).fillna(False)
-                        
-                        benchmark_precondition_mask = benchmark_precondition_mask & pre_cond
-                
-                benchmark_signals = benchmark_base_signals & benchmark_precondition_mask
+            # Apply expanded preconditions to benchmark signals (same mask engine)
+            if preconditions:
+                benchmark_pc_mask = build_precondition_mask(
+                    base_index=signal_data.index,
+                    preconditions=preconditions,
+                    start_date=signal_data.index.min(),
+                    end_date=signal_data.index.max(),
+                    rsi_len=rsi_period,
+                ).reindex(signal_data.index).fillna(False)
+                benchmark_signals = (benchmark_base_signals.astype(bool) & benchmark_pc_mask).astype(int)
             else:
                 benchmark_signals = benchmark_base_signals
             
@@ -699,29 +799,16 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
             else:  # greater_than
                 benchmark_base_signals = (signal_rsi >= threshold).astype(int)
             
-            # Apply preconditions to benchmark signals if they exist
-            if preconditions and precondition_data:
-                benchmark_precondition_mask = pd.Series(True, index=signal_data.index)
-                
-                for precondition in preconditions:
-                    pre_tkr = precondition['signal_ticker']
-                    pre_cmp = precondition['comparison']
-                    pre_thr = precondition['threshold']
-                    
-                    if pre_tkr in precondition_data:
-                        pre_rsi = calculate_rsi(precondition_data[pre_tkr], window=rsi_period, method=rsi_method)
-                        
-                        if pre_cmp == "less_than":
-                            pre_cond = (pre_rsi <= pre_thr)
-                        else:
-                            pre_cond = (pre_rsi >= pre_thr)
-                        
-                        # ✅ align to the signal index and make missing = False
-                        pre_cond = pre_cond.reindex(signal_data.index).fillna(False)
-                        
-                        benchmark_precondition_mask = benchmark_precondition_mask & pre_cond
-                
-                benchmark_signals = benchmark_base_signals & benchmark_precondition_mask
+            # Apply expanded preconditions to benchmark signals (same mask engine)
+            if preconditions:
+                benchmark_pc_mask = build_precondition_mask(
+                    base_index=signal_data.index,
+                    preconditions=preconditions,
+                    start_date=signal_data.index.min(),
+                    end_date=signal_data.index.max(),
+                    rsi_len=rsi_period,
+                ).reindex(signal_data.index).fillna(False)
+                benchmark_signals = (benchmark_base_signals.astype(bool) & benchmark_pc_mask).astype(int)
             else:
                 benchmark_signals = benchmark_base_signals
             
@@ -832,59 +919,104 @@ st.sidebar.header("⚙️ Configuration")
 use_quantstats = st.sidebar.checkbox("Enable QuantStats Integration", value=True, help="Enable use of QuantStats library. When disabled, the app will use fallback calculations.")
 
 # Preconditions System
-st.sidebar.subheader("Preconditions", help="Preconditions add additional RSI conditions that must ALL be true before the main signal is considered. This allows for multi-condition signal validation.")
-
-# Initialize preconditions in session state if not exists
+st.sidebar.subheader("Preconditions", help="All preconditions must be TRUE to allow the main signal. Supports RSI vs threshold, RSI vs RSI, and Price/MA/EMA comparisons.")
 if 'preconditions' not in st.session_state:
     st.session_state.preconditions = []
 
-# Display existing preconditions
+# Show existing
 if st.session_state.preconditions:
-    st.sidebar.write("**Current Preconditions:**")
-    for i, precondition in enumerate(st.session_state.preconditions):
-        with st.sidebar.container():
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"• {precondition['signal_ticker']} RSI {precondition['comparison']} {precondition['threshold']}")
-            with col2:
-                if st.button(f"🗑️", key=f"remove_precondition_{i}"):
-                    st.session_state.preconditions.pop(i)
-                    st.rerun()
+    st.sidebar.write("**Current Preconditions (ALL must hold):**")
+    for i, p in enumerate(st.session_state.preconditions):
+        mode = p.get("mode","static")
+        if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
+            sym = _get_symbol(p.get("op","less_than"))
+            st.sidebar.write(f"• {mode}: {p['lhs_ticker']}({p.get('lhs_len', 1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len', 1)})")
+        elif mode == "pair":
+            sym = _get_symbol(p.get("op","less_than"))
+            st.sidebar.write(f"• {p['lhs_ticker']} RSI({p.get('lhs_len', 10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len', 10)})")
+        else:
+            sym = _get_symbol(p.get("comparison","greater_than"))
+            st.sidebar.write(f"• {p['signal_ticker']} RSI({p.get('rsi_len', 10)}) {sym} {p.get('threshold', 50)}")
+        if st.sidebar.button("🗑️", key=f"remove_pre_{i}"):
+            st.session_state.preconditions.pop(i)
+            st.rerun()
+else:
+    st.sidebar.caption("No preconditions yet.")
 
-# Add new precondition
 with st.sidebar.expander("➕ Add Precondition", expanded=False):
-    st.write("**Add a new RSI precondition:**")
-    
-    # Precondition signal ticker (can be different from main signal)
-    precondition_signal = st.text_input("Precondition Signal Ticker", 
-                                       value="QQQ", 
-                                       key="precondition_signal",
-                                       help="The ticker whose RSI will be checked for this precondition. Can be the same as or different from the main signal ticker.")
-    
-    # Precondition RSI comparison
-    precondition_comparison = st.selectbox("Precondition RSI Condition", 
-                                          ["less_than", "greater_than"], 
-                                          format_func=lambda x: "RSI ≤ threshold" if x == "less_than" else "RSI ≥ threshold",
-                                          key="precondition_comparison",
-                                          help="Choose the RSI condition for this precondition.")
-    
-    # Precondition RSI threshold
-    precondition_threshold = st.number_input("Precondition RSI Threshold", 
-                                           min_value=0.0, max_value=100.0, value=80.0, step=0.5,
-                                           key="precondition_threshold",
-                                           help="The RSI threshold value for this precondition.")
-    
-    # Add precondition button
-    if st.button("➕ Add Precondition", key="add_precondition"):
-        new_precondition = {
-            'signal_ticker': precondition_signal.upper().strip(),
-            'comparison': precondition_comparison,
-            'threshold': precondition_threshold
-        }
-        st.session_state.preconditions.append(new_precondition)
-        st.rerun()
+    tabs = st.tabs(["Static RSI", "Pair RSI", "Price / MA / EMA"])
+    # Static RSI vs threshold
+    with tabs[0]:
+        pc_tkr = st.text_input("Ticker", value="QQQ", key="pc_static_tkr").strip().upper()
+        pc_len = st.number_input("RSI length", min_value=2, max_value=200, value=10, step=1, key="pc_static_len")
+        pc_cmp = st.selectbox("Comparison", ["less_than","greater_than"], index=0, key="pc_static_cmp",
+                              format_func=lambda x: "RSI ≤ thr" if x=="less_than" else "RSI ≥ thr")
+        pc_thr = st.number_input("RSI threshold", min_value=0.0, max_value=100.0, value=80.0, step=0.5, key="pc_static_thr")
+        if st.button("Add static RSI precondition", key="add_pc_static"):
+            st.session_state.preconditions.append({
+                "mode":"static",
+                "signal_ticker": pc_tkr,
+                "rsi_len": int(pc_len),
+                "comparison": pc_cmp,
+                "threshold": float(pc_thr),
+            })
+            st.rerun()
 
-# Clear all preconditions button
+    # Pair RSI vs RSI
+    with tabs[1]:
+        cols = st.columns(2)
+        with cols[0]:
+            lhs_t = st.text_input("Left ticker (LHS)", value="KMLM", key="pc_pair_lhs").strip().upper()
+            lhs_len = st.number_input("LHS RSI length", min_value=2, max_value=200, value=10, step=1, key="pc_pair_lhs_len")
+        with cols[1]:
+            rhs_t = st.text_input("Right ticker (RHS)", value="XLK", key="pc_pair_rhs").strip().upper()
+            rhs_len = st.number_input("RHS RSI length", min_value=2, max_value=200, value=10, step=1, key="pc_pair_rhs_len")
+        op = st.selectbox("Comparison", ["less_than","greater_than"], index=0, key="pc_pair_op",
+                          format_func=lambda x: _get_symbol(x))
+        if st.button("Add pair RSI precondition", key="add_pc_pair"):
+            st.session_state.preconditions.append({
+                "mode":"pair",
+                "lhs_ticker": lhs_t, "lhs_len": int(lhs_len),
+                "op": op,
+                "rhs_ticker": rhs_t, "rhs_len": int(rhs_len),
+            })
+            st.rerun()
+
+    # Price/MA/EMA family
+    with tabs[2]:
+        mode_choice = st.selectbox(
+            "Condition type",
+            ["price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"],
+            index=0,
+            key="pc_ma_mode",
+            format_func=lambda m: {
+                "price_vs_ma":"Price vs SMA",
+                "price_vs_ema":"Price vs EMA",
+                "ma_vs_ma":"SMA vs SMA",
+                "ema_vs_ema":"EMA vs EMA",
+            }[m]
+        )
+        ccols = st.columns(2)
+        with ccols[0]:
+            lhs_t = st.text_input("Left ticker (LHS)", value="SPY", key="pc_ma_lhs").strip().upper()
+            lhs_len = st.number_input("LHS window", min_value=1, max_value=500, value=1, step=1, key="pc_ma_lhs_len",
+                                      help="Use 1 for raw price with Price vs MA/EMA.")
+        with ccols[1]:
+            rhs_t = st.text_input("Right ticker (RHS)", value="SPY", key="pc_ma_rhs").strip().upper()
+            default_rhs_len = 200 if "price_vs_" in mode_choice else 50
+            rhs_len = st.number_input("RHS window", min_value=1, max_value=500, value=default_rhs_len, step=1, key="pc_ma_rhs_len")
+        op = st.selectbox("Comparison", ["less_than","greater_than"], index=1, key="pc_ma_op",
+                          format_func=lambda x: _get_symbol(x))
+        if st.button("Add MA/EMA precondition", key="add_pc_ma"):
+            st.session_state.preconditions.append({
+                "mode": mode_choice,
+                "lhs_ticker": lhs_t, "lhs_len": int(lhs_len),
+                "op": op,
+                "rhs_ticker": rhs_t, "rhs_len": int(rhs_len),
+            })
+            st.rerun()
+
+# Clear all button
 if st.session_state.preconditions:
     if st.sidebar.button("🗑️ Clear All Preconditions", type="secondary"):
         st.session_state.preconditions = []
@@ -1088,9 +1220,17 @@ with col1:
     # Display preconditions first
     if st.session_state.get('preconditions'):
         st.write("**Preconditions:**")
-        for i, precondition in enumerate(st.session_state.preconditions):
-            comparison_symbol = "≤" if precondition['comparison'] == "less_than" else "≥"
-            st.write(f"  • {precondition['signal_ticker']} RSI {comparison_symbol} {precondition['threshold']}")
+        for p in st.session_state.preconditions:
+            mode = p.get("mode","static")
+            if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
+                sym = _get_symbol(p.get("op","less_than"))
+                st.write(f"  • {mode}: {p['lhs_ticker']}({p.get('lhs_len',1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len',1)})")
+            elif mode == "pair":
+                sym = _get_symbol(p.get("op","less_than"))
+                st.write(f"  • {p['lhs_ticker']} RSI({p.get('lhs_len',10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len',10)})")
+            else:
+                sym = _get_symbol(p.get("comparison","greater_than"))
+                st.write(f"  • {p['signal_ticker']} RSI({p.get('rsi_len',10)}) {sym} {p.get('threshold', 50)}")
     
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
     st.write(f"**Target Ticker:** {target_ticker} (buy/sell based on signals)")
@@ -1130,10 +1270,18 @@ with col2:
     
     # Build the signal logic description
     if st.session_state.get('preconditions'):
-        st.write("**Preconditions (ALL must be true):**")
-        for precondition in st.session_state.preconditions:
-            comparison_symbol = "≤" if precondition['comparison'] == "less_than" else "≥"
-            st.write(f"  • {precondition['signal_ticker']} RSI {comparison_symbol} {precondition['threshold']}")
+        st.write("**Preconditions (ALL true):**")
+        for p in st.session_state.preconditions:
+            mode = p.get("mode","static")
+            if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
+                sym = _get_symbol(p.get("op","less_than"))
+                st.write(f"  • {mode}: {p['lhs_ticker']}({p.get('lhs_len',1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len',1)})")
+            elif mode == "pair":
+                sym = _get_symbol(p.get("op","less_than"))
+                st.write(f"  • {p['lhs_ticker']} RSI({p.get('lhs_len',10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len',10)})")
+            else:
+                sym = _get_symbol(p.get("comparison","greater_than"))
+                st.write(f"  • {p['signal_ticker']} RSI({p.get('rsi_len',10)}) {sym} {p.get('threshold', 50)}")
         st.write("**Main Signal:**")
     
     if comparison == "less_than":
@@ -1375,10 +1523,37 @@ if 'analysis_completed' in st.session_state and st.session_state['analysis_compl
     mask = st.session_state['results_df']['RSI_Threshold'].isin(filtered_df['RSI_Threshold'])
     numeric_slice = st.session_state['results_df'][mask]
     
-    best_sortino_idx = numeric_slice['Sortino_Ratio'].idxmax()
-    best_annualized_idx = numeric_slice['annualized_return'].idxmax()
-    best_winrate_idx = numeric_slice['Win_Rate'].idxmax()
-    best_total_return_idx = numeric_slice['Total_Return'].idxmax()
+    # Initialize best strategy indices as None
+    best_sortino_idx = None
+    best_annualized_idx = None
+    best_winrate_idx = None
+    best_total_return_idx = None
+    
+    # Safely find best strategies with comprehensive error handling
+    if not numeric_slice.empty:
+        try:
+            if 'Sortino_Ratio' in numeric_slice.columns and not numeric_slice['Sortino_Ratio'].isna().all():
+                best_sortino_idx = numeric_slice['Sortino_Ratio'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_sortino_idx = None
+        
+        try:
+            if 'annualized_return' in numeric_slice.columns and not numeric_slice['annualized_return'].isna().all():
+                best_annualized_idx = numeric_slice['annualized_return'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_annualized_idx = None
+        
+        try:
+            if 'Win_Rate' in numeric_slice.columns and not numeric_slice['Win_Rate'].isna().all():
+                best_winrate_idx = numeric_slice['Win_Rate'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_winrate_idx = None
+        
+        try:
+            if 'Total_Return' in numeric_slice.columns and not numeric_slice['Total_Return'].isna().all():
+                best_total_return_idx = numeric_slice['Total_Return'].idxmax()
+        except (ValueError, IndexError, KeyError):
+            best_total_return_idx = None
     
     # Statistical Significance Analysis
     with st.expander("📊 Statistical Significance Analysis", expanded=True):
