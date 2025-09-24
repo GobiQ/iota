@@ -30,6 +30,11 @@ def _tz_naive(s: pd.Series) -> pd.Series:
         s.index = s.index.tz_convert(None)
     return s
 
+def _get_symbol(op: str) -> str:
+    """Safely get symbol for operator, with fallback for unknown operators."""
+    sym_map = {"less_than":"<","greater_than":">","less_equal":"≤","greater_equal":"≥"}
+    return sym_map.get(op, op if op else "?")
+
 def _price_series(ticker: str, start_date=None, end_date=None, exclusions=None) -> pd.Series:
     """Wrapper over get_stock_data -> returns 'close' series w/ tz-naive index."""
     s = get_stock_data(ticker, start_date, end_date, exclusions)
@@ -58,16 +63,23 @@ def build_precondition_mask(
       {"mode":"pair", "lhs_ticker":"KMLM", "lhs_len":10, "op":"less_than",
                         "rhs_ticker":"XLK",  "rhs_len":10}
 
-      # Price/MA/EMA variants
-      {"mode":"price_vs_ma",  "lhs_ticker":"SPY", "lhs_len":1,  "op":"greater_equal",
+      # Price/MA/EMA variants (operators: "less_than" or "greater_than")
+      {"mode":"price_vs_ma",  "lhs_ticker":"SPY", "lhs_len":1,  "op":"greater_than",
                                "rhs_ticker":"SPY", "rhs_len":200}
       {"mode":"price_vs_ema", "lhs_ticker":"QQQ", "lhs_len":1,  "op":"less_than",
                                "rhs_ticker":"QQQ", "rhs_len":50}
       {"mode":"ma_vs_ma",     "lhs_ticker":"SPY", "lhs_len":20, "op":"greater_than",
                                "rhs_ticker":"SPY", "rhs_len":50}
-      {"mode":"ema_vs_ema",   "lhs_ticker":"IWM", "lhs_len":12, "op":"less_equal",
+      {"mode":"ema_vs_ema",   "lhs_ticker":"IWM", "lhs_len":12, "op":"less_than",
                                "rhs_ticker":"IWM", "rhs_len":26}
     """
+    # Normalize base index to tz-naive so it matches _price_series() outputs
+    try:
+        if getattr(base_index, "tz", None) is not None:
+            base_index = base_index.tz_convert(None)
+    except Exception:
+        pass
+    
     if not preconditions:
         return pd.Series(True, index=base_index, dtype=bool)
 
@@ -656,6 +668,21 @@ def run_rsi_analysis(signal_ticker: str, target_ticker: str, rsi_threshold: floa
     target_data = target_data[common_dates]
     benchmark_data = benchmark_data[common_dates]
     
+    # Fix timezone issues - convert all series to tz-naive for consistency
+    def _tz_fix(s):
+        if s is None or s.empty: return s
+        try:
+            if getattr(s.index, "tz", None) is not None:
+                s = s.copy()
+                s.index = s.index.tz_convert(None)
+        except Exception:
+            pass
+        return s
+
+    signal_data = _tz_fix(signal_data)
+    target_data = _tz_fix(target_data)
+    benchmark_data = _tz_fix(benchmark_data)
+    
     # Note: Precondition data alignment is now handled by build_precondition_mask function
     
     # Create buy-and-hold benchmark
@@ -897,13 +924,13 @@ if st.session_state.preconditions:
     for i, p in enumerate(st.session_state.preconditions):
         mode = p.get("mode","static")
         if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
-            sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+            sym = _get_symbol(p.get("op","less_than"))
             st.sidebar.write(f"• {mode}: {p['lhs_ticker']}({p.get('lhs_len', 1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len', 1)})")
         elif mode == "pair":
-            sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+            sym = _get_symbol(p.get("op","less_than"))
             st.sidebar.write(f"• {p['lhs_ticker']} RSI({p.get('lhs_len', 10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len', 10)})")
         else:
-            sym = {"less_than":"<","greater_than":">"}[p.get("comparison","greater_than")]
+            sym = _get_symbol(p.get("comparison","greater_than"))
             st.sidebar.write(f"• {p['signal_ticker']} RSI({p.get('rsi_len', 10)}) {sym} {p.get('threshold', 50)}")
         if st.sidebar.button("🗑️", key=f"remove_pre_{i}"):
             st.session_state.preconditions.pop(i)
@@ -940,7 +967,7 @@ with st.sidebar.expander("➕ Add Precondition", expanded=False):
             rhs_t = st.text_input("Right ticker (RHS)", value="XLK", key="pc_pair_rhs").strip().upper()
             rhs_len = st.number_input("RHS RSI length", min_value=2, max_value=200, value=10, step=1, key="pc_pair_rhs_len")
         op = st.selectbox("Comparison", ["less_than","greater_than"], index=0, key="pc_pair_op",
-                          format_func=lambda x: {"less_than":"<","greater_than":">"}[x])
+                          format_func=lambda x: _get_symbol(x))
         if st.button("Add pair RSI precondition", key="add_pc_pair"):
             st.session_state.preconditions.append({
                 "mode":"pair",
@@ -974,7 +1001,7 @@ with st.sidebar.expander("➕ Add Precondition", expanded=False):
             default_rhs_len = 200 if "price_vs_" in mode_choice else 50
             rhs_len = st.number_input("RHS window", min_value=1, max_value=500, value=default_rhs_len, step=1, key="pc_ma_rhs_len")
         op = st.selectbox("Comparison", ["less_than","greater_than"], index=1, key="pc_ma_op",
-                          format_func=lambda x: {"less_than":"<","greater_than":">"}[x])
+                          format_func=lambda x: _get_symbol(x))
         if st.button("Add MA/EMA precondition", key="add_pc_ma"):
             st.session_state.preconditions.append({
                 "mode": mode_choice,
@@ -1191,13 +1218,13 @@ with col1:
         for p in st.session_state.preconditions:
             mode = p.get("mode","static")
             if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
-                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+                sym = _get_symbol(p.get("op","less_than"))
                 st.write(f"  • {mode}: {p['lhs_ticker']}({p.get('lhs_len',1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len',1)})")
             elif mode == "pair":
-                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+                sym = _get_symbol(p.get("op","less_than"))
                 st.write(f"  • {p['lhs_ticker']} RSI({p.get('lhs_len',10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len',10)})")
             else:
-                sym = {"less_than":"<","greater_than":">"}[p.get("comparison","greater_than")]
+                sym = _get_symbol(p.get("comparison","greater_than"))
                 st.write(f"  • {p['signal_ticker']} RSI({p.get('rsi_len',10)}) {sym} {p.get('threshold', 50)}")
     
     st.write(f"**Signal Ticker:** {signal_ticker} (generates RSI signals)")
@@ -1242,13 +1269,13 @@ with col2:
         for p in st.session_state.preconditions:
             mode = p.get("mode","static")
             if mode in ("price_vs_ma","price_vs_ema","ma_vs_ma","ema_vs_ema"):
-                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+                sym = _get_symbol(p.get("op","less_than"))
                 st.write(f"  • {mode}: {p['lhs_ticker']}({p.get('lhs_len',1)}) {sym} {p['rhs_ticker']}({p.get('rhs_len',1)})")
             elif mode == "pair":
-                sym = {"less_than":"<","greater_than":">"}[p.get("op","less_than")]
+                sym = _get_symbol(p.get("op","less_than"))
                 st.write(f"  • {p['lhs_ticker']} RSI({p.get('lhs_len',10)}) {sym} {p['rhs_ticker']} RSI({p.get('rhs_len',10)})")
             else:
-                sym = {"less_than":"<","greater_than":">"}[p.get("comparison","greater_than")]
+                sym = _get_symbol(p.get("comparison","greater_than"))
                 st.write(f"  • {p['signal_ticker']} RSI({p.get('rsi_len',10)}) {sym} {p.get('threshold', 50)}")
         st.write("**Main Signal:**")
     
