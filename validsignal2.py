@@ -951,7 +951,7 @@ with st.sidebar.expander("➕ Add Precondition", expanded=False):
         pc_len = st.number_input("RSI length", min_value=2, max_value=200, value=10, step=1, key="pc_static_len")
         pc_cmp = st.selectbox("Comparison", ["less_than","greater_than"], index=0, key="pc_static_cmp",
                               format_func=lambda x: "RSI ≤ thr" if x=="less_than" else "RSI ≥ thr")
-        pc_thr = st.number_input("RSI threshold", min_value=0.0, max_value=100.0, value=30.0, step=0.5, key="pc_static_thr")
+        pc_thr = st.number_input("RSI threshold", min_value=0.0, max_value=100.0, value=80.0, step=0.5, key="pc_static_thr")
         if st.button("Add static RSI precondition", key="add_pc_static"):
             st.session_state.preconditions.append({
                 "mode":"static",
